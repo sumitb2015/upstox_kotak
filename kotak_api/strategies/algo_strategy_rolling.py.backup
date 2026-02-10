@@ -1,0 +1,2145 @@
+"""
+Algo Strategy: FSM-Based Value-Balanced NIFTY CE-PE Trading
+
+Finite State Machine States:
+  INIT → BALANCED → ROLL_LOSER → MONITOR → EXIT
+
+Strategy:
+1. Enter ATM NIFTY CE and PE positions
+2. Monitor Total Trade Value (LTP × Qty) for each leg
+3. If imbalance > 30% & diff > 1500: ROLL LOSING LEG (Close Loser, Sell Further OTM Strike)
+4. Use Rolling to maintain constant lot size while reducing exposure
+5. MONITOR state allows one-time reversal rebalance (if needed) or manual intervention
+6. EXIT on persistent imbalance or risk breach
+
+Features: DRY_RUN mode, guardrails, state persistence, detailed logging.
+"""
+
+import os
+import json
+import time
+from datetime import datetime, timedelta
+import threading
+from enum import Enum
+import pandas as pd
+from dotenv import load_dotenv
+from neo_api_client import NeoAPI
+import pyotp
+import sys
+import logging
+import yfinance as yf
+
+# Configure Logging
+import sys
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(
+            os.path.join(os.getcwd(), "algo_strategy_rolling.log"),
+            encoding='utf-8',
+            mode='a'  # Append mode
+        ),
+        logging.StreamHandler(sys.stdout)  # Also log to console for debugging
+    ]
+)
+logger = logging.getLogger("FSM_Algo")
+logger.info("=" * 60)
+logger.info("ROLLING STRATEGY STARTED")
+logger.info("=" * 60)
+
+load_dotenv()
+
+# Credentials from environment
+CONSUMER_KEY = os.getenv("KOTAK_CONSUMER_KEY")
+MOBILE_NUMBER = os.getenv("KOTAK_MOBILE_NUMBER")
+UCC = os.getenv("KOTAK_UCC")
+TOTP = os.getenv("TOTP", "GC6A75CPAEY5WBWTQGMOGKQ2DE")
+MPIN = os.getenv("KOTAK_MPIN")
+
+# Strategy Parameters
+NIFTY_STRIKE_INTERVAL = 50
+# DTE-Based Premium Targets (for weekly expiry strategies)
+# Key = Days To Expiry, Value = (min_premium, max_premium) per leg in ₹
+DTE_PREMIUM_MAP = {
+    6: (80, 150),    # Wednesday (6 days to Tuesday expiry)
+    5: (70, 130),    # Thursday
+    4: (60, 120),    # Friday
+    3: (50, 100),    # Saturday → counted as Monday
+    2: (40, 80),     # Monday
+    1: (30, 60),     # Monday (next day expiry)
+    0: (15, 50),     # Expiry Day (Tuesday)
+}
+DEFAULT_PREMIUM_RANGE = (50, 120)  # Fallback if DTE > 6
+
+# Wing Configuration (Iron Condor Hedges for Margin Benefit)
+ENABLE_WINGS = False  # DISABLED for simplified testing - re-enable after strategy stabilizes
+# Key = Days To Expiry, Value = Wing offset (points from sold strike)
+WING_OFFSET_MAP = {
+    6: 800,  # Wednesday - wide wings (cheap, minimal decay)
+    5: 600,  # Thursday
+    4: 500,  # Friday
+    3: 400,  # Saturday → Monday
+    2: 400,  # Monday
+    1: 400,  # Monday (next day expiry)
+    0: 400,  # Expiry Day (Tuesday)
+}
+DEFAULT_WING_OFFSET = 500
+
+
+DRY_RUN = True               # Set to False for live trading
+
+# FSM Guardrails
+MIN_LOT_MULTIPLIER = 1      # Constant Lot Size (2 lots per leg) -- CHANGED TO CONSTANT
+MAX_LOT_MULTIPLIER = 2      # Strict Limit (No Expansion)
+MAX_TOTAL_TRADE_VALUE = 100000  # ₹1 lakh total exposure limit
+COOLDOWN_SECONDS = 60       # 1 minute between adjustments
+# MTM Limits - PREMIUM-BASED (Dynamic)
+# Target and SL are calculated as % of initial premium credit collected
+TARGET_PROFIT_PCT = 50.0    # Exit at 50% of max profit (premium decay target)
+STOP_LOSS_PCT = 50.0        # Exit if loss = 50% of credit (1:1 Risk:Reward)
+# Minimum floors (only apply when credit > floor, prevents tiny targets on big days)
+MIN_TARGET_FLOOR = 2000.0   # Minimum target ₹2,000 (if credit > ₹2,000)
+MIN_SL_FLOOR = 1500.0       # Minimum SL ₹1,500 (if credit > ₹1,500)
+# Fallback static values (used if initial credit not available)
+FALLBACK_TARGET = 5000.0
+FALLBACK_SL = 3000.0
+
+# Hybrid Threshold: Minimum absolute value difference to avoid over-trading on low prices
+# Hybrid Threshold: Minimum absolute value difference to avoid over-trading on low prices
+MIN_ABS_DIFF_THRESHOLD = 1500.0  # Equivalent to ~₹10/share with 2 lots (150 shares)
+
+# Auto-Exit Time (User Configurable)
+AUTO_EXIT_TIME_STR = "15:15"  # HH:MM format (24-hour)
+
+# ======================== TRAILING STOP LOSS (SIMPLIFIED) ========================
+# FIXED thresholds - not dynamic based on credit
+# More breathing room to prevent premature exits
+TSL_TRIGGER_1 = 2500.0    # Activate TSL at ₹2,500 profit
+TSL_SL_1 = -2000.0        # Move SL to -₹2,000 (reduced risk from base)
+TSL_TRIGGER_2 = 5000.0    # At ₹5,000 profit
+TSL_SL_2 = 0.0            # Move SL to breakeven
+# Removed dynamic trailing - too aggressive and causes early exits
+# ==================================================================================
+
+# State-wise Thresholds (Dynamic)
+STATE_THRESHOLDS = {
+    "BALANCED": 30.0,              # Imbalance % to trigger roll
+    "ROLL_LOSER": 30.0,            # Imbalance threshold for rolling losing leg OTM
+    "MONITOR": 30.0,               # Imbalance % to trigger exit
+    "DIRECTIONAL_MONITOR": 0.0,    # N/A (Single leg)
+    "INIT": 30.0,
+    "EXIT": 0.0
+}
+
+
+# FSM State and Exit Reason Enums
+class FSMState(Enum):
+    INIT = "INIT"
+    BALANCED = "BALANCED"
+    ROLL_LOSER = "ROLL_LOSER"   # Roll Losing Leg (Dominant/High-Value Leg) Further OTM
+    MONITOR = "MONITOR"
+    DIRECTIONAL_MONITOR = "DIRECTIONAL_MONITOR"   # Single leg mode after flip
+    EXIT = "EXIT"
+
+
+class ExitReason(Enum):
+    POST_MONITOR_IMBALANCE = "POST_MONITOR_IMBALANCE"
+    MAX_RISK_BREACH = "MAX_RISK_BREACH"
+    TIME_EXIT = "TIME_EXIT"
+    TREND_PERSISTENCE = "TREND_PERSISTENCE"
+    MANUAL = "MANUAL"
+    TARGET_HIT = "TARGET_HIT"
+    STOP_LOSS_HIT = "STOP_LOSS_HIT"
+    STRUCTURAL_BREAK = "STRUCTURAL_BREAK"  # Exit on PDH/PDL breach
+    NONE = "NONE"
+
+class MarketRegime(Enum):
+    TREND_UP = "TREND_UP"      # LTP > PDH
+    TREND_DOWN = "TREND_DOWN"  # LTP < PDL
+    RANGE = "RANGE"            # PDL <= LTP <= PDH
+
+# Global Data Store
+class DataStore:
+    def __init__(self):
+        self.tick_data = {}  # {token: {'ltp': float, 'timestamp': float}}
+        self.lock = threading.Lock()
+        self.last_activity = time.time() # Track WS activity
+
+    def update(self, token, ltp, pc=0.0, oi=0):
+        with self.lock:
+            self.tick_data[str(token)] = {'ltp': ltp, 'pc': pc, 'oi': oi, 'timestamp': time.time()}
+            self.last_activity = time.time() # Refresh global activity
+
+    def get_ltp(self, token):
+        with self.lock:
+            data = self.tick_data.get(str(token))
+            return data['ltp'] if data else 0.0
+
+    def get_change(self, token):
+        with self.lock:
+            data = self.tick_data.get(str(token))
+            return data['pc'] if data else 0.0
+
+    def get_oi(self, token):
+        with self.lock:
+            data = self.tick_data.get(str(token))
+            return int(data['oi']) if data and 'oi' in data else 0
+
+data_store = DataStore()
+
+
+class FSMStrategy:
+    """
+    FSM-based Value-Balanced Options Strategy.
+    
+    States: INIT → BALANCED → ROLL_LOSER → MONITOR → EXIT
+    
+    Escalation: Roll Losing Leg (Further OTM) → Exit
+    """
+    
+    def __init__(self, client, master_df, nifty_token, expiry, options_map):
+        self.client = client
+        self.master_df = master_df
+        self.nifty_token = nifty_token
+        self.expiry = expiry
+        self.options_map = options_map  # {token: {'strike':..., 'type':..., 'symbol':...}}
+        
+        # Position State
+        self.positions = {}  # {'CE': {'token':..., 'qty':..., 'strike':...}, 'PE': {...}}
+        self.lock = threading.Lock()
+        self.lot_size_cache = {}
+        
+        # FSM State
+        self.state = FSMState.INIT
+        self.exit_reason = ExitReason.NONE
+        self.running = False
+        
+        # FSM Flags
+        self.previous_dominant = None      # Track for stability
+
+        
+        # Timing
+        self.last_adjustment_time = 0
+        
+        # MTM Caching (Rate Limit Protection)
+        self.last_mtm_update = 0
+        self.cached_mtm = 0.0
+        self.cached_unrealized_pnl = 0.0  # Track current active trade separately
+        
+        # Logging
+        self.state_log = []
+        self.rebalance_log = []
+        self.last_log_time = 0  # Throttle file logging
+        
+        # TSL State
+        self.max_mtm_high = -float('inf')  # High water mark for TSL
+        self.initial_credit = 0.0          # Premium credit collected at entry
+        
+        # Strategy-Isolated PnL Tracking
+        self.cumulative_realized_pnl = 0.0  # Running total of realized PnL from closed positions
+        self.entry_premiums = {}            # {side: entry_premium} to calculate realized PnL on exit
+        
+        # Cycle Tracking
+        self.additional_offset = 0         # Strike offset that increases per cycle
+        self.cycle_count = 0               # Number of trades taken today
+        
+        # Nifty History Data (fetch once)
+        self.nifty_data = self.fetch_nifty_data()
+        self.last_yf_update = time.time() # Initialize last update time
+        self.last_oi_monitor = 0 # Track OI logging frequency
+        
+        # Initial Reconciliation
+        if self.client:
+             self.reconcile_positions()
+             if self.positions:
+                  print(f"  🔄 Restored Open Positions from Broker: {list(self.positions.keys())}")
+
+    def fetch_nifty_data(self):
+        """Fetch Nifty (^NSEI) data from yfinance."""
+        print(f"\n📈 Fetching Nifty data from yfinance...")
+        try:
+            ticker = yf.Ticker("^NSEI")
+            
+            # 1. Fetch Daily Data (for Prev High/Low/Close)
+            # Get last 5 days to ensure we get the last completed trading day
+            daily_df = ticker.history(period="5d", interval="1d")
+            
+            if len(daily_df) < 2:
+                print("  ⚠️ Insufficient daily data fetched.")
+                return None
+                
+            # The last row is 'Today' (live/incomplete), so we take the second to last row for 'Yesterday'
+            # Note: If run after market close, last row *might* be today. 
+            # Ideally, we want the "Previous Completed Day". 
+            # Logic: If today is a trading day and market is open, last row is today.
+            # We explicitly target the last FULL candle.
+            
+            daily_df = daily_df.dropna()
+            prev_day = daily_df.iloc[-2] # Second to last is definitely the previous completed day
+            # (Assuming script runs during market hours of the current day)
+            
+            prev_date = prev_day.name.strftime('%Y-%m-%d')
+            prev_high = prev_day['High']
+            prev_low = prev_day['Low']
+            prev_close = prev_day['Close']
+            
+            print(f"  📅 Previous Day ({prev_date}):")
+            print(f"     High: {prev_high:.2f}")
+            print(f"     Low:  {prev_low:.2f}")
+            print(f"     Close: {prev_close:.2f}")
+            
+            # 2. Fetch 5-min Data (Recent)
+            # Fetch 5 days of 5m data to capture yesterday's intraday
+            intra_df = ticker.history(period="5d", interval="5m")
+            
+            if intra_df.empty:
+                print("  ⚠️ No 5-min data fetched.")
+            else:
+                last_5min = intra_df.iloc[-1]
+                print(f"  🕒 Last 5-min Candle ({last_5min.name}): Close {last_5min['Close']:.2f}")
+            
+            return {
+                'prev_date': prev_date,
+                'prev_high': prev_high,
+                'prev_low': prev_low,
+                'prev_close': prev_close,
+                'intra_df': intra_df # Store full DF for advanced logic if needed
+            }
+            
+        except Exception as e:
+            print(f"  ❌ Error fetching yfinance data: {e}")
+            return None
+
+    def update_nifty_intraday(self):
+        """Poll yfinance for latest 5-min data (intraday update)."""
+        # print(f"  ↻ Polling yfinance for 5-minute data...")
+        try:
+            ticker = yf.Ticker("^NSEI")
+            # Fetch just 1 day to be fast
+            new_intra_df = ticker.history(period="1d", interval="5m")
+            
+            if not new_intra_df.empty:
+                self.nifty_data['intra_df'] = new_intra_df
+                # print(f"  ✅ Intraday data updated. Last candle: {new_intra_df.index[-1]}")
+                self.last_yf_update = time.time()
+                return True
+            else:
+                # print("  ⚠️ No new intraday data.")
+                return False
+                
+        except Exception as e:
+            print(f"  ❌ Polling error: {e}")
+            return False
+
+    def get_current_regime(self):
+        """Classify market regime based on Live LTP vs PDH/PDL."""
+        if not self.nifty_data:
+            return MarketRegime.RANGE  # Default to Range if no data
+            
+        ltp = data_store.get_ltp(self.nifty_token)
+        if ltp == 0: return MarketRegime.RANGE
+        
+        pdh = self.nifty_data['prev_high']
+        pdl = self.nifty_data['prev_low']
+        
+        if ltp > pdh:
+            return MarketRegime.TREND_UP
+        elif ltp < pdl:
+            return MarketRegime.TREND_DOWN
+        else:
+            return MarketRegime.RANGE
+
+    def check_structural_break(self, current_dominant, values):
+        """
+        Check if price structure invalidates the strategy (Forced Exit/Flip).
+        Requires:
+        1. Market Regime Break (LTP > PDH or LTP < PDL)
+        2. Counter-trend leg is Dominant
+        3. Imbalance > 10% (Buffer to prevent flips on minor noise/gaps)
+        """
+        regime = self.get_current_regime()
+        
+        # Calculate Imbalance
+        imbalance = self.calculate_imbalance(values['ce_value'], values['pe_value'])
+        BUFFER_THRESHOLD = 10.0  # 10% buffer
+        
+        # Rule: If Trend UP and we are holding SHORT CALL (CE dominant) + Significant Imbalance
+        if regime == MarketRegime.TREND_UP and current_dominant == 'CE':
+            if imbalance > BUFFER_THRESHOLD:
+                print(f"  🚨 STRUCTURAL BREAK: Trend UP (LTP > PDH) & CE Dominant by {imbalance:.1f}% (>10%)")
+                return True
+            else:
+                print(f"  ⚠️ Trend UP but CE Imbalance {imbalance:.1f}% < 10% - Holding (Buffer)")
+            
+        # Rule: If Trend DOWN and we are holding SHORT PUT (PE dominant) + Significant Imbalance
+        if regime == MarketRegime.TREND_DOWN and current_dominant == 'PE':
+            if imbalance > BUFFER_THRESHOLD:
+                print(f"  🚨 STRUCTURAL BREAK: Trend DOWN (LTP < PDL) & PE Dominant by {imbalance:.1f}% (>10%)")
+                return True
+            else:
+                print(f"  ⚠️ Trend DOWN but PE Imbalance {imbalance:.1f}% < 10% - Holding (Buffer)")
+            
+        return False
+
+    # ==================== HELPER METHODS ====================
+    
+    def get_strike_token(self, strike, option_type):
+        """Find token for a specific strike and type."""
+        for token, details in self.options_map.items():
+            if details['strike'] == strike and details['type'] == option_type:
+                return token
+        return None
+
+    def get_cached_lot_size(self, symbol):
+        """Get lot size with caching."""
+        if symbol in self.lot_size_cache:
+            return self.lot_size_cache[symbol]
+        lot_size = get_lot_size(self.master_df, symbol)
+        self.lot_size_cache[symbol] = lot_size
+        return lot_size
+
+    def get_position_values(self):
+        """Get current CE and PE values and LTPs. Handles directional (single leg) mode."""
+        has_ce = 'CE' in self.positions
+        has_pe = 'PE' in self.positions
+        
+        if not has_ce and not has_pe:
+            return None
+        
+        ce_pos = self.positions.get('CE', {})
+        pe_pos = self.positions.get('PE', {})
+        
+        ce_ltp = data_store.get_ltp(ce_pos.get('token')) if has_ce else 0
+        pe_ltp = data_store.get_ltp(pe_pos.get('token')) if has_pe else 0
+        
+        # If we have a leg but no LTP yet, wait
+        if (has_ce and ce_ltp <= 0) or (has_pe and pe_ltp <= 0):
+            return None
+        
+        ce_value = abs(ce_pos['qty']) * ce_ltp if has_ce else 0
+        pe_value = abs(pe_pos['qty']) * pe_ltp if has_pe else 0
+        
+        return {
+            'ce_value': ce_value, 'pe_value': pe_value,
+            'ce_ltp': ce_ltp, 'pe_ltp': pe_ltp,
+            'ce_qty': abs(ce_pos.get('qty', 0)), 'pe_qty': abs(pe_pos.get('qty', 0))
+        }
+
+    def calculate_total_mtm(self, cache_duration=5):
+        """
+        Calculate Strategy-Isolated MTM:
+        = (Unrealized PnL of Current Open Positions) + (Cumulative Realized PnL from Past Trades)
+        
+        This ensures MTM tracks ONLY this strategy's performance, even if multiple strategies run in parallel.
+        
+        Returns:
+            tuple: (total_mtm, unrealized_pnl) where:
+                - total_mtm = unrealized + cumulative_realized (for overall tracking)
+                - unrealized_pnl = current active trade only (for TSL/targets)
+        """
+        # Check cache
+        if time.time() - self.last_mtm_update < cache_duration:
+            return self.cached_mtm, self.cached_unrealized_pnl
+
+        unrealized_pnl = 0.0
+        
+        try:
+            positions_data = self.client.positions()
+            if not positions_data or 'data' not in positions_data:
+                # No open positions, return realized PnL and 0 for unrealized
+                return self.cumulative_realized_pnl, 0.0
+                
+            # Get set of active tokens for this strategy
+            active_tokens = set()
+            for key, pos in self.positions.items():
+                if 'token' in pos:
+                    active_tokens.add(str(pos['token']))
+            
+            # Calculate Unrealized PnL for ONLY this strategy's current positions
+            for pos in positions_data['data']:
+                try:
+                    tok = str(pos.get('tok', pos.get('tk', '')))
+                    
+                    # Filter: Only this strategy's active positions
+                    if tok not in active_tokens:
+                        continue
+
+                    # Parse Amounts
+                    buy_amt = float(pos.get('buyAmt', 0) or 0)
+                    cf_buy_amt = float(pos.get('cfBuyAmt', 0) or 0)
+                    sell_amt = float(pos.get('sellAmt', 0) or 0)
+                    cf_sell_amt = float(pos.get('cfSellAmt', 0) or 0)
+                    
+                    total_buy_amt = buy_amt + cf_buy_amt
+                    total_sell_amt = sell_amt + cf_sell_amt
+                    
+                    # Parse Quantities
+                    fl_buy_qty = int(pos.get('flBuyQty', 0) or 0)
+                    cf_buy_qty = int(pos.get('cfBuyQty', 0) or 0)
+                    fl_sell_qty = int(pos.get('flSellQty', 0) or 0)
+                    cf_sell_qty = int(pos.get('cfSellQty', 0) or 0)
+                    
+                    net_qty = (fl_buy_qty + cf_buy_qty) - (fl_sell_qty + cf_sell_qty)
+                    
+                    # Get Multiplier
+                    multiplier = float(pos.get('multiplier', 1) or 1)
+                    
+                    # Get LTP from DataStore (WebSocket)
+                    ltp = data_store.get_ltp(tok)
+                    if ltp == 0:
+                        ltp = float(pos.get('lp', 0) or 0)
+                        
+                    # Calculate PnL: (SellAmt - BuyAmt) + (NetQty * LTP * Multiplier)
+                    pnl = (total_sell_amt - total_buy_amt) + (net_qty * ltp * multiplier)
+                    unrealized_pnl += pnl
+                    
+                except Exception as ex:
+                    continue
+            
+        except Exception as e:
+            pass
+        
+        # Total Strategy MTM = Unrealized + Realized
+        total_mtm = unrealized_pnl + self.cumulative_realized_pnl
+        
+        # Update cache (both total and unrealized)
+        self.cached_mtm = total_mtm
+        self.cached_unrealized_pnl = unrealized_pnl
+        self.last_mtm_update = time.time()
+        
+        return total_mtm, unrealized_pnl
+
+    def reconcile_positions(self):
+        """
+        Sync internal position tracking with Broker's actual Net Qty.
+        Crucial for restarts or manual intervention.
+        """
+        print(f"  ⚖️ Reconciling Positions with Broker...")
+        try:
+            positions_data = self.client.positions()
+            if not positions_data or 'data' not in positions_data:
+                print("  ⚠️ No position data from broker.")
+                return
+
+            broker_map = {} # {token: net_qty}
+            for pos in positions_data['data']:
+                tok = str(pos.get('tok', pos.get('tk', '')))
+                
+                fl_buy_qty = int(pos.get('flBuyQty', 0) or 0)
+                cf_buy_qty = int(pos.get('cfBuyQty', 0) or 0)
+                fl_sell_qty = int(pos.get('flSellQty', 0) or 0)
+                cf_sell_qty = int(pos.get('cfSellQty', 0) or 0)
+                
+                net_qty = (fl_buy_qty + cf_buy_qty) - (fl_sell_qty + cf_sell_qty)
+                if net_qty != 0:
+                    broker_map[tok] = net_qty
+
+            # Update Internal State
+            with self.lock:
+                for key, internal_pos in self.positions.items():
+                    token = str(internal_pos['token'])
+                    if token in broker_map:
+                        actual_qty = broker_map[token]
+                        internal_qty = internal_pos['qty']
+                        
+                        if actual_qty != internal_qty:
+                            print(f"  🚨 MISMATCH DETECTED for {key}: Internal {internal_qty} vs Broker {actual_qty}")
+                            print(f"     ✅ Adopting Broker Quantity.")
+                            self.positions[key]['qty'] = actual_qty
+                        else:
+                            print(f"     ✅ {key} Matched: {actual_qty}")
+                    else:
+                        print(f"     ⚠️ {key} (Token {token}) NOT FOUND in Broker Positions! (May be closed)")
+                        # Decide: Mark as closed? Or keep as is? 
+                        # If we just opened it, it should be there. If not, maybe rejected?
+                        # For now, warn.
+                        
+        except Exception as e:
+            print(f"  ❌ Reconciliation Error: {e}")
+
+    def calculate_imbalance(self, ce_value, pe_value):
+        """Calculate imbalance percentage using max-based formula."""
+        max_val = max(ce_value, pe_value)
+        if max_val == 0:
+            return 0
+        return abs(ce_value - pe_value) / max_val * 100
+
+    def get_dominant_side(self, ce_value, pe_value):
+        """Return 'CE' or 'PE' based on which has higher value."""
+        return 'CE' if ce_value > pe_value else 'PE'
+
+    def log_state_transition(self, from_state, to_state, trigger, details=None):
+        """Log state transition with timestamp."""
+        entry = {
+            'timestamp': datetime.now().isoformat(),
+            'from_state': from_state.value,
+            'to_state': to_state.value,
+            'trigger': trigger,
+            'details': details or {}
+        }
+        self.state_log.append(entry)
+        print(f"\n  🔄 STATE TRANSITION: {from_state.value} → {to_state.value}")
+        print(f"     Trigger: {trigger}")
+        if details:
+            print(f"     Details: {json.dumps(details, indent=2)}")
+
+    # ==================== ORDER METHODS ====================
+
+    def check_order_status(self, order_id):
+        """Check status of a specific order."""
+        try:
+            print(f"  🔍 Checking status for Order ID: {order_id}")
+            report = self.client.order_report()
+            
+            if not report or not isinstance(report, dict):
+                return "Unknown"
+                
+            data = report.get('data', [])
+            for order in data:
+                if str(order.get('nOrdNo')) == str(order_id):
+                    status = order.get('ordSt', 'Unknown')
+                    print(f"  ℹ️ Order {order_id} Status: {status}")
+                    return status
+            
+            return "NotFound"
+        except Exception as e:
+            print(f"  ❌ Error checking status: {e}")
+            return "Error"
+
+    def place_order(self, token, qty, transaction_type, tag="FSM"):
+        """Place an order. Respects DRY_RUN mode."""
+        symbol = self.options_map.get(token, {}).get('symbol', str(token))
+        try:
+            action = "BUY" if transaction_type == "B" else "SELL"
+            print(f"  📝 {'[DRY RUN] ' if DRY_RUN else ''}ORDER: {action} {qty} x {symbol} [{tag}]")
+            
+            if DRY_RUN:
+                print(f"  🧪 DRY RUN: Order simulated - {action} {qty} x {symbol}")
+                return True
+            
+            response = self.client.place_order(
+                exchange_segment="nse_fo", product="MIS", price="0", order_type="MKT",
+                quantity=str(qty), validity="DAY", trading_symbol=symbol,
+                transaction_type=transaction_type, amo="NO"
+            )
+            
+            if response and isinstance(response, dict) and 'nOrdNo' in response:
+                order_id = response['nOrdNo']
+                print(f"  ✅ Order Placed! ID: {order_id}")
+                time.sleep(1)
+                status = self.check_order_status(order_id)
+                return status.lower() in ['complete', 'open', 'pending', 'filled']
+            else:
+                print(f"  ❌ Order API error: {response}")
+            return False
+        except Exception as e:
+            print(f"  ❌ Order Exception: {e}")
+            return False
+
+    def find_value_balanced_strikes(self, atm_strike):
+        """
+        Find CE and PE strikes based on TARGET PREMIUM (DTE-adjusted).
+        Better for weekly expiry strategies where premiums shrink near expiry.
+        
+        Logic:
+        1. Calculate DTE from self.expiry
+        2. Get premium range from DTE_PREMIUM_MAP
+        3. Find strikes where premium is in range
+        4. Balance premiums between legs
+        """
+        print(f"\n⚡ Finding Strikes by Premium Target (DTE-Adjusted)...")
+        
+        # Calculate Days To Expiry (robust parsing)
+        today = datetime.now().date()
+        try:
+            if hasattr(self.expiry, 'date'):
+                expiry_date = self.expiry.date()  # datetime object
+            elif isinstance(self.expiry, str):
+                # Try common date formats
+                for fmt in ['%Y-%m-%d', '%d-%m-%Y', '%d%b%Y']:
+                    try:
+                        expiry_date = datetime.strptime(self.expiry, fmt).date()
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    print(f"  ⚠️ Could not parse expiry string: {self.expiry}. Using default range.")
+                    expiry_date = today  # Fallback to 0 DTE
+            else:
+                expiry_date = self.expiry  # Assume it's already a date
+        except Exception as e:
+            print(f"  ⚠️ Expiry parsing error: {e}. Using default range.")
+            expiry_date = today
+            
+        dte = (expiry_date - today).days
+        dte = max(0, dte)  # Ensure non-negative
+        
+        # Get premium range for this DTE
+        min_premium, max_premium = DTE_PREMIUM_MAP.get(dte, DEFAULT_PREMIUM_RANGE)
+        
+        print(f"  📅 DTE: {dte} days (Expiry: {expiry_date})")
+        print(f"  🎯 Target Premium: ₹{min_premium} - ₹{max_premium} per leg")
+        
+        strike_step = NIFTY_STRIKE_INTERVAL
+        max_width = 500  # Maximum search distance from ATM
+        
+        # Find CE strike (start close to ATM, widen until premium is in range)
+        # Incorporate additional_offset for subsequent cycles
+        ce_strike = atm_strike + strike_step + self.additional_offset
+        ce_token = None
+        ce_ltp = 0
+        
+        for offset in range(strike_step, max_width + strike_step, strike_step):
+            test_strike = atm_strike + offset
+            test_token = self.get_strike_token(test_strike, 'CE')
+            if test_token:
+                ltp = data_store.get_ltp(test_token)
+                if ltp == 0:
+                    time.sleep(0.5)
+                    ltp = data_store.get_ltp(test_token)
+                
+                print(f"    CE {test_strike}: ₹{ltp:.2f}")
+                
+                if min_premium <= ltp <= max_premium:
+                    ce_strike = test_strike
+                    ce_token = test_token
+                    ce_ltp = ltp
+                    print(f"  ✅ CE Selected: {ce_strike} @ ₹{ce_ltp:.2f}")
+                    break
+                elif ltp < min_premium:
+                    # Premium too low, use this strike (best available)
+                    ce_strike = test_strike
+                    ce_token = test_token
+                    ce_ltp = ltp
+                    print(f"  ⚠️ CE Premium low, using: {ce_strike} @ ₹{ce_ltp:.2f}")
+                    break
+        
+        # Find PE strike (same logic)
+        pe_strike = atm_strike - strike_step - self.additional_offset
+        pe_token = None
+        pe_ltp = 0
+        
+        for offset in range(strike_step, max_width + strike_step, strike_step):
+            test_strike = atm_strike - offset
+            test_token = self.get_strike_token(test_strike, 'PE')
+            if test_token:
+                ltp = data_store.get_ltp(test_token)
+                if ltp == 0:
+                    time.sleep(0.5)
+                    ltp = data_store.get_ltp(test_token)
+                
+                print(f"    PE {test_strike}: ₹{ltp:.2f}")
+                
+                if min_premium <= ltp <= max_premium:
+                    pe_strike = test_strike
+                    pe_token = test_token
+                    pe_ltp = ltp
+                    print(f"  ✅ PE Selected: {pe_strike} @ ₹{pe_ltp:.2f}")
+                    break
+                elif ltp < min_premium:
+                    pe_strike = test_strike
+                    pe_token = test_token
+                    pe_ltp = ltp
+                    print(f"  ⚠️ PE Premium low, using: {pe_strike} @ ₹{pe_ltp:.2f}")
+                    break
+        
+        # Fallback: If no token found, use ATM strikes
+        if ce_token is None:
+            print(f"  ⚠️ No CE in premium range found. Falling back to ATM+{strike_step}")
+            ce_strike = atm_strike + strike_step
+            ce_token = self.get_strike_token(ce_strike, 'CE')
+            ce_ltp = data_store.get_ltp(ce_token) if ce_token else 0
+            
+        if pe_token is None:
+            print(f"  ⚠️ No PE in premium range found. Falling back to ATM-{strike_step}")
+            pe_strike = atm_strike - strike_step
+            pe_token = self.get_strike_token(pe_strike, 'PE')
+            pe_ltp = data_store.get_ltp(pe_token) if pe_token else 0
+        
+        # Balance premiums if needed
+        if ce_ltp > 0 and pe_ltp > 0:
+            diff_pct = abs(ce_ltp - pe_ltp) / max(ce_ltp, pe_ltp) * 100
+            print(f"\n  📊 Initial: CE {ce_strike} @ ₹{ce_ltp:.2f} | PE {pe_strike} @ ₹{pe_ltp:.2f} | Diff: {diff_pct:.1f}%")
+            
+            # Fine-tune: adjust the more expensive leg
+            max_tune_attempts = 5
+            for i in range(max_tune_attempts):
+                if diff_pct <= 15:  # Within 15% is acceptable
+                    print(f"  ✅ Balanced! Final diff: {diff_pct:.1f}%")
+                    break
+                    
+                if ce_ltp > pe_ltp:
+                    # Move CE further OTM
+                    ce_strike += strike_step
+                    new_token = self.get_strike_token(ce_strike, 'CE')
+                    if new_token:
+                        ce_token = new_token
+                        ce_ltp = data_store.get_ltp(ce_token)
+                        print(f"    Adjusting CE to {ce_strike} @ ₹{ce_ltp:.2f}")
+                    else:
+                        print(f"    ⚠️ No CE token at {ce_strike}, stopping balance")
+                        break
+                else:
+                    # Move PE further OTM
+                    pe_strike -= strike_step
+                    new_token = self.get_strike_token(pe_strike, 'PE')
+                    if new_token:
+                        pe_token = new_token
+                        pe_ltp = data_store.get_ltp(pe_token)
+                        print(f"    Adjusting PE to {pe_strike} @ ₹{pe_ltp:.2f}")
+                    else:
+                        print(f"    ⚠️ No PE token at {pe_strike}, stopping balance")
+                        break
+                
+                if ce_ltp > 0 and pe_ltp > 0:
+                    diff_pct = abs(ce_ltp - pe_ltp) / max(ce_ltp, pe_ltp) * 100
+        else:
+            print(f"  ⚠️ Missing LTP data. CE: {ce_ltp}, PE: {pe_ltp}")
+        
+        print(f"\n  🎯 Final Strikes: CE {ce_strike} | PE {pe_strike}")
+        return ce_strike, pe_strike
+
+    # ==================== FSM STATE HANDLERS ====================
+
+    def do_init(self, atm_strike):
+        """INIT State: Enter initial positions."""
+        print(f"\n{'='*60}")
+        print(f"  📍 FSM STATE: {self.state.value}")
+        print(f"{'='*60}")
+        
+        # Wait for WebSocket data BEFORE selecting strikes to ensure we have LTPs
+        print(f"  ⏳ Waiting for WebSocket LTP data before strike selection...")
+        max_wait = 30
+        wait_start = time.time()
+        while time.time() - wait_start < max_wait:
+            # Check if we have ANY option data (Thread-safe check)
+            has_data = False
+            with data_store.lock:
+                # Create a snapshot or check within lock
+                has_data = any(v['ltp'] > 0 for k,v in data_store.tick_data.items() if k != str(self.nifty_token))
+            
+            if has_data:
+                print(f"  ✅ WebSocket option data streaming...")
+                break
+            time.sleep(1)
+        
+        # Find balanced strikes
+        ce_strike, pe_strike = self.find_value_balanced_strikes(atm_strike)
+        
+        ce_token = self.get_strike_token(ce_strike, 'CE')
+        pe_token = self.get_strike_token(pe_strike, 'PE')
+        
+        if not ce_token or not pe_token:
+            print(f"  ❌ Could not find tokens for {ce_strike} CE or {pe_strike} PE")
+            self.transition_to(FSMState.EXIT, "TOKEN_NOT_FOUND")
+            return
+            
+        # --- PRE-ENTRY STRUCTURAL BREAK CHECK ---
+        regime = self.get_current_regime()
+        skip_ce = False
+        skip_pe = False
+        
+        if regime == MarketRegime.TREND_UP:
+            print(f"\n  🚨 PRE-ENTRY BREAK: Market in TREND UP (LTP > PDH). Skipping CE (Short Call).")
+            skip_ce = True
+        elif regime == MarketRegime.TREND_DOWN:
+            print(f"\n  🚨 PRE-ENTRY BREAK: Market in TREND DOWN (LTP < PDL). Skipping PE (Short Put).")
+            skip_pe = True
+        # ----------------------------------------
+        
+        print(f"\n  🚀 ENTERING STRANGLE: {'Short '+str(ce_strike)+' CE' if not skip_ce else 'Skipped CE'} & {'Short '+str(pe_strike)+' PE' if not skip_pe else 'Skipped PE'}")
+        
+        ce_symbol = self.options_map.get(ce_token, {}).get('symbol')
+        pe_symbol = self.options_map.get(pe_token, {}).get('symbol')
+        
+        lot_size = self.get_cached_lot_size(ce_symbol)
+        qty = lot_size * MIN_LOT_MULTIPLIER
+        
+        print(f"  ⚙️ FSM Guardrails: min_lot={MIN_LOT_MULTIPLIER}, max_lot={MAX_LOT_MULTIPLIER}, max_value=₹{MAX_TOTAL_TRADE_VALUE}")
+        
+
+        
+        # Sell CE (if not skipped)
+        if not skip_ce:
+            if self.place_order(ce_token, qty, "S", "INIT_CE"):
+                self.positions['CE'] = {'token': ce_token, 'qty': -qty, 'strike': ce_strike, 'lots': MIN_LOT_MULTIPLIER}
+        
+        # Sell PE (if not skipped)
+        if not skip_pe:
+            if self.place_order(pe_token, qty, "S", "INIT_PE"):
+                self.positions['PE'] = {'token': pe_token, 'qty': -qty, 'strike': pe_strike, 'lots': MIN_LOT_MULTIPLIER}
+
+        # --- WINGS ---
+        if ENABLE_WINGS:
+            # Calculate Wing Strikes
+            today = datetime.now().date()
+            if hasattr(self.expiry, 'date'):
+                 dte = (self.expiry.date() - today).days
+            else:
+                 try:
+                    dte = (self.expiry - today).days
+                 except: dte = 0
+            dte = max(0, dte)
+            wing_offset = WING_OFFSET_MAP.get(dte, DEFAULT_WING_OFFSET)
+            
+            print(f"\n  🛡️ Adding Wings (Iron Condor) | DTE: {dte} | Offset: {wing_offset} pts")
+        
+            # CE Wing (Skip if CE skipped)
+            if not skip_ce:
+                ce_wing_strike = ce_strike + wing_offset
+                ce_wing_token = self.get_strike_token(ce_wing_strike, 'CE')
+                if ce_wing_token:
+                     if self.place_order(ce_wing_token, qty, "B", "INIT_CE_WING"):
+                         ce_wing_ltp = data_store.get_ltp(ce_wing_token)
+                         print(f"     ✅ CE Wing: BUY {ce_wing_strike} CE @ ₹{ce_wing_ltp:.2f}")
+                         self.positions['CE_WING'] = {'token': ce_wing_token, 'qty': qty, 'strike': ce_wing_strike}
+                else:
+                     print(f"     ⚠️ Could not find CE Wing token for {ce_wing_strike}")
+
+            # PE Wing (Skip if PE skipped)
+            if not skip_pe:
+                pe_wing_strike = pe_strike - wing_offset
+                pe_wing_token = self.get_strike_token(pe_wing_strike, 'PE')
+                if pe_wing_token:
+                     if self.place_order(pe_wing_token, qty, "B", "INIT_PE_WING"):
+                         pe_wing_ltp = data_store.get_ltp(pe_wing_token)
+                         print(f"     ✅ PE Wing: BUY {pe_wing_strike} PE @ ₹{pe_wing_ltp:.2f}")
+                         self.positions['PE_WING'] = {'token': pe_wing_token, 'qty': qty, 'strike': pe_wing_strike}
+                else:
+                     print(f"     ⚠️ Could not find PE Wing token for {pe_wing_strike}")
+                     
+        if 'CE' in self.positions or 'PE' in self.positions:
+            # --- SAFETY: RECONCILE POSITIONS ---
+            # Check broker for actual quantities to handle restart/double-entry scenarios
+            self.reconcile_positions()
+            # -----------------------------------
+
+            # Calculate and store initial credit for dynamic target/SL
+            ce_credit = 0.0
+            pe_credit = 0.0
+            
+            if 'CE' in self.positions:
+                ce_credit = data_store.get_ltp(ce_token) * qty
+            
+            if 'PE' in self.positions:
+                pe_credit = data_store.get_ltp(pe_token) * qty
+                
+            gross_credit = ce_credit + pe_credit
+            
+            # wing_cost is defined in the ENABLE_WINGS block, but might be undefined if disabled
+             # Ensure variable exists
+            w_cost = 0.0
+            if 'CE_WING' in self.positions:
+                w_cost += self.positions['CE_WING'].get('qty',0) * data_store.get_ltp(self.positions['CE_WING'].get('token'))
+            if 'PE_WING' in self.positions:
+                w_cost += self.positions['PE_WING'].get('qty',0) * data_store.get_ltp(self.positions['PE_WING'].get('token'))
+                
+            self.initial_credit = gross_credit - w_cost
+            
+            # Wait for broker to update positions
+            print(f"  ⏳ Waiting for position sync...")
+            time.sleep(2)
+            
+            target = self.initial_credit * TARGET_PROFIT_PCT / 100
+            sl = self.initial_credit * STOP_LOSS_PCT / 100
+            print(f"\n  💰 Gross Credit: ₹{gross_credit:,.2f} | Wing Cost: ₹{w_cost:,.2f}")
+            print(f"  💵 Net Initial Credit: ₹{self.initial_credit:,.2f}")
+            print(f"  🎯 Dynamic Target: ₹{target:,.2f} ({TARGET_PROFIT_PCT}%)")
+            print(f"  🛑 Dynamic SL: ₹{sl:,.2f} ({STOP_LOSS_PCT}%)")
+            
+            # Transition Logic
+            if 'CE' in self.positions and 'PE' in self.positions:
+                self.transition_to(FSMState.BALANCED, "POSITIONS_ENTERED")
+            elif skip_ce or skip_pe:
+                print(f"\n  🏹 Starting in DIRECTIONAL mode due to Pre-Entry Break.")
+                self.transition_to(FSMState.DIRECTIONAL_MONITOR, "PRE_ENTRY_STRUCTURAL_BREAK")
+            else:
+                 # Standard single leg (?) or partial fill - treat as directional if valid
+                 self.transition_to(FSMState.DIRECTIONAL_MONITOR, "PARTIAL_ENTRY")
+            
+            self.running = True
+        else:
+            self.transition_to(FSMState.EXIT, "ENTRY_FAILED")
+
+    def transition_to(self, new_state, trigger, details=None):
+        """Transition FSM to a new state with logging."""
+        old_state = self.state
+        self.log_state_transition(old_state, new_state, trigger, details)
+        self.state = new_state
+
+    def do_balanced(self, values):
+        """BALANCED State: Passive monitoring (Tight 30% Threshold)."""
+        imbalance = self.calculate_imbalance(values['ce_value'], values['pe_value'])
+        threshold = STATE_THRESHOLDS["BALANCED"]
+        
+        # Calculate MTM (Total includes Realized + Unrealized, Active is current trade only)
+        total_mtm, active_mtm = self.calculate_total_mtm()
+        mtm_str = f"₹{active_mtm:,.2f} (Total: ₹{total_mtm:,.2f})"
+
+        # Get Nifty Data
+        nifty_ltp = data_store.get_ltp(self.nifty_token)
+        nifty_chg = data_store.get_change(self.nifty_token)
+        
+        # Get OI Stats
+        atm_strike = round(nifty_ltp / 50) * 50
+        oi_stats = self.monitor_open_interest(atm_strike)
+        
+        # Calculate absolute difference
+        abs_diff = abs(values['ce_value'] - values['pe_value'])
+        
+        # Hybrid Threshold: Must exceed BOTH percentage AND absolute threshold
+        pct_exceeded = imbalance > threshold
+        abs_exceeded = abs_diff > MIN_ABS_DIFF_THRESHOLD
+        
+        if pct_exceeded and abs_exceeded:
+            # Check cooldown
+            if time.time() - self.last_adjustment_time < COOLDOWN_SECONDS:
+                remaining = COOLDOWN_SECONDS - (time.time() - self.last_adjustment_time)
+                print(f"  ⏳ Cooldown: {remaining:.0f}s remaining")
+                return
+            
+            self.transition_to(FSMState.ROLL_LOSER, f"IMBALANCE_{imbalance:.1f}%_DIFF_{abs_diff:.0f}", {
+                'ce_value': values['ce_value'], 'pe_value': values['pe_value']
+            })
+            self.do_roll_loser(values)
+        elif pct_exceeded and not abs_exceeded:
+            print(f"  ⚠️ Imbalance {imbalance:.1f}% exceeds threshold but abs diff ₹{abs_diff:.0f} < ₹{MIN_ABS_DIFF_THRESHOLD:.0f} - Skipping")
+
+    def do_roll_loser(self, values):
+        """ROLL_LOSER State: Close Losing (Dominant) Leg and Sell Further OTM Strike to Reduce Exposure."""
+        print(f"\n  📍 FSM STATE: {self.state.value}")
+        
+        # 1. Identify Dominant (Loser) vs Winner
+        dominant = self.get_dominant_side(values['ce_value'], values['pe_value'])
+        winner = 'PE' if dominant == 'CE' else 'CE'
+        
+        # CRITICAL: Check both legs exist (prevents KeyError in single-leg/directional mode)
+        if dominant not in self.positions or winner not in self.positions:
+            print(f"  ⚠️ Cannot roll - missing leg. {dominant}: {dominant in self.positions}, {winner}: {winner in self.positions}")
+            self.transition_to(FSMState.MONITOR, "MISSING_LEG_FOR_ROLL")
+            return
+        
+        loser_pos = self.positions[dominant]
+        winner_pos = self.positions[winner]
+        
+        loser_ltp = data_store.get_ltp(loser_pos['token'])
+        winner_ltp = data_store.get_ltp(winner_pos['token'])
+        
+        # CORRECTED LOGIC: Target Value = Match the WINNER's lower value (not the loser's high value)
+        # This REDUCES total exposure instead of doubling it
+        target_value = values['pe_value'] if dominant == 'CE' else values['ce_value']
+        
+        # CRITICAL: Validate qty to prevent division by zero
+        qty = abs(loser_pos['qty'])
+        if qty == 0:
+            print(f"  🚨 CRITICAL: {dominant} qty is 0! Position inconsistent. Escalating to MONITOR.")
+            self.transition_to(FSMState.MONITOR, "ZERO_QTY_ERROR")
+            return
+        
+        target_ltp = target_value / qty
+        
+        print(f"  ⚖️ Imbalance: {dominant} is Dominant (₹{values['ce_value'] if dominant=='CE' else values['pe_value']:.0f}). Rolling {dominant} (Loser) to reduce exposure")
+        print(f"  📊 Current: {dominant} @ ₹{loser_ltp:.2f} (loser), {winner} @ ₹{winner_ltp:.2f} (winner)")
+        print(f"  🎯 Target LTP for New {dominant}: ~₹{target_ltp:.2f} (matching {winner}'s value)")
+        
+        # 2. Find New Strike FURTHER OTM (not closer to ATM)
+        # For CE (Call): Further OTM = Higher Strike (Lower Premium)
+        # For PE (Put): Further OTM = Lower Strike (Lower Premium)
+        # We want to find a strike with premium close to target_ltp
+        
+        new_token, new_strike, new_ltp = self.find_strike_further_otm(
+            dominant, target_ltp, current_strike=loser_pos['strike']
+        )
+        
+        if not new_token:
+            print(f"  ❌ Could not find suitable roll candidate for {dominant} beyond strike {loser_pos['strike']}.")
+            print(f"  💡 All strikes further OTM have LTP=0 or don't exist. Escalating to MONITOR.")
+            self.transition_to(FSMState.MONITOR, "ROLL_CANDIDATE_NOT_FOUND")
+            return
+        
+        # Sanity Check: Ensure we're moving AWAY from ATM, not toward it
+        if dominant == 'CE' and new_strike <= loser_pos['strike']:
+            print(f"  🚫 INVALID ROLL: CE new strike {new_strike} <= current {loser_pos['strike']} (should be higher/further OTM)")
+            print(f"  ⚠️ Cannot roll. Escalating to MONITOR.")
+            self.transition_to(FSMState.MONITOR, "INVALID_ROLL_DIRECTION")
+            return
+        elif dominant == 'PE' and new_strike >= loser_pos['strike']:
+            print(f"  🚫 INVALID ROLL: PE new strike {new_strike} >= current {loser_pos['strike']} (should be lower/further OTM)")
+            print(f"  ⚠️ Cannot roll. Escalating to MONITOR.")
+            self.transition_to(FSMState.MONITOR, "INVALID_ROLL_DIRECTION")
+            return
+            
+        print(f"  🔄 Rolling {dominant}: {loser_pos['strike']} (LTP {loser_ltp}) → {new_strike} (LTP {new_ltp}) [Further OTM]")
+        
+        if new_token == loser_pos['token']:
+            print(f"  ⚠️ Best candidate is current strike. No roll possible.")
+            self.transition_to(FSMState.MONITOR, "NO_BETTER_STRIKE")
+            return
+
+        # 3. Execute Roll (Buy Back Old → Sell New)
+        
+        # A. Buy Back Old (Square Off Loser)
+        print(f"  1️⃣ Closing Old {dominant}: BUY {qty} x {self.options_map[loser_pos['token']]['symbol']}")
+        exit_success = self.place_order(loser_pos['token'], qty, "B", f"ROLL_EXIT_{dominant}")
+        
+        if not exit_success:
+            print(f"  ❌ Failed to close old leg. Aborting Roll.")
+            self.transition_to(FSMState.BALANCED, "ROLL_EXIT_FAILED")
+            return
+            
+        # Update Position (Temporarily 0 qty)
+        with self.lock:
+             self.positions[dominant]['qty'] = 0
+        
+        # B. Sell New (Enter at Further OTM Strike)
+        print(f"  2️⃣ Opening New {dominant}: SELL {qty} x {self.options_map[new_token]['symbol']}")
+        entry_success = self.place_order(new_token, qty, "S", f"ROLL_ENTRY_{dominant}")
+        
+        if entry_success:
+            with self.lock:
+                self.positions[dominant] = {
+                    'token': new_token,
+                    'qty': -qty, # Maintain same quantity
+                    'strike': new_strike,
+                    'lots': loser_pos.get('lots', 2) # Preserve lot count
+                }
+            
+            self.last_adjustment_time = time.time()
+            self.log_rebalance("ROLL", dominant, qty, values) # Log the roll
+            
+            print(f"  ✅ Roll Successful! {dominant} moved further OTM. Returning to BALANCED.")
+            self.transition_to(FSMState.BALANCED, "ROLL_COMPLETE")
+            
+        else:
+            print(f"  🚨 CRITICAL: Failed to open new leg after closing old! Position is now naked!")
+            # This is a critical failure state. We should probably try to re-enter old or exit all.
+            # For now, transition to MONITOR so human/algo watches the single-leg position
+            self.transition_to(FSMState.MONITOR, "ROLL_ENTRY_FAILED")
+
+    def find_strike_further_otm(self, option_type, target_premium, current_strike):
+        """
+        Find a strike FURTHER OTM (away from ATM) with LTP closest to target_premium.
+        
+        Args:
+            option_type: 'CE' or 'PE'
+            target_premium: Target LTP to match (should be lower than current premium)
+            current_strike: Current strike price
+            
+        Returns:
+            (token, strike, ltp) tuple for the best match, or (None, 0, 0) if not found
+            
+        Logic:
+            - For CE: Search strikes HIGHER than current (further OTM = lower premium)
+            - For PE: Search strikes LOWER than current (further OTM = lower premium)
+        """
+        best_token = None
+        min_diff = float('inf')
+        best_strike = 0
+        best_ltp = 0
+        
+        # Scan all options of that type
+        for token, details in self.options_map.items():
+            if details['type'] == option_type:
+                strike = details['strike']
+                
+                # Direction filter: Only consider strikes FURTHER from ATM
+                if option_type == 'CE':
+                    # For CE, further OTM = HIGHER strike
+                    if strike <= current_strike:
+                        continue  # Skip strikes at or below current
+                elif option_type == 'PE':
+                    # For PE, further OTM = LOWER strike
+                    if strike >= current_strike:
+                        continue  # Skip strikes at or above current
+                
+                ltp = data_store.get_ltp(token)
+                if ltp > 0:
+                    diff = abs(ltp - target_premium)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_token = token
+                        best_strike = strike
+                        best_ltp = ltp
+                        
+        return best_token, best_strike, best_ltp
+
+
+    def find_closest_strike_by_premium(self, option_type, target_premium, strike_limit=None):
+        """
+        Find the token with LTP closest to target_premium.
+        
+        Args:
+            option_type: 'CE' or 'PE'
+            target_premium: Target LTP to match
+            strike_limit: Boundary strike to prevent crossover:
+                          - For PE: max strike allowed (cannot go above CE strike)
+                          - For CE: min strike allowed (cannot go below PE strike)
+        """
+        best_token = None
+        min_diff = float('inf')
+        best_strike = 0
+        best_ltp = 0
+        
+        # Scan all options of that type
+        for token, details in self.options_map.items():
+            if details['type'] == option_type:
+                strike = details['strike']
+                
+                # Strike Crossover Prevention:
+                # PE cannot roll to a strike ABOVE the CE strike
+                # CE cannot roll to a strike BELOW the PE strike
+                if strike_limit is not None:
+                    if option_type == 'PE' and strike > strike_limit:
+                        continue  # Skip PE strikes above CE
+                    if option_type == 'CE' and strike < strike_limit:
+                        continue  # Skip CE strikes below PE
+                
+                ltp = data_store.get_ltp(token)
+                if ltp > 0:
+                    diff = abs(ltp - target_premium)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_token = token
+                        best_strike = strike
+                        best_ltp = ltp
+                        
+        return best_token, best_strike, best_ltp
+
+
+
+    def do_monitor(self, values):
+        """MONITOR State: Strict observation (Tight 30%)."""
+        imbalance = self.calculate_imbalance(values['ce_value'], values['pe_value'])
+        current_dominant = self.get_dominant_side(values['ce_value'], values['pe_value'])
+        threshold = STATE_THRESHOLDS["MONITOR"]
+        
+        if imbalance <= threshold:
+            print(f"  ✅ Balanced (within {threshold}%) in MONITOR state.")
+            return
+        
+        # Check for reversal (Log only, no special action needed as Roll handles value match)
+        if self.previous_dominant and current_dominant != self.previous_dominant:
+            print(f"  🔄 REVERSAL DETECTED: {self.previous_dominant} → {current_dominant}")
+            self.previous_dominant = current_dominant # Update tracker
+            
+        # Imbalance persists 
+        if imbalance > threshold:
+            print(f"  ⚠️ Persistent imbalance. Triggering EXIT.")
+            self.transition_to(FSMState.EXIT, "POST_MONITOR_IMBALANCE")
+            self.exit_reason = ExitReason.POST_MONITOR_IMBALANCE
+            self.do_exit()
+
+
+
+    def do_exit(self):
+        """EXIT State: Square off all positions."""
+        print(f"\n{'='*60}")
+        print(f"  🛑 FSM STATE: {self.state.value}")
+        print(f"  Exit Reason: {self.exit_reason.value}")
+        print(f"{'='*60}")
+        
+        # --- CAPTURE REALIZED PnL BEFORE CLOSING ---
+        # Get current positions' PnL and add to cumulative tracker
+        try:
+            exit_pnl = 0.0
+            positions_data = self.client.positions()
+            if positions_data and 'data' in positions_data:
+                active_tokens = set()
+                for key, pos in self.positions.items():
+                    if 'token' in pos:
+                        active_tokens.add(str(pos['token']))
+                        
+                for pos in positions_data['data']:
+                    tok = str(pos.get('tok', pos.get('tk', '')))
+                    if tok not in active_tokens:
+                        continue
+                        
+                    # Calculate realized PnL for this position
+                    buy_amt = float(pos.get('buyAmt', 0) or 0) + float(pos.get('cfBuyAmt', 0) or 0)
+                    sell_amt = float(pos.get('sellAmt', 0) or 0) + float(pos.get('cfSellAmt', 0) or 0)
+                    
+                    net_buy = (int(pos.get('flBuyQty', 0) or 0) + int(pos.get('cfBuyQty', 0) or 0))
+                    net_sell = (int(pos.get('flSellQty', 0) or 0) + int(pos.get('cfSellQty', 0) or 0))
+                    net_qty = net_buy - net_sell
+                    
+                    multiplier = float(pos.get('multiplier', 1) or 1)
+                    ltp = data_store.get_ltp(tok)
+                    if ltp == 0:
+                        ltp = float(pos.get('lp', 0) or 0)
+                        
+                    pnl = (sell_amt - buy_amt) + (net_qty * ltp * multiplier)
+                    exit_pnl += pnl
+            
+            self.cumulative_realized_pnl += exit_pnl
+            print(f"  💰 Realized PnL from this cycle: ₹{exit_pnl:.2f}")
+            print(f"  📊 Cumulative Strategy PnL (All Cycles): ₹{self.cumulative_realized_pnl:.2f}")
+        except Exception as e:
+            print(f"  ⚠️ Could not capture realized PnL: {e}")
+        # ---------------------------------------------
+            
+        # Only stop the master loop if it's a termination-level exit
+        if self.exit_reason in [ExitReason.TIME_EXIT, ExitReason.MANUAL]:
+            self.running = False
+            print(f"  🛑 Program Terminating...")
+        else:
+            print(f"  ♻️ Cycle Completed. Waiting for potential restart...")
+        
+        # Square off CE
+        if 'CE' in self.positions:
+            ce_pos = self.positions['CE']
+            if ce_pos['qty'] < 0:  # Short position
+                self.place_order(ce_pos['token'], abs(ce_pos['qty']), "B", "EXIT_CE")
+        
+        # Square off PE
+        if 'PE' in self.positions:
+            pe_pos = self.positions['PE']
+            if pe_pos['qty'] < 0:  # Short position
+                self.place_order(pe_pos['token'], abs(pe_pos['qty']), "B", "EXIT_PE")
+        
+        # Square off Wings (if present)
+        if 'CE_WING' in self.positions:
+            wing_pos = self.positions['CE_WING']
+            if wing_pos['qty'] > 0:  # Long position
+                self.place_order(wing_pos['token'], wing_pos['qty'], "S", "EXIT_CE_WING")
+        
+        if 'PE_WING' in self.positions:
+            wing_pos = self.positions['PE_WING']
+            if wing_pos['qty'] > 0:  # Long position
+                self.place_order(wing_pos['token'], wing_pos['qty'], "S", "EXIT_PE_WING")
+        
+        # --- RESET STATE FOR NEXT CYCLE ---
+        with self.lock:
+            self.positions = {}
+            self.state = FSMState.EXIT  # Maintain EXIT until loop restarts
+            self.max_mtm_high = -float('inf') 
+            # Note: cumulative_realized_pnl is NOT reset - it tracks all cycles
+            # Note: self.additional_offset is NOT reset here, but in the run() loop or upon strategy logic
+        print(f"\n  📋 FSM LOG SUMMARY:")
+        print(f"     State transitions: {len(self.state_log)}")
+        print(f"     Rebalance actions: {len(self.rebalance_log)}")
+        print(f"     Final exit reason: {self.exit_reason.value}")
+
+    def do_structural_flip(self, current_dominant, regime):
+        """
+        Convert Strangle to Directional Trade on Structural Break.
+        Square off the losing leg (counter-trend). Keep winning leg.
+        """
+        print(f"\n  🔄 STRUCTURAL FLIP: Switching to Directional Mode ({regime.value})")
+        
+        losing_leg = None
+        
+        if regime == MarketRegime.TREND_UP:
+            # Trend UP -> CE is losing (Short Call)
+            losing_leg = 'CE'
+        elif regime == MarketRegime.TREND_DOWN:
+            # Trend DOWN -> PE is losing (Short Put)
+            losing_leg = 'PE'
+            
+        if losing_leg and losing_leg in self.positions:
+            pos = self.positions[losing_leg]
+            qty = abs(pos['qty'])
+            print(f"  👋 Exiting Losing Leg: {losing_leg} ({qty} qty)")
+            
+            # Square off losing leg
+            self.place_order(pos['token'], qty, "B", f"FLIP_EXIT_{losing_leg}")
+            
+            # Also close the corresponding wing (if exists)
+            wing_key = f"{losing_leg}_WING"
+            if wing_key in self.positions:
+                wing_pos = self.positions[wing_key]
+                if wing_pos['qty'] > 0:
+                    self.place_order(wing_pos['token'], wing_pos['qty'], "S", f"FLIP_EXIT_{wing_key}")
+                    print(f"  👋 Exiting Wing: {wing_key}")
+                del self.positions[wing_key]
+            
+            # Remove from positions tracking
+            del self.positions[losing_leg]
+            
+            # Transition to Directional Monitor
+            self.transition_to(FSMState.DIRECTIONAL_MONITOR, "STRUCTURAL_FLIP")
+        else:
+            print(f"  ⚠️ Could not find losing leg {losing_leg} to flip. Exiting all.")
+            self.transition_to(FSMState.EXIT, "FLIP_FAILED")
+            self.do_exit()
+
+    def do_directional_monitor(self, val):
+        """
+        Monitor single leg position.
+        - Check for V-shape recovery (Regime returns to RANGE) → Re-enter missing leg
+        - Otherwise rely on Global MTM Target/Stop Loss for exit
+        """
+        mtm = self.calculate_total_mtm()
+        regime = self.get_current_regime()
+        
+        # Identify which leg is missing
+        has_ce = 'CE' in self.positions
+        has_pe = 'PE' in self.positions
+        missing_leg = 'PE' if has_ce and not has_pe else ('CE' if has_pe and not has_ce else None)
+        
+        if not missing_leg:
+            # Both legs present or neither - shouldn't happen, but handle gracefully
+            return
+        
+        # V-Shape Recovery: If regime returns to RANGE, re-enter missing leg
+        if regime == MarketRegime.RANGE:
+            print(f"\n  🔄 V-SHAPE RECOVERY DETECTED: Regime back to RANGE")
+            print(f"     Re-entering missing leg: {missing_leg}")
+            
+            # Get current Nifty price for ATM calculation
+            nifty_ltp = data_store.get_ltp(self.nifty_token)
+            atm_strike = round(nifty_ltp / NIFTY_STRIKE_INTERVAL) * NIFTY_STRIKE_INTERVAL
+            
+            # Calculate DTE for premium targeting
+            today = datetime.now().date()
+            expiry_date = self.expiry.date() if hasattr(self.expiry, 'date') else self.expiry
+            dte = max(0, (expiry_date - today).days)
+            
+            # Get target premium range
+            min_premium, max_premium = DTE_PREMIUM_MAP.get(dte, DEFAULT_PREMIUM_RANGE)
+            target_premium = (min_premium + max_premium) / 2
+            
+            # Find strike for missing leg
+            new_token, new_strike, new_ltp = self.find_closest_strike_by_premium(
+                missing_leg, target_premium
+            )
+            
+            if not new_token:
+                print(f"     ⚠️ Could not find suitable {missing_leg} strike. Staying directional.")
+                return
+            
+            # Get lot size from existing position
+            existing_leg = 'CE' if has_ce else 'PE'
+            qty = abs(self.positions[existing_leg]['qty'])
+            
+            # Sell missing leg
+            print(f"     📝 SELL {new_strike} {missing_leg} @ ₹{new_ltp:.2f}")
+            if self.place_order(new_token, qty, "S", f"RECOVERY_{missing_leg}"):
+                self.positions[missing_leg] = {
+                    'token': new_token, 
+                    'qty': -qty, 
+                    'strike': new_strike, 
+                    'lots': self.positions[existing_leg].get('lots', 2)
+                }
+                
+                # Buy wing if enabled
+                if ENABLE_WINGS:
+                    wing_offset = WING_OFFSET_MAP.get(dte, DEFAULT_WING_OFFSET)
+                    if missing_leg == 'CE':
+                        wing_strike = new_strike + wing_offset
+                    else:
+                        wing_strike = new_strike - wing_offset
+                    
+                    wing_token = self.get_strike_token(wing_strike, missing_leg)
+                    if wing_token:
+                        wing_ltp = data_store.get_ltp(wing_token)
+                        if self.place_order(wing_token, qty, "B", f"RECOVERY_{missing_leg}_WING"):
+                            self.positions[f'{missing_leg}_WING'] = {
+                                'token': wing_token, 'qty': qty, 'strike': wing_strike
+                            }
+                            print(f"     🛡️ BUY Wing: {wing_strike} {missing_leg} @ ₹{wing_ltp:.2f}")
+                
+                
+                # --- CREDIT UPDATE ON RECOVERY ---
+                # Add the premium collected from the new leg (minus new wing cost)
+                # to the initial credit baseline so SL/Target scales correctly.
+                new_credit = qty * new_ltp
+                new_wing_cost = 0.0
+                
+                # Only calculate wing cost if wings are enabled AND wing was added
+                if ENABLE_WINGS and wing_token and f'{missing_leg}_WING' in self.positions:
+                    wing_ltp = data_store.get_ltp(wing_token)
+                    new_wing_cost = qty * wing_ltp
+                
+                self.initial_credit += (new_credit - new_wing_cost)
+                print(f"     💰 Updated Gross Credit Basis: ₹{self.initial_credit:,.2f}")
+                
+                print(f"     ✅ Recovery Complete! Back to Iron Condor.")
+                self.transition_to(FSMState.BALANCED, "V_SHAPE_RECOVERY")
+            else:
+                print(f"     ❌ Failed to re-enter {missing_leg}. Staying directional.")
+
+    def monitor_open_interest(self, atm_strike):
+        """
+        Analyze Open Interest for ATM +/- 6 strikes.
+        Returns formatted OI stats string.
+        """
+        try:
+            start_strike = atm_strike - (6 * 50)
+            end_strike = atm_strike + (6 * 50)
+            
+            ce_oi_sum = 0
+            pe_oi_sum = 0
+            
+            for token, info in self.options_map.items():
+                s = info['strike']
+                if start_strike <= s <= end_strike:
+                    oi = data_store.get_oi(token)
+                    if info['type'] == 'CE':
+                        ce_oi_sum += oi
+                    elif info['type'] == 'PE':
+                        pe_oi_sum += oi
+            
+            diff = pe_oi_sum - ce_oi_sum  # PE - CE
+            
+            # Return formatted string instead of printing
+            return f"| OI CE: {ce_oi_sum:,} | PE: {pe_oi_sum:,} | Diff: {diff:+,}"
+            
+        except Exception as e:
+            return f"| OI Error: {e}"
+
+    def log_rebalance(self, action_type, side, qty, values):
+        """Log a rebalance action."""
+        entry = {
+            'timestamp': datetime.now().isoformat(),
+            'action': action_type,
+            'side': side,
+            'qty': qty,
+            'ce_value': round(values['ce_value'], 2),
+            'pe_value': round(values['pe_value'], 2),
+            'imbalance': round(self.calculate_imbalance(values['ce_value'], values['pe_value']), 2)
+        }
+        self.rebalance_log.append(entry)
+        print(f"  📝 LOG: {json.dumps(entry)}")
+
+    # ==================== MAIN LOOP ====================
+
+    def start_cycle(self):
+        """Determine whether to start fresh or resume existing positions."""
+        # 1. Check for existing positions (Restart/Recovery)
+        if self.positions:
+            print(f"  ⚠️ Existing positions detected (Restart/Recon). Skipping Order Placement.")
+            if 'CE' in self.positions and 'PE' in self.positions:
+                self.state = FSMState.BALANCED
+            else:
+                self.state = FSMState.DIRECTIONAL_MONITOR
+            return
+
+        # 2. Fresh Start
+        nifty_ltp = data_store.get_ltp(self.nifty_token)
+        if nifty_ltp == 0:
+             print("  ⏳ Waiting for Nifty LTP...")
+             time.sleep(2)
+             nifty_ltp = data_store.get_ltp(self.nifty_token)
+
+        atm_strike = round(nifty_ltp / NIFTY_STRIKE_INTERVAL) * NIFTY_STRIKE_INTERVAL
+        self.state = FSMState.INIT
+        self.do_init(atm_strike)
+
+    def run(self):
+        """Main FSM monitoring loop with Multi-Cycle support."""
+        print(f"\n  👀 FSM Monitoring Started...")
+        print(f"  ⚙️ Guardrails: thresholds={STATE_THRESHOLDS}, cooldown={COOLDOWN_SECONDS}s, DRY_RUN={DRY_RUN}")
+        
+        while self.running:
+            # --- START NEW CYCLE ---
+            self.cycle_count += 1
+            print(f"\n{'#'*60}")
+            print(f"  🚀 STARTING TRADE CYCLE #{self.cycle_count}")
+            print(f"  📐 Current Strike Offset: {self.additional_offset} pts")
+            print(f"{'#'*60}")
+            
+            # Initialize or Restore
+            self.start_cycle()
+            
+            # 2. Main Monitoring Loop for THIS cycle
+            while self.running and self.state != FSMState.EXIT:
+                time.sleep(2)
+                
+                # --- POLLING YFINANCE (Every 60s) ---
+                if time.time() - self.last_yf_update > 60:
+                    self.update_nifty_intraday()
+                # ------------------------------------
+                
+                try:
+                    values = self.get_position_values()
+                    if not values:
+                        # Show heartbeat so user knows loop is running
+                        ce_token = self.positions.get('CE', {}).get('token', 'N/A')
+                        pe_token = self.positions.get('PE', {}).get('token', 'N/A')
+                        ce_ltp = data_store.get_ltp(ce_token) if ce_token != 'N/A' else 0
+                        pe_ltp = data_store.get_ltp(pe_token) if pe_token != 'N/A' else 0
+                        print(f"  ⏳ Waiting for LTP... CE({ce_token}): {ce_ltp} | PE({pe_token}): {pe_ltp}")
+                        continue
+                    
+                    # --- TIME EXIT CHECK ---
+                    try:
+                        current_time = datetime.now().time()
+                        exit_time = datetime.strptime(AUTO_EXIT_TIME_STR, "%H:%M").time()
+                        
+                        if current_time >= exit_time:
+                            print(f"  ⏰ TIME EXIT TRIGGERED: Current time {current_time.strftime('%H:%M:%S')} >= {AUTO_EXIT_TIME_STR}")
+                            self.transition_to(FSMState.EXIT, "TIME_EXIT")
+                            self.exit_reason = ExitReason.TIME_EXIT
+                            self.do_exit()
+                            break
+                    except Exception as e:
+                        print(f"  ⚠️ Time Check Error: {e}")
+                    # -----------------------
+
+                    # --- WS TIMEOUT CHECK ---
+                    time_since_last_packet = time.time() - data_store.last_activity
+                    if time_since_last_packet > 15:
+                        print(f"  🚨 CRITICAL: No WebSocket data for {int(time_since_last_packet)}s (>15s). Force Exit!")
+                        self.transition_to(FSMState.EXIT, "WS_TIMEOUT_DISCONNECT")
+                        self.exit_reason = ExitReason.MANUAL # Treat as risk exit
+                        self.do_exit()
+                        break
+                    # ------------------------
+                    
+                    # --- ACTIVE TRADE MTM CHECK & TSL ---
+                    # Get both total MTM (for logging) and unrealized PnL (for TSL)
+                    total_mtm, active_mtm = self.calculate_total_mtm()
+                    
+                    # CRITICAL: TSL tracks ONLY the active trade (unrealized PnL), not cumulative history
+                    # This prevents exits based on past losses
+                    
+                    # Update High Watermark (using active trade MTM)
+                    if active_mtm > self.max_mtm_high:
+                        self.max_mtm_high = active_mtm
+                    
+                    # Calculate Dynamic Target and SL based on initial credit (with smart floor)
+                    if self.initial_credit > 0:
+                        # Calculate base values from percentage
+                        calc_target = self.initial_credit * TARGET_PROFIT_PCT / 100
+                        calc_sl = self.initial_credit * STOP_LOSS_PCT / 100
+                        
+                        # Smart Floor: Only apply floor if credit > floor (prevents risking > collected)
+                        if self.initial_credit >= MIN_TARGET_FLOOR:
+                            dynamic_target = max(calc_target, MIN_TARGET_FLOOR)
+                        else:
+                            dynamic_target = calc_target  # No floor for tiny credits
+                            
+                        if self.initial_credit >= MIN_SL_FLOOR:
+                            dynamic_sl = max(calc_sl, MIN_SL_FLOOR)
+                        else:
+                            dynamic_sl = calc_sl  # No floor for tiny credits
+                    else:
+                        dynamic_target = FALLBACK_TARGET
+                        dynamic_sl = FALLBACK_SL
+                    
+                    
+                    # Calculate Dynamic SL (SIMPLIFIED TSL logic)
+                    current_sl_limit = -abs(dynamic_sl)  # Base SL from credit
+                    tsl_status = ""
+                    
+                    # SIMPLIFIED TSL - Fixed thresholds, no dynamic calculations
+                    if self.max_mtm_high >= TSL_TRIGGER_2:
+                        # Level 2: Breakeven SL
+                        current_sl_limit = TSL_SL_2
+                        tsl_status = f"(🔒 TSL Level 2: Breakeven | Max: ₹{self.max_mtm_high:,.0f})"
+                    elif self.max_mtm_high >= TSL_TRIGGER_1:
+                        # Level 1: Reduced Risk SL
+                        current_sl_limit = TSL_SL_1
+                        tsl_status = f"(🛡️ TSL Level 1: ₹{TSL_SL_1:,.0f} SL | Max: ₹{self.max_mtm_high:,.0f})"
+
+                    # Check target/SL using ACTIVE trade MTM only (not cumulative)
+                    if active_mtm >= dynamic_target:
+                        print(f"  🎯 TARGET HIT: Active MTM ₹{active_mtm:.2f} >= ₹{dynamic_target:.0f} ({TARGET_PROFIT_PCT}% of credit)")
+                        print(f"     Total Strategy MTM (incl. realized): ₹{total_mtm:.2f}")
+                        logger.info(f"TARGET HIT: Active MTM {active_mtm:.2f} >= {dynamic_target:.0f} | Total MTM: {total_mtm:.2f}")
+                        self.transition_to(FSMState.EXIT, "MTM_TARGET_HIT")
+                        self.exit_reason = ExitReason.TARGET_HIT
+                        self.do_exit()
+                        break
+                    elif active_mtm <= current_sl_limit:
+                        print(f"  🛑 SL HIT: Active MTM ₹{active_mtm:.2f} <= ₹{current_sl_limit:.0f} {tsl_status}")
+                        print(f"     Total Strategy MTM (incl. realized): ₹{total_mtm:.2f}")
+                        logger.critical(f"SL HIT: Active MTM {active_mtm:.2f} <= {current_sl_limit:.0f} {tsl_status} | Total MTM: {total_mtm:.2f}")
+                        self.transition_to(FSMState.EXIT, "STOP_LOSS_HIT")
+                        self.exit_reason = ExitReason.STOP_LOSS_HIT
+                        self.do_exit()
+                        break
+                    # ------------------------
+                    
+                    # --- STRUCTURAL BREAK CHECK ---
+                    # Only check if in a two-leg state (not already directional)
+                    if self.state not in [FSMState.DIRECTIONAL_MONITOR, FSMState.EXIT]:
+                        dominant = self.get_dominant_side(values['ce_value'], values['pe_value'])
+                        if self.check_structural_break(dominant, values):
+                            regime = self.get_current_regime()
+                            # call do_structural_flip instead of do_exit
+                            self.do_structural_flip(dominant, regime)
+                            continue # Skip rest of loop to handle new state
+                    # ------------------------------
+                    
+                    # --- HEARTBEAT & LIVE STATUS (Log to Console & File) ---
+                    log_throttle = 30 # Log to file every 30 iterations
+                    mtm = self.calculate_total_mtm()
+                    regime = self.get_current_regime()
+                    
+                    # Format Status Message
+                    has_ce = 'CE' in self.positions
+                    has_pe = 'PE' in self.positions
+                    ce_str = f"CE:{values['ce_ltp']:.1f}" if has_ce else "CE:---"
+                    pe_str = f"PE:{values['pe_ltp']:.1f}" if has_pe else "PE:---"
+                    
+                    status_msg = (f"[{self.state.value}] {ce_str} | {pe_str} | "
+                                 f"MTM:₹{mtm:,.0f} | Regime:{regime.value} | "
+                                 f"Nifty:{data_store.get_ltp(self.nifty_token):.1f}")
+
+                    # Terminal Output (with high-visibility logic)
+                    if int(time.time()) % 15 == 0: # Every 15s join new line
+                         print(f"\n{status_msg}")
+                    else:
+                         print(f"\r{status_msg}   ", end="", flush=True)
+
+                    # Log to file periodically
+                    if time.time() - self.last_log_time > log_throttle:
+                        logger.info(status_msg)
+                        self.last_log_time = time.time()
+                    # ------------------------------------------------------
+
+                    # --- Deleted OI Monitoring from here (Moving to end) ---
+                    
+                    # Execute logic based on current state
+                    state = self.state
+                    
+                    if state == FSMState.BALANCED:
+                        self.do_balanced(values)
+                    elif state == FSMState.ROLL_WINNER:
+                        self.do_roll_winner(values)
+                    elif state == FSMState.MONITOR:
+                        self.do_monitor(values)
+                    elif state == FSMState.DIRECTIONAL_MONITOR:
+                        self.do_directional_monitor(values)
+                    elif state == FSMState.EXIT:
+                        break
+
+                    # --- OI MONITORING (Moved to End) ---
+                    if time.time() - self.last_oi_monitor > 10:
+                        nifty_ltp = data_store.get_ltp(self.nifty_token)
+                        if nifty_ltp > 0:
+                            atm_strike = round(nifty_ltp / 50) * 50
+                            self.monitor_open_interest(atm_strike)
+                            self.last_oi_monitor = time.time()
+                    # ------------------------------------
+                        
+                except Exception as e:
+                    print(f"  ❌ FSM Loop Error: {e}")
+                    time.sleep(5)
+                    import traceback
+                    traceback.print_exc()
+
+            # --- POST-CYCLE LOGIC ---
+            if self.running:
+                # If we got here and self.running is still True, it means we cycled (hit Target/SL)
+                # Wait for cooldown and widen strikes
+                cooldown = 300 # 5 minutes
+                print(f"\n  ⏳ Trade Cycle Ended. Entering Cooldown: {cooldown}s...")
+                print(f"  📐 Widening strikes by 50 pts for next cycle.")
+                self.additional_offset += 50
+                
+                # Check for Market Close (No point starting a new cycle at 3:15 PM)
+                try:
+                    current_time = datetime.now().time()
+                    exit_time = datetime.strptime(AUTO_EXIT_TIME_STR, "%H:%M").time()
+                    # If within 30 mins of exit time, don't restart
+                    cutoff_dt = datetime.combine(datetime.today(), exit_time) - timedelta(minutes=30)
+                    if current_time >= cutoff_dt.time():
+                        print(f"  ⏰ Near Market Close ({AUTO_EXIT_TIME_STR}). Skipping next cycle.")
+                        self.running = False
+                        break
+                except: pass
+
+                time.sleep(cooldown)
+        
+        # --- FINAL CLEANUP ---
+        if self.state != FSMState.EXIT:
+            self.exit_reason = ExitReason.MANUAL
+            self.transition_to(FSMState.EXIT, "LOOP_ENDED")
+            self.do_exit()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# --- Helper Functions ---
+
+def authenticate():
+    print("🔐 Authenticating with Kotak Neo API...")
+    client = NeoAPI(environment='prod', consumer_key=CONSUMER_KEY)
+    client.totp_login(mobile_number=MOBILE_NUMBER, ucc=UCC, totp=pyotp.TOTP(TOTP).now())
+    client.totp_validate(mpin=MPIN)
+    print("✅ Authentication successful!")
+    return client
+
+def download_fresh_master(client):
+    try:
+        print("  Downloading fresh nse_fo.csv...")
+        client.scrip_master(exchange_segment="nse_fo")
+        print("  Downloading fresh nse_cm.csv...")
+        client.scrip_master(exchange_segment="nse_cm")
+    except Exception as e: print(f"  Error downloading: {e}")
+
+def load_master_data(client):
+    segments = ['nse_fo.csv', 'nse_cm.csv']
+    if not all(os.path.exists(f) for f in segments):
+        download_fresh_master(client)
+    
+    dfs = []
+    for path in segments:
+        if os.path.exists(path):
+            try:
+                df = pd.read_csv(path, low_memory=False)
+                df = df.rename(columns=lambda x: x.strip())
+                dfs.append(df)
+            except: pass
+    return pd.concat(dfs, ignore_index=True) if dfs else None
+
+def get_lot_size(master_df, full_symbol):
+    """Get lot size for the given symbol from master data."""
+    try:
+        df = master_df
+        # Use strip() to handle potential whitespace
+        df = df[df['pTrdSymbol'].astype(str).str.strip().str.upper() == full_symbol.strip().upper()]
+        if len(df) >= 1:
+            # Check for various possible column names for Lot Size, prioritizing lLotSize
+            possible_cols = ['lLotSize', 'lLotsize', 'pLotSize', 'pLotSize;']
+            for col in possible_cols:
+                if col in df.columns:
+                    return int(df[col].iloc[0])
+            print(f"  Lot size column not found for {full_symbol}")
+            return 75 # Default fallback
+        return 75 
+    except Exception as e:
+        print(f"  Error getting lot size: {e}")
+        return 75
+
+def get_nifty_spot_token(master_df):
+    try:
+        df = master_df[master_df['pExchSeg'].str.lower() == 'nse_cm']
+        df = df[df['pTrdSymbol'].str.upper() == 'NIFTY']
+        if len(df) > 0:
+            token = int(df['pSymbol'].iloc[0])
+            print(f"  DEBUG: Found Nifty token: {token}")
+            return token
+        else:
+            print(f"  DEBUG: No NIFTY found in nse_cm segment")
+            # Try alternative: look for 'Nifty 50' or similar
+            df2 = master_df[master_df['pExchSeg'].str.lower() == 'nse_cm']
+            nifty_rows = df2[df2['pTrdSymbol'].str.contains('NIFTY', case=False, na=False)]
+            if len(nifty_rows) > 0:
+                print(f"  DEBUG: Found alternative Nifty rows: {nifty_rows['pTrdSymbol'].head().tolist()}")
+            return None
+    except Exception as e:
+        print(f"  DEBUG: get_nifty_spot_token error: {e}")
+        return None
+
+def get_nifty_spot_price(client, nifty_token):
+    if not nifty_token:
+        print(f"  DEBUG: nifty_token is None")
+        return None
+    try:
+        print(f"  DEBUG: Calling quotes API for token {nifty_token}...")
+        resp = client.quotes(instrument_tokens=[{"instrument_token": str(nifty_token), "exchange_segment": "nse_cm"}], quote_type="ltp")
+        print(f"  DEBUG: Quotes response: {resp}")
+        if isinstance(resp, dict):
+            data = resp.get('data', resp.get('message', resp))
+            if isinstance(data, list) and len(data):
+                ltp = float(data[0].get('ltp', 0))
+                print(f"  DEBUG: Extracted LTP: {ltp}")
+                return ltp if ltp > 0 else None
+    except Exception as e:
+        print(f"  DEBUG: get_nifty_spot_price error: {e}")
+    return None
+
+def parse_expiry_from_symbol(trading_symbol):
+    import re
+    sym = trading_symbol.upper()
+    # Weekly: NIFTY<YY><M><DD><STRIKE><Type>
+    m = re.match(r'NIFTY(\d{2})([1-9OND])(\d{2})(\d+)(CE|PE)', sym)
+    if m:
+        try:
+            y, m_char, d = int(m.group(1)), m.group(2), int(m.group(3))
+            months = {'1':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'O':10,'N':11,'D':12}
+            return datetime(2000+y, months[m_char], d)
+        except: pass
+    # Monthly
+    m = re.match(r'NIFTY(\d{2})([A-Z]{3})(\d+)(CE|PE)', sym)
+    if m:
+        try:
+            d, m_str = int(m.group(1)), m.group(2)
+            months = {'JAN':1,'FEB':2,'MAR':3,'APR':4,'MAY':5,'JUN':6,'JUL':7,'AUG':8,'SEP':9,'OCT':10,'NOV':11,'DEC':12}
+            now = datetime.now()
+            dt = datetime(now.year, months[m_str], d)
+            if dt < now: dt = datetime(now.year+1, months[m_str], d)
+            return dt
+        except: pass
+    return None
+
+def get_nearest_expiry(master_df):
+    df = master_df[(master_df['pExchSeg'] == 'nse_fo') & (master_df['pSymbolName'] == 'NIFTY')]
+    df = df[df['pOptionType'].isin(['CE', 'PE'])].copy()
+    df['expiry_dt'] = df['pTrdSymbol'].apply(parse_expiry_from_symbol)
+    df = df[df['expiry_dt'] >= datetime.now()]
+    return df['expiry_dt'].min() if len(df) else None
+
+def get_all_option_tokens(master_df, expiry_dt):
+    """Get ALL option tokens for the expiry (to allow flexible rolling)."""
+    df = master_df[(master_df['pExchSeg'] == 'nse_fo') & (master_df['pSymbolName'] == 'NIFTY')]
+    df = df.copy()
+    df['expiry_dt'] = df['pTrdSymbol'].apply(parse_expiry_from_symbol)
+    df = df[df['expiry_dt'].dt.date == expiry_dt.date()]
+    
+    tokens = []
+    # Build map
+    options_map = {}
+    
+    for _, row in df.iterrows():
+        try:
+            strike = float(row['dStrikePrice;']) / 100.0
+            token = int(row['pSymbol'])
+            opt_type = row['pOptionType']
+            sym = row['pTrdSymbol']
+            
+            item = {'token': token, 'strike': strike, 'type': opt_type, 'symbol': sym}
+            tokens.append(item)
+            options_map[token] = item
+        except: pass
+        
+    return tokens, options_map
+
+# --- WebSocket ---
+
+def on_message(message):
+    try:
+        if isinstance(message, str): message = json.loads(message)
+        ticks = message.get('data', []) if isinstance(message, dict) else message
+        
+        for tick in ticks:
+            token = str(tick.get('instrument_token', tick.get('tk', '')))
+            ltp = float(tick.get('ltp', 0) or 0)
+            
+            # Try to get percentage change 'nc' (Net Change %)
+            pc = float(tick.get('nc', 0) or 0)
+            
+            # Extract Open Interest (Only if present in tick - preserve existing otherwise)
+            if 'oi' in tick:
+                oi = int(tick.get('oi', 0) or 0)
+            else:
+                # Preserve existing OI from data_store to avoid overwrite
+                existing = data_store.tick_data.get(token, {})
+                oi = existing.get('oi', 0)
+            
+            # Fallback: if nc missing, try calculating from close 'c'
+            if pc == 0 and float(tick.get('c', 0) or 0) > 0:
+                 close_p = float(tick.get('c', 0))
+                 pc = ((ltp - close_p) / close_p) * 100
+                 
+            if token and ltp > 0:
+                data_store.update(token, ltp, pc, oi)
+    except: pass
+
+# --- WebSocket Handler with Auto-Reconnect ---
+
+subscription_list = [] # Store tokens globally for resubscription
+last_nifty_token = None
+reconnect_thread = None
+
+def subscribe_tokens(client, tokens, nifty_token):
+    """Subscribe to tokens (Nifty + Options)."""
+    global subscription_list, last_nifty_token
+    # Update global list for reconnections
+    if tokens: subscription_list = tokens
+    if nifty_token: last_nifty_token = nifty_token
+    
+    # Subscribe to Nifty index first
+    print(f"  Subscribing to Nifty (token: {nifty_token})...")
+    try:
+        client.subscribe(
+            instrument_tokens=[{"instrument_token": str(nifty_token), "exchange_segment": "nse_cm"}], 
+            isIndex=False, 
+            isDepth=False
+        )
+    except Exception as e:
+        print(f"  ⚠️ Nifty subscription error: {e}")
+    
+    time.sleep(0.5)
+    
+    # Subscribe to options in batches
+    batch_size = 25
+    option_tokens = [t for t in subscription_list if isinstance(t, int)]
+    
+    for i in range(0, len(option_tokens), batch_size):
+        batch = option_tokens[i:i+batch_size]
+        subs = [{"instrument_token": str(t), "exchange_segment": "nse_fo"} for t in batch]
+        try:
+            client.subscribe(instrument_tokens=subs, isIndex=False, isDepth=False)
+            print(f"  Subscribed batch {i//batch_size + 1}: {len(subs)} tokens")
+        except Exception as e:
+            print(f"  ⚠️ Subscription error: {e}")
+        time.sleep(0.3)
+    
+    print(f"  ✅ Total {len(option_tokens)} option tokens subscribed")
+
+def attempt_reconnect(client):
+    """Reconnection Loop."""
+    global reconnect_thread
+    print("  🔄 Attempting to reconnect WebSocket in 5s...")
+    time.sleep(5)
+    
+    try:
+        # Re-subscribe using global tokens
+        if last_nifty_token and subscription_list:
+            print("  ⚡ Re-subscribing to feeds...")
+            subscribe_tokens(client, subscription_list, last_nifty_token)
+        else:
+            print("  ⚠️ No tokens to resubscribe.")
+    except Exception as e:
+        print(f"  ❌ Reconnect failed: {e}")
+        # Retry again
+        reconnect_thread = threading.Thread(target=attempt_reconnect, args=(client,), daemon=True)
+        reconnect_thread.start()
+
+# Callbacks
+def on_error(e): 
+    print(f"❌ WS Error: {e}")
+    # Trigger reconnect on error if not already running
+    # (Checking reconnect_thread logic can be complex, for now simple trigger)
+
+def on_close(m): 
+    print(f"🔌 WS Closed: {m}")
+    # Trigger reconnect
+    global reconnect_thread, client_instance
+    if client_instance:
+         reconnect_thread = threading.Thread(target=attempt_reconnect, args=(client_instance,), daemon=True)
+         reconnect_thread.start()
+
+def on_open(m): print(f"🟢 WS Connected")
+
+client_instance = None # Global reference for callbacks
+
+def start_websocket(client, tokens, nifty_token):
+    """Initialize WebSocket with proper callback setup and subscription."""
+    global client_instance
+    client_instance = client
+    
+    # Set callbacks
+    client.on_message = on_message
+    client.on_error = on_error
+    client.on_close = on_close
+    client.on_open = on_open
+    
+    # Start subscription in background thread
+    threading.Thread(target=subscribe_tokens, args=(client, tokens, nifty_token), daemon=True).start()
+
+# --- Main ---
+
+def main():
+    print("="*60 + "\n   FSM ALGO STRATEGY - Value-Balanced CE/PE\n" + "="*60 + "\n")
+    
+    client = authenticate()
+    print("\n📂 Loading master data...")
+    master_df = load_master_data(client)
+    if master_df is None: return
+
+    # Get Nifty token from master data
+    print("\n🔍 Getting Nifty Token...")
+    nifty_token = get_nifty_spot_token(master_df)
+    if not nifty_token:
+        print("  ❌ Could not find Nifty token in master data")
+        return
+    print(f"  ✅ Nifty token: {nifty_token}")
+    
+    # Get expiry first (doesn't need spot price)
+    print("\n📅 Finding Expiry...")
+    expiry = get_nearest_expiry(master_df)
+    print(f"  Expiry: {expiry.date()}")
+    
+    # Load option chain (need this before subscribing)
+    print("\n🔗 Loading Option Chain...")
+    all_tokens_list, options_map = get_all_option_tokens(master_df, expiry)
+    print(f"  Loaded {len(all_tokens_list)} contracts")
+    
+    # Collect all tokens to subscribe (Nifty + all options around a wide range)
+    # Since we don't know ATM yet, subscribe to a wide range
+    sub_tokens = [nifty_token]
+    for t in all_tokens_list:
+        sub_tokens.append(t['token'])
+    
+    # Start WebSocket FIRST and subscribe to Nifty
+    print(f"\n🔌 Starting WebSocket...")
+    start_websocket(client, sub_tokens, nifty_token)
+    
+    # Wait for Nifty spot price from WebSocket
+    print(f"\n⏳ Waiting for Nifty spot price from WebSocket...")
+    max_wait = 30
+    wait_start = time.time()
+    spot_price = None
+    
+    while time.time() - wait_start < max_wait:
+        ltp = data_store.get_ltp(nifty_token)
+        if ltp > 0:
+            spot_price = ltp
+            print(f"  ✅ Nifty Spot via WebSocket: {spot_price}")
+            break
+        print(f"  ⏳ Waiting... Nifty LTP: {ltp}")
+        time.sleep(2)
+    
+    if not spot_price:
+        print(f"  ❌ Could not get Nifty spot price from WebSocket within {max_wait}s")
+        print(f"  💡 Check WebSocket connection and try again")
+        return
+    
+    # Calculate ATM strike
+    atm_strike = round(spot_price / NIFTY_STRIKE_INTERVAL) * NIFTY_STRIKE_INTERVAL
+    print(f"  ATM Strike: {atm_strike}")
+    
+    # Initialize FSM Strategy
+    strategy = FSMStrategy(client, master_df, nifty_token, expiry, options_map)
+    
+    # Wait a bit more for option LTPs to arrive
+    print("\n⏳ Waiting for option LTPs...")
+    time.sleep(3)
+    
+    # Enter positions via FSM
+    strategy.do_init(atm_strike)
+    
+    # Start FSM monitoring loop
+    threading.Thread(target=strategy.run, daemon=True).start()
+    
+    try:
+        while True: time.sleep(1)
+    except KeyboardInterrupt: print("\n👋 Exiting...")
+
+if __name__ == "__main__":
+    main()
+

@@ -1,0 +1,60 @@
+# Backtesting Configuration
+# 
+# This file contains default parameters for all backtestable strategies.
+# You can override these by creating a custom YAML file and passing it via --config
+
+# VWAP Straddle Strategy
+vwap_straddle:
+  lot_size: 300
+  stop_loss_points: 30.0
+  max_straddle_width_pct: 0.05  # 20% max difference between CE and PE at entry
+  max_skew_exit_pct: 0.50       # 50% skew triggers exit
+  candle_interval_minutes: 5
+  entry_time: "09:45"
+  exit_time: "14:30"
+  max_trades_per_day: 50
+
+# Backtest Testing Strategy
+backtest_testing:
+  lot_size: 65
+  candle_interval_minutes: 1
+  sl_pct: 0.20
+
+# Dynamic Strangle Strategy
+dynamic_strangle:
+  lot_size: 65
+  delta_range_min: 0.25
+  delta_range_max: 0.35
+  stop_loss_pct: 0.30
+  profit_target_pct: 0.50
+  balancing_profit_pct: 0.10
+  balancing_skew_ratio: 0.90
+  candle_interval_minutes: 50
+
+# ORB Retest Strategy
+orb_retest:
+  lot_size: 65
+  orb_period_minutes: 15  # First 15 minutes (9:15-9:30)
+  retest_tolerance_pct: 0.02
+  stop_loss_points: 20
+  profit_target_points: 40
+  candle_interval_minutes: 1
+
+# Dual-Renko Dip Strategy
+dual_renko_dip:
+  nifty_brick_size: 5
+  mega_brick_size: 30
+  trading_lots: 1
+  trend_streak: 3
+  mega_min_bricks: 1
+  max_pyramid_lots: 3
+  option_brick_pct: 0.075
+  candle_interval_minutes: 1
+  entry_time: "09:20"
+  exit_time: "15:15"
+
+# Global Settings
+global:
+  master_contracts_path: "data/master_contracts.csv"  # Optional
+  cache_enabled: true
+  log_level: "INFO"

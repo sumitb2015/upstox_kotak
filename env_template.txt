@@ -1,0 +1,14 @@
+# Upstox API Credentials Template
+# Copy this file to .env and fill in your actual credentials
+
+# Your Upstox API credentials (get these from Upstox Developer Console)
+client_id=your_client_id_here
+client_secret=your_client_secret_here
+ruri=your_redirect_uri_here
+
+# Example:
+# client_id=abc123def456ghi789
+# client_secret=xyz789uvw456rst123
+# ruri=https://your-app.com/callback
+
+# Note: Keep your .env file secure and never commit it to version control

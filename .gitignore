@@ -1,0 +1,37 @@
+# Credentials and Environment
+.env
+*.env
+accessToken.txt
+lib/core/accessToken.txt
+credentials.json
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Logs and Reports
+*.log
+logs/
+reports/
+*.csv
+!nifty_supertrend_last_2_days.csv
+
+# State and Temporary files
+*.json
+!package.json
+!composer.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# Agent and IDE specific
+.agent/
+.gemini/
+.vscode/
+.idea/
