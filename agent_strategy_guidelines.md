@@ -51,3 +51,44 @@ State restoration MUST be **disabled by default** to preventing unintended posit
 - **KeyboardInterrupt Handling**: All strategies MUST wrap their main `run()` loop in a `try...except KeyboardInterrupt` block.
 - **Auto-Exit**: Upon interruption, the strategy MUST call a dedicated `exit_all()` method to close all open legs immediately.
 - **Verification**: The exit logic MUST verify that orders are placed/completed before terminating the process.
+
+## ⏰ Global Time Exit
+- **Mandatory 15:18 Exit**: All intraday strategies MUST implement a hard exit at **15:18:00**.
+- **Reason**: To avoid auto-square-off charges by brokers and ensure positions are closed before market close.
+- **Implementation**:
+  ```python
+  # config.py
+  EXIT_TIME = "15:18:00"
+  ```
+  ```python
+  # live.py
+  if now.time() >= datetime.strptime(EXIT_TIME, "%H:%M:%S").time():
+      self.square_off_all(tag="Intraday_Exit")
+      sys.exit(0)
+  ```
+
+## 🔒 Deadlock Prevention (Multi-Action Strategies)
+For strategies with **multiple conditional actions** (e.g., Pyramid, Roll, Reduce), ensure there is **always at least one valid action path** under any market condition.
+
+### Common Deadlock Patterns
+1. **Conflicting Guards**: Action A blocked by Guard X, Action B blocked by Guard Y, where X and Y can both be true simultaneously.
+   - **Example**: Pyramid blocked by "Net Loss", Roll blocked by "Skew < 40%".
+   - **Result**: Strategy freezes when Net Loss AND Skew is 30-40%.
+
+2. **Circular Dependencies**: Action A requires state from Action B, which requires state from Action A.
+
+### Prevention Rules
+- **State-Aware Thresholds**: Adjust action thresholds dynamically based on portfolio state (Profit/Loss).
+  - **Example**: Lower Roll threshold to Pyramid threshold when in Net Loss.
+  ```python
+  # Dynamic threshold based on Net Loss state
+  if is_net_loss:
+      roll_threshold = config['skew_threshold_pct']  # More aggressive
+  else:
+      roll_threshold = config['roll_skew_threshold']  # Standard
+  ```
+
+- **Fallback Actions**: Ensure at least one "escape hatch" action is always available.
+  - **Example**: If Pyramid and Roll are both blocked, allow Reduction as a defensive fallback.
+
+- **Testing**: Create reproduction scripts to simulate edge cases where multiple guards could trigger simultaneously.

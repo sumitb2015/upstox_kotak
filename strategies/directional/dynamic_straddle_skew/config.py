@@ -30,20 +30,20 @@ CONFIG = {
     'exit_time': '15:15',
     
     # === Skew Detection ===
-    'skew_threshold_pct': 0.25,  # Increased from 0.15 to 0.20 (20% diff to trigger bias)
+    'skew_threshold_pct': 0.3,  # Increased from 0.15 to 0.20 (20% diff to trigger bias)
     'skew_persistence_ticks': 5, # Require 5 consecutive ticks (seconds) of skew to confirm bias
     
     # === Pyramiding Logic ===
-    'pyramid_trigger_decay_pct': 0.10, # Increased from 0.07 (10% decay needed to add lot)
+    'pyramid_trigger_decay_pct': 0.1, # Increased from 0.07 (10% decay needed to add lot)
     'pyramid_profit_booking_pct': 0.25, # Keep profit booking same
     
     # === Defensive Reduction ===
-    'reduction_recovery_pct': 0.3, # Increased from 0.20 (Allow 30% pullback before cutting)
+    'reduction_recovery_pct': 0.25, # Increased from 0.20 (Allow 30% pullback before cutting)
     'reduction_cooldown_minutes': 3, # Cooldown after reducing to base lots (prevents immediate re-pyramid)
     
     # === Roll Adjustment (Major Skew) ===
     'roll_adjustment_enabled': True,
-    'roll_skew_threshold': 0.40,      # Trigger roll if skew > 40% (Strong Trend)
+    'roll_skew_threshold': 0.30,      # Trigger roll if skew > 40% (Strong Trend)
     'roll_premium_match_pct': 1.0,    # Target new premium = 100% of losing leg
     
     # === Strike Selection ===

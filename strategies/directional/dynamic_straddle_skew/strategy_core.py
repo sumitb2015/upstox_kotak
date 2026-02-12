@@ -89,6 +89,21 @@ class DynamicStraddleSkewCore(ABC):
             return True, f"Global Cooldown ({elapsed:.0f}/{self.global_cooldown_seconds}s)"
         return False, ""
 
+    def _calculate_net_loss(self) -> Tuple[bool, float, float]:
+        """Calculate if position is in net loss. Returns (is_net_loss, total_entry, total_current)"""
+        if not self.ce_leg or not self.pe_leg:
+            return False, 0.0, 0.0
+            
+        ce_val = self.ce_leg.entry_price * self.ce_leg.lots
+        pe_val = self.pe_leg.entry_price * self.pe_leg.lots
+        total_entry = ce_val + pe_val
+        
+        curr_ce = self.ce_leg.current_price * self.ce_leg.lots
+        curr_pe = self.pe_leg.current_price * self.pe_leg.lots
+        total_curr = curr_ce + curr_pe
+        
+        return total_curr > total_entry, total_entry, total_curr
+
     def check_profit_goals(self, current_pnl: float) -> Tuple[bool, str]:
         """Check Max Profit and Profit Locking (Percentage Based)."""
         cfg = self.config
@@ -142,6 +157,8 @@ class DynamicStraddleSkewCore(ABC):
         if sl_pct is not None:  # Only check if SL is enabled
             for leg in [self.ce_leg, self.pe_leg]:
                 if leg:
+                    if leg.entry_price == 0:
+                        continue  # Skip if entry price is invalid
                     loss_pct = (leg.current_price - leg.entry_price) / leg.entry_price
                     if loss_pct > sl_pct:
                         return True, f"{leg.option_type} Leg SL Hit: {loss_pct*100:.1f}% > {sl_pct*100:.1f}%"
@@ -250,19 +267,13 @@ class DynamicStraddleSkewCore(ABC):
         if winning_leg.lots < losing_leg.lots:
              return False, f"Lot Mismatch: Winning {self.winning_type} ({winning_leg.lots}) < Losing ({losing_leg.lots})"
 
-        # 3. Net Profit Guard (Corrected)
+        # 3. Net Profit Guard
         # Check if we are currently in a Net Profit state.
         # Logic: Total Entry Premium (Weighted) > Total Current Premium
         # (Since we are Shorting, Lower Current Premium = Profit)
+        is_net_loss, total_entry_prem, current_total_prem = self._calculate_net_loss()
         
-        ce_entry_val = self.ce_leg.entry_price * self.ce_leg.lots
-        pe_entry_val = self.pe_leg.entry_price * self.pe_leg.lots
-        total_entry_prem = ce_entry_val + pe_entry_val
-        
-        current_total_prem = (self.ce_leg.current_price * self.ce_leg.lots) + (self.pe_leg.current_price * self.pe_leg.lots)
-        
-        # If Current Value > Entry Value, we are in a NET LOSS.
-        if current_total_prem > total_entry_prem:
+        if is_net_loss:
              return False, f"Net Loss Protection: Total Current {current_total_prem:.1f} > Entry {total_entry_prem:.1f}. Portfolio bleeding."
 
         # === Trigger Check ===
@@ -277,6 +288,9 @@ class DynamicStraddleSkewCore(ABC):
             return False, "No winning side"
             
         winning_leg = self.ce_leg if self.winning_type == 'CE' else self.pe_leg
+        
+        if not winning_leg:
+            return False, "Winning leg not initialized"
         
         # Only reduce if we have pyramid lots
         if winning_leg.lots <= self.config['initial_lots']:
@@ -324,7 +338,7 @@ class DynamicStraddleSkewCore(ABC):
     def check_roll_signal(self) -> Tuple[bool, str]:
         """
         Check if we should ROLL the winning side to a closer strike.
-        Trigger: Skew > 35% AND Winning Prem < Losing Prem * match_pct
+        Trigger: Skew > 30% (configurable) AND Winning Prem < Losing Prem * match_pct
         """
         # 0. Global Cooldown Check
         is_cd, reason = self.is_global_cooldown_active()
@@ -339,14 +353,21 @@ class DynamicStraddleSkewCore(ABC):
         winning_leg = self.ce_leg if self.winning_type == 'CE' else self.pe_leg
         losing_leg = self.pe_leg if self.winning_type == 'CE' else self.ce_leg
         
-        # === Hybrid Logic Update: Pyramid First ===
+        # === Net Loss Check (Defensive Logic) ===
+        # Calculate if we are in a Net Loss state to determine if we should allow
+        # defensive actions (Rolling) even if Pyramiding is active.
+        is_net_loss, _, _ = self._calculate_net_loss()
+
+        # === Pyramid Priority Check ===
         # If we have pyramided lots (Trend Following Mode), DO NOT Roll yet.
         # Only Roll if we hit Max Lots (Full Capacity) AND Skew is still high.
-        # This prevents "Profit Booking" from killing the trend early.
+        # EXCEPTION: If is_net_loss is True, we ALLOW Roll (Defensive Reset).
         max_allowed_lots = self.config['initial_lots'] + self.config['max_pyramid_lots']
         
         if winning_leg.lots > self.config['initial_lots'] and winning_leg.lots < max_allowed_lots:
-             return False, f"Pyramiding Active ({winning_leg.lots}/{max_allowed_lots}). Skipping Roll."
+             if not is_net_loss:
+                 return False, f"Pyramiding Active ({winning_leg.lots}/{max_allowed_lots}) & Net Profit. Skipping Roll."
+             # Else: Fall through to check Skew/Gap for Roll (Deadlock Break)
         
         w_price = winning_leg.current_price
         l_price = losing_leg.current_price
@@ -356,7 +377,7 @@ class DynamicStraddleSkewCore(ABC):
         # 1. Skew Check
         # Skew = Difference / Max -> if PE=100, CE=50, Skew=50/100=50%
         skew = abs(w_price - l_price) / max(w_price, l_price)
-        thresh = self.config.get('roll_skew_threshold', 0.40)
+        thresh = self.config.get('roll_skew_threshold', 0.30)
         
         if skew <= thresh:
             return False, f"Skew {skew*100:.1f}% <= {thresh*100:.1f}%"
