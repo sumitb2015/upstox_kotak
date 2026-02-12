@@ -4,6 +4,9 @@
 
 A non-directional strategy that sells a strangle based on premium targeting, RSI consolidation, and value pricing.
 
+> 📖 **[Read the Full Strategy Walkthrough with Examples](STRATEGY_WALKTHROUGH.md)**
+
+
 ### 1. Strike Selection
 - **Target Premium**: 50.
 - **Expiry**: Configurable via `EXPIRY_TYPE` (default: "current_week"). Options include "next_week", "current_month", etc.

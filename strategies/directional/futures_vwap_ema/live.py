@@ -56,6 +56,7 @@ from strategies.directional.futures_vwap_ema.config import CONFIG
 # Import helper functions (avoiding code duplication)
 from lib.api.historical import get_intraday_data_v3, get_historical_data_v3
 from lib.utils.tick_aggregator import TickAggregator  # New
+from lib.utils.vwap_calculator import VWAPCalculator  # NEW: Tick-level VWAP
 from lib.api.streaming import UpstoxStreamer
 from lib.api.order_management import place_order
 from lib.api.market_quotes import get_ltp_quote
@@ -105,6 +106,9 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
         
         # Historical Data for Warmup
         self.historical_data = None
+        
+        # Tick-level VWAP Calculator (WebSocket-based, zero API calls)
+        self.vwap_calculator = VWAPCalculator()
         
         # Kotak Execution components
         self.kotak_broker = BrokerClient()
@@ -343,27 +347,24 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
         resampled = resampled.reset_index()
         return resampled
 
-    def update_indicators(self, df_1min: pd.DataFrame):
+    def update_indicators(self, df_full: pd.DataFrame):
         """
         Update indicators using mixed timeframes.
         
-        VWAP -> Calculated from 1-min data (High precision, TODAY ONLY)
-        EMA  -> Calculated from Resampled data (User timeframe, includes HISTORY)
+        VWAP -> Calculated from tick-level WebSocket data (zero API calls!)
+        EMA  -> Calculated from Resampled df_full (User timeframe, includes HISTORY)
         """
-        if df_1min is None or df_1min.empty:
+        if df_full is None or df_full.empty:
             return
 
-        # 1. Calculate VWAP on 1-min data (intraday only)
-        # We need to filter for 'today' because standard VWAP resets daily
-        today = datetime.now().date()
-        df_today = df_1min[df_1min['timestamp'].dt.date == today].copy()
+
+        # 1. Calculate VWAP from tick-level data (WebSocket-based, zero API calls!)
+        self.current_vwap = self.vwap_calculator.get_vwap(self.futures_instrument_key)
         
-        if not df_today.empty:
-            self.current_vwap = self.calculate_vwap(df_today)
         
         # 2. Resample to strategy timeframe (e.g. 3 min) - Use FULL data for EMA
         strategy_tf = self.config['candle_interval_minutes']
-        df_resampled = self.resample_candles(df_1min, strategy_tf)
+        df_resampled = self.resample_candles(df_full, strategy_tf)
         
         # 3. Calculate EMA on resampled data using library function
         from lib.utils.indicators import calculate_ema_series
@@ -767,7 +768,8 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
                     time.sleep(30)
                     continue
                 
-                # Update indicators (VWAP from 1-min, EMA from Resampled)
+                
+                # Update indicators (VWAP from ticks, EMA from stitched)
                 self.update_indicators(candles_df)
                 
                 # Increment candles processed (warmup tracker)

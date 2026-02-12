@@ -5,10 +5,10 @@ DRY_RUN = False # Set to False for Live Trading
 INDEX_NAME = "NSE_INDEX|Nifty 50"
 START_TIME = "09:20:00"  # Strategy Start Time
 EXIT_TIME = "15:18:00"   # Strategy Exit Time
-EXPIRY_TYPE = "next_week" # Options: "current_week", "next_week", "current_month"
+EXPIRY_TYPE = "current_week" # Options: "current_week", "next_week", "current_month"
 
 # --- Strike Selection ---
-TARGET_PREMIUM = 90.0  # Target premium for both CE and PE
+TARGET_PREMIUM = 50.0  # Target premium for both CE and PE
 INITIAL_LOT_MULTIPLIER = 3 # Initial lots to enter (1 = 1 lot, 2 = 2 lots)
 
 # --- Entry Conditions ---

@@ -13,6 +13,7 @@ This document outlines the core trading logic, risk management, and execution ru
 
 ## 2. Entry Strategy
 The strategy looks for a confluence of **Price Action**, **Trend**, and **Market Sentiment**. Entries are checked tick-by-tick based on static indicators.
+**Configurable**: Users can choose to enter on **Tick-by-Tick** data (default) or **Candle Close** via `enter_on_candle_close`.
 
 ### CE Sell (Bearish Signal)
 - **VWAP Filter**: Futures Price must be **Below VWAP**.
@@ -56,9 +57,10 @@ The strategy scales into winning trades to maximize profit.
 ## 5. Exit Strategy
 Trades are exited automatically if any of the following occur:
 1. **TSL Triggered**: Option LTP crosses above the calculated TSL Price (**Real-time check**).
-2. **Trend Reversal (Candle Close)**:
+2. **Trend Reversal (Configurable)**:
    - **For CE Sell**: Exit if Futures Price crosses **Above VWAP** OR **Supertrend turns Bullish**.
    - **For PE Sell**: Exit if Futures Price crosses **Below VWAP** OR **Supertrend turns Bearish**.
+   - **Timing**: Defaults to **Candle Close** (`exit_on_candle_close=True`). Can be set to **Tick-by-Tick** for faster exits.
 3. **Time Square-off**: Force exit all positions at **15:15**.
 
 ---

@@ -55,9 +55,13 @@ class FuturesVWAPSupertrendCore(ABC):
         self.lock = threading.RLock()
     
     def update_indicators(self, candles_df: pd.DataFrame):
-        from lib.utils.indicators import calculate_vwap, calculate_supertrend
+        """
+        Update Supertrend indicator using full historical + intraday data.
+        Note: VWAP is NOT calculated here - it's handled separately in live.py
+        using intraday-only data to ensure proper session reset.
+        """
+        from lib.utils.indicators import calculate_supertrend
         try:
-            self.current_vwap = calculate_vwap(candles_df)
             st_dir, st_val = calculate_supertrend(
                 candles_df, 
                 period=self.config.get('st_period', 10), 
@@ -65,13 +69,18 @@ class FuturesVWAPSupertrendCore(ABC):
             )
             self.current_st_direction = st_dir
             self.current_st_value = st_val
-            # REMOVED: self.futures_price = candles_df['close'].iloc[-1]
-            # This was overwriting live LTP with stale candle close
+            # Note: VWAP calculation moved to live.py to use intraday-only data
+            # Note: futures_price is updated via WebSocket LTP, not from candle close
         except Exception as e:
             logger.error(f"Error updating indicators: {e}")
 
     def check_entry_signal(self, pcr: float = None) -> Tuple[bool, Optional[str], str]:
         if len(self.positions) > 0: return False, None, "Busy"
+        
+        # Safety Check: Ensure VWAP is initialized (not 0.0)
+        # VWAP = 0.0 means VWAPCalculator hasn't accumulated ticks yet
+        if self.current_vwap == 0.0:
+            return False, None, "VWAP not initialized"
         
         # Trend Extension Check (Distance from VWAP)
         if self.current_vwap > 0:

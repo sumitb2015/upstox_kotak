@@ -288,7 +288,11 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             pnl_val = self.calculate_total_pnl()
             pnl_str = f"{pnl_val:7.2f}" if self.total_qty > 0 else "  ---  "
             rsi_str = f"{self.rsi:4.1f}"
-            brick_count = len(self.nifty_renko.bricks)
+            
+            # [NEW] Show actual persistent Brick Index (not list count)
+            brick_idx = 0
+            if self.nifty_renko.bricks:
+                brick_idx = self.nifty_renko.bricks[-1].index
         
         
         # Calculate Renko EMA for display
@@ -310,7 +314,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             f"\r{dry_run_badge}{now_str} | "
             f"NIFTY: {nifty_ltp:8.2f} (C:{nifty_candle:7.1f}) | "
             f"OPT: {opt_ltp_str} (C:{opt_candle_str}) | "
-            f"RSI: {rsi_str} | B:{brick_count:3} | "
+            f"RSI: {rsi_str} | B:{brick_idx:4} | "
             f"EMA: {ema_str} | "
             f"PnL: {pnl_str} | [{self.entry_state}]"
         )
@@ -331,12 +335,22 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     symbol = self.active_symbols.get(p_type, "Unknown")
                     break
                     
-                details = f" | {symbol} | Qty:{self.total_qty} | Avg:{self.avg_price:.1f} | BSize:{opt_brick_size:.1f} | TSL:{tsl:5.1f}"
+                details = f" | {symbol} | Qty:{self.total_qty} | Avg:{self.avg_price:.1f} | OptBrick:{opt_brick_size:.1f} | TSL:{tsl:5.1f}"
             else:
                 details = " | [WAITING]"
 
+        # Calculate points gained for display
+        pg_str = ""
+        with self.lock:
+             if self.avg_price > 0 and self.current_option_token:
+                curr = self.ltp_cache.get(self.current_option_token, 0)
+                if isinstance(curr, dict): curr = curr.get('close', 0)
+                if float(curr) > 0:
+                    pts = self.avg_price - float(curr)
+                    pg_str = f" | Pts:{pts:.1f}"
+
         import sys
-        sys.stdout.write(status_line + details.ljust(60))
+        sys.stdout.write(status_line + details.ljust(50) + pg_str)
         sys.stdout.flush()
 
     def log(self, message: str):
@@ -376,12 +390,38 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
     def get_tsl_multiplier(self) -> float:
         """
         Calculates TSL multiplier based on pyramid count.
-        Starts at 2.0 (2-brick reversal), reduces by 0.2 per pyramid, floor at 1.0.
+        Starts at 'tsl_brick_count' (e.g. 3.0), reduces by 0.2 per pyramid, floor at 1.0.
+        Also applies dynamic tightening if profit exceeds threshold.
         """
-        # Dynamic Tightening: 2.0 -> 1.8 -> 1.6 -> 1.0 (Floor)
-        # We start at 2.0 because a Renko reversal requires 2 brick sizes.
-        mult = 2.0 - (self.pyramid_count * 0.2)
-        return max(1.0, mult)
+        # 1. Base Multiplier (Start with configured brick count)
+        base_bricks = self.config.get('tsl_brick_count', 2.0)
+        base_mult = base_bricks - (self.pyramid_count * 0.2)
+        final_mult = max(1.0, base_mult)
+        
+        # 2. Dynamic Tightening (Aggressive Trail)
+        if self.config.get('dynamic_tightening', False):
+            try:
+                # Check current profit
+                if self.avg_price > 0 and self.current_option_token and self.option_renko:
+                    curr = self.ltp_cache.get(self.current_option_token, 0)
+                    if isinstance(curr, dict): curr = curr.get('close', 0)
+                    curr = float(curr)
+                    
+                    if curr > 0:
+                        # Short Option: Profit = Avg - Current
+                        points_gained = self.avg_price - curr
+                        bricks_gained = points_gained / self.option_renko.brick_size
+                        
+                        tighten_after = self.config.get('tighten_after_bricks', 4)
+                        if bricks_gained >= tighten_after:
+                            tightened_mult = self.config.get('tightened_multiplier', 1.5)
+                            if tightened_mult < final_mult:
+                                final_mult = tightened_mult
+                                # Optional: Log once to avoid spam (can rely on Status TSL display)
+            except Exception as e:
+                pass
+
+        return final_mult
 
     def log_box(self, title: str, content_lines: list, emoji: str = "ℹ️"):
         """Prints a formatted box in the terminal, respecting the ticker."""
@@ -500,6 +540,9 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                                 if last_brick.color == 'RED':
                                     self.best_option_low = last_brick.close
                                     self.save_state(self.config['state_file'])
+                                    # LOG THE TRAILING ACTION
+                                    new_tsl = self.best_option_low + (self.option_renko.brick_size * self.get_tsl_multiplier())
+                                    self.log(f"📉 [CORE] TSL Trailed Down: Low {self.best_option_low:.2f} | New TSL {new_tsl:.2f}")
 
                             # Check for TSL trigger
                             tsl_brick_count = self.config.get('tsl_brick_count', 2)
@@ -513,6 +556,22 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                                             break
                                     return
                             
+                            # Check for Profit Target Exit
+                            profit_target = self.config.get('profit_target_bricks', 5)
+                            if profit_target > 0 and self.option_renko and self.avg_price > 0:
+                                # Calculate captured points
+                                current_brick_price = self.option_renko.bricks[-1].close
+                                points_gained = self.avg_price - current_brick_price
+                                bricks_gained = points_gained / self.option_renko.brick_size
+                                
+                                if bricks_gained >= profit_target:
+                                    self.log(f"🏆 [CORE] PROFIT TARGET REACHED: {bricks_gained:.1f} Bricks >= {profit_target} (Points: {points_gained:.1f})")
+                                    for p_type, token in self.active_positions.items():
+                                        if token == instrument_key:
+                                            self.execute_exit(p_type, "Profit Target Hit", timestamp)
+                                            break
+                                    return
+
                             self.on_option_brick(timestamp)
                             self.save_state(self.config['state_file'])
                         self.last_option_brick_minute = now_min
@@ -698,6 +757,16 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     self.pyramid_count = 0
                     self.bricks_since_last_lot = 0
                     self.entry_state = "WAITING"
+                    
+                    # [NEW] Record exit time (brick index) to prevent immediate re-entry
+                    if self.nifty_renko.bricks:
+                        self.last_exit_brick_index = self.nifty_renko.bricks[-1].index
+                        self.log(f"🛑 [CORE] Exit Recorded @ Nifty Brick #{self.last_exit_brick_index}. Cooldown active.")
+                    
+                    # Unsubscribe
+                    if self.streamer:
+                        self.streamer.unsubscribe_market_data([opt_key])
+                    
                     self.save_state(self.config['state_file'])
 
     def run(self):

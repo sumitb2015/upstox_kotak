@@ -77,6 +77,10 @@ class SyntheticCPRStrategy:
         # User requested Futures. We will resolve this dynamically.
         self.future_token = None 
         self.active_token = None # Will point to future_token if found, else spot
+        
+        # Intraday Data Cache (for VWAP calculation - prevent rate limiting)
+        self.last_vwap_fetch_time = 0
+        self.vwap_cache_duration = 300  # 5 minutes (in seconds)
  
 
     def initialize(self):
@@ -253,43 +257,46 @@ class SyntheticCPRStrategy:
         return True
 
     def update_vwap(self):
-        """Estimate Intraday VWAP from Aggregated Data"""
-        today = datetime.now().date()
-        
-        # Fetch from Aggregator
-        result = self.vwap_aggregator.get_dataframe(self.active_token)
-        
-        # If empty (first run), try fallback to REST for history
-        if result.empty:
-             data = get_intraday_data_v3(self.access_token, self.active_token, "minute", 1)
-             if data:
-                 result = pd.DataFrame(data)
-                 # Seed aggregator
-                 self.vwap_aggregator.update_historical(self.active_token, result)
-        
-        if not result.empty:
-            df = result # result is already DataFrame
-            if df.empty:
-                logger.warning("VWAP: Dataframe empty")
+        """Calculate Intraday VWAP using fresh intraday data (with caching to prevent rate limiting)"""
+        try:
+            # Only fetch fresh data every 5 minutes to avoid rate limiting
+            current_time_sec = time.time()
+            if current_time_sec - self.last_vwap_fetch_time < self.vwap_cache_duration:
+                # Use cached calculation - VWAP doesn't change that frequently
                 return
             
-            # Filter for today
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                today_df = df[df['timestamp'].dt.date == today]
-            else:
-                 today_df = df # Assume aggregator cleans it
+            # Fetch fresh intraday data directly (correct method)
+            intraday_candles = get_intraday_data_v3(
+                self.access_token, 
+                self.active_token, 
+                "minute", 
+                1
+            )
+            
+            if not intraday_candles:
+                logger.warning("⚠️ VWAP Update Failed: No intraday data")
+                return
+            
+            df_intraday = pd.DataFrame(intraday_candles)
+            
+            if df_intraday.empty:
+                logger.warning("⚠️ VWAP: Intraday dataframe empty")
+                return
+            
+            # Ensure timestamp is datetime
+            if 'timestamp' in df_intraday.columns:
+                df_intraday['timestamp'] = pd.to_datetime(df_intraday['timestamp'])
             
             # Minimum candles check
-            if not today_df.empty and len(today_df) >= 3:
-                self.vwap = calculate_vwap(today_df)
-                logger.info(f"🔹 VWAP Updated: {self.vwap:.2f} ({len(today_df)} candles)")
-            elif not today_df.empty:
-                logger.warning(f"⚠️ Only {len(today_df)} candles available, VWAP update skipped")
+            if len(df_intraday) >= 3:
+                self.vwap = calculate_vwap(df_intraday)
+                self.last_vwap_fetch_time = current_time_sec
+                logger.info(f"🔹 VWAP Updated: {self.vwap:.2f} ({len(df_intraday)} candles)")
             else:
-                logger.warning(f"⚠️ No candles found for today ({today}). Latest: {df['timestamp'].iloc[-1]}")
-        else:
-            logger.warning("⚠️ VWAP Update Failed: No data returned from API")
+                logger.warning(f"⚠️ Only {len(df_intraday)} candles available, VWAP update skipped")
+                
+        except Exception as e:
+            logger.error(f"❌ VWAP Calculation Error: {e}")
 
     def on_market_data(self, data):
         """Handle market data from WebSocket"""

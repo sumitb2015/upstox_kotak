@@ -837,6 +837,32 @@ class RSIVWAPStrangle:
         except Exception as e:
             logger.error(f"❌ [CORE] State Load Error: {e}")
 
+    def square_off_all(self, tag="Exit"):
+        logger.info(f"🛑 [CORE] Triggering Square Off: {tag}...")
+        if self.position:
+            # Realize P&L before closing
+            if self.position.ce_qty > 0:
+                realized = (self.position.ce_entry_price - self.position.ce_ltp) * self.position.ce_qty
+                self.position.realized_pnl += realized
+                order_id = self.order_mgr.place_order(self.position.ce_symbol, self.position.ce_qty, "B", tag=tag)
+                if order_id:
+                    logger.info(f"✅ [CORE] CE Closed. Realized: {realized:.2f}")
+            
+            if self.position.pe_qty > 0:
+                realized = (self.position.pe_entry_price - self.position.pe_ltp) * self.position.pe_qty
+                self.position.realized_pnl += realized
+                order_id = self.order_mgr.place_order(self.position.pe_symbol, self.position.pe_qty, "B", tag=tag)
+                if order_id:
+                    logger.info(f"✅ [CORE] PE Closed. Realized: {realized:.2f}")
+            
+            # Log final session P&L
+            logger.info(f"💰 [CORE] Session Final P&L: {self.position.realized_pnl:.2f}")
+            
+            self.position = None
+            self.save_state() # Clear state
+            
+        logger.info(f"✅ [CORE] Strategy stopped ({tag}).")
+
     def run(self):
         self.initialize()
         
@@ -869,30 +895,8 @@ class RSIVWAPStrangle:
                 
                 # 0. Check Exit Time (Intraday Square-off)
                 if now.time() >= exit_time_obj:
-                    logger.info(f"🛑 [CORE] Intraday Exit Time {EXIT_TIME} Reached! Squaring off all positions...")
-                    if self.position:
-                        # Realize P&L before closing
-                        if self.position.ce_qty > 0:
-                            realized = (self.position.ce_entry_price - self.position.ce_ltp) * self.position.ce_qty
-                            self.position.realized_pnl += realized
-                            order_id = self.order_mgr.place_order(self.position.ce_symbol, self.position.ce_qty, "B", tag="Intraday_Exit")
-                            if order_id:
-                                logger.info(f"✅ [CORE] CE Closed at EOD. Realized: {realized:.2f}")
-                        
-                        if self.position.pe_qty > 0:
-                            realized = (self.position.pe_entry_price - self.position.pe_ltp) * self.position.pe_qty
-                            self.position.realized_pnl += realized
-                            order_id = self.order_mgr.place_order(self.position.pe_symbol, self.position.pe_qty, "B", tag="Intraday_Exit")
-                            if order_id:
-                                logger.info(f"✅ [CORE] PE Closed at EOD. Realized: {realized:.2f}")
-                        
-                        # Log final day's P&L
-                        logger.info(f"💰 [CORE] Final Day P&L: {self.position.realized_pnl:.2f}")
-                        
-                        self.position = None
-                        self.save_state() # Clear state
-                        
-                    logger.info("✅ [CORE] Day Complete. Exiting strategy.")
+                    logger.info(f"🛑 [CORE] Intraday Exit Time {EXIT_TIME} Reached!")
+                    self.square_off_all(tag="Intraday_Exit")
                     sys.exit(0)
 
                 # 1. Check Start Time
@@ -937,8 +941,9 @@ class RSIVWAPStrangle:
                 
                 time.sleep(1)
             except KeyboardInterrupt:
-                logger.warning("⚠️ [CORE] User interrupted")
-                break
+                logger.warning("⚠️ [CORE] User interrupted (KeyboardInterrupt). Exiting safely...")
+                self.square_off_all(tag="KeyboardInterrupt")
+                sys.exit(0)
             except Exception as e:
                 logger.error(f"❌ [CORE] Loop Exception: {e}")
                 time.sleep(5)

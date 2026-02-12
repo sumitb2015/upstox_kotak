@@ -74,6 +74,7 @@ class RenkoCalculator:
         self.current_high = None 
         self.current_low = None  
         self.direction = 0
+        self._next_index = 1  # [NEW] Persistent index counter
 
     def initialize(self, start_price):
         self.current_high = float(start_price)
@@ -167,7 +168,10 @@ class RenkoCalculator:
         return total_new
 
     def _add_brick(self, color, start, end, timestamp):
-        idx = len(self.bricks) + 1
+        # Use persistent counter instead of len()
+        idx = self._next_index
+        self._next_index += 1
+        
         brick = RenkoBrick(idx, start, end, color, timestamp, low=min(start, end), high=max(start, end))
         self.bricks.append(brick)
         self.current_high = brick.high
@@ -176,9 +180,7 @@ class RenkoCalculator:
         # Trim old bricks to prevent memory issues
         if len(self.bricks) > self.max_bricks:
             self.bricks.pop(0)
-            # Reindex remaining bricks
-            for i, b in enumerate(self.bricks, start=1):
-                b.index = i
+            # DO NOT re-index remaining bricks. Indices must remain permanent.
 
     def to_dict(self):
         return {
@@ -187,7 +189,8 @@ class RenkoCalculator:
             'bricks': [b.to_dict() for b in self.bricks],
             'current_high': self.current_high,
             'current_low': self.current_low,
-            'direction': self.direction
+            'direction': self.direction,
+            'next_index': self._next_index
         }
 
     def from_dict(self, d):
@@ -197,6 +200,7 @@ class RenkoCalculator:
         self.current_high = float(d.get('current_high')) if d.get('current_high') is not None else None
         self.current_low = float(d.get('current_low')) if d.get('current_low') is not None else None
         self.direction = int(d.get('direction', 0))
+        self._next_index = int(d.get('next_index', len(self.bricks) + 1))
     
     def get_brick_momentum(self, lookback: int = 10, max_time_window_minutes: int = 5) -> float:
         """
@@ -330,7 +334,9 @@ class AggressiveRenkoCore(ABC):
         self.avg_price = 0.0
         self.total_qty = 0
         self.active_symbols = {}
+        self.active_symbols = {}
         self.is_warming_up = True
+        self.last_exit_brick_index = -1  # [NEW] Track when we last exited to prevent immediate reentry
 
     def calculate_option_brick_size(self, price: float) -> float:
         raw_size = price * self.option_brick_pct
@@ -428,7 +434,20 @@ class AggressiveRenkoCore(ABC):
             # Not enough bricks yet or error
             if self.entry_state == "WAITING":
                 logger.debug(f"EMA Calc pending: {e}")
+                logger.debug(f"EMA Calc pending: {e}")
             return
+            
+        # [NEW] Freshness Check / Cooldown
+        # If we recently exited, don't re-enter the SAME trend immediately.
+        # Wait for 'reentry_cooldown_bricks' new bricks to form (any color).
+        if self.config.get('prevent_immediate_reentry', True) and self.last_exit_brick_index > 0:
+            if self.entry_state == "WAITING":
+                cooldown = self.config.get('reentry_cooldown_bricks', 3)
+                bricks_since_exit = last_brick.index - self.last_exit_brick_index
+                
+                if bricks_since_exit < cooldown:
+                    # logger.debug(f"⏳ [COOLDOWN] Waiting for fresh bricks. Since Exit: {bricks_since_exit} < {cooldown}")
+                    return
 
         # State: WAITING → Aggressive Entry
         if self.entry_state == "WAITING":
@@ -571,6 +590,9 @@ class AggressiveRenkoCore(ABC):
                 'active_symbols': self.active_symbols,
                 'avg_price': self.avg_price,
                 'total_qty': self.total_qty,
+                'avg_price': self.avg_price,
+                'total_qty': self.total_qty,
+                'last_exit_brick_index': self.last_exit_brick_index,
                 'last_update': datetime.now().isoformat()
             }
             with open(state_file, 'w') as f:
@@ -593,7 +615,9 @@ class AggressiveRenkoCore(ABC):
             self.active_positions = state.get('active_positions', {})
             self.active_symbols = state.get('active_symbols', {})
             self.avg_price = state.get('avg_price', 0.0)
+            self.avg_price = state.get('avg_price', 0.0)
             self.total_qty = state.get('total_qty', 0)
+            self.last_exit_brick_index = state.get('last_exit_brick_index', -1)
             self.nifty_renko.from_dict(state['nifty_renko'])
             if state.get('option_renko'):
                 # Initialize with current config values, then overwrite with stored state

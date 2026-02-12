@@ -2,12 +2,13 @@
 Futures VWAP Supertrend Strategy - Live implementation
 
 [STRATEGY LOGIC]
-1. ENTRY (Directional Short Option Selling - Tick-by-Tick):
+1. ENTRY (Directional Short Option Selling - Configurable):
+   - Check Timing: Tick-by-Tick (Default) OR Candle Close (Configurable via `enter_on_candle_close`).
    - Trend Follow: Trade matches Supertrend direction AND VWAP relation.
      - Call Sell (Bearish): Futures Price < VWAP AND Supertrend == -1 (Red).
      - Put Sell (Bullish): Futures Price > VWAP AND Supertrend == 1 (Green).
    - Filter 1: Price must be within `max_vwap_distance_pct` (0.2%) of VWAP to avoid chasing.
-   - Filter 2: OTM Option Selection requires Short Buildup signal (Price Decrease >= 20% + OI Increase >= 25%).
+   - Filter 2: OTM Option Selection requires Short Buildup signal (Price Decrease >= 20% + OI Increase >= 20%).
    - Filter 3: Minimum 100 points OTM from ATM.
 
 2. EXIT (Trend Reversal & TSL):
@@ -48,6 +49,7 @@ from lib.api.market_data import download_nse_market_data, get_market_quote_for_i
 from lib.utils.expiry_cache import get_expiry_for_strategy
 from lib.oi_analysis.cumulative_oi_analysis import CumulativeOIAnalyzer
 from lib.utils.indicators import calculate_vwap, calculate_supertrend
+from lib.utils.vwap_calculator import VWAPCalculator  # NEW: Tick-level VWAP
 
 from kotak_api.lib.broker import BrokerClient
 from kotak_api.lib.order_manager import OrderManager
@@ -83,6 +85,9 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
         self.cached_expiry = None
         self.cached_chain = pd.DataFrame()
         self.last_chain_fetch = 0
+        
+        # Tick-level VWAP Calculator (WebSocket-based, zero API calls)
+        self.vwap_calculator = VWAPCalculator()
 
     def log(self, msg, tag="CORE"):
         timestamp = datetime.now().strftime('%H:%M:%S')
@@ -178,9 +183,10 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
             if key and ltp:
                 self.ltp_cache[key] = ltp
                 
-                # Debug: Check for Option Price Updates
-                # Update Futures Price in Real-Time
+                # Feed tick to VWAP calculator (tick-level VWAP)
                 if self.futures_key and key == self.futures_key:
+                    volume = data.get('volume', 1)  # Use 1 if volume not available
+                    self.vwap_calculator.add_tick(key, ltp, volume)
                     self.futures_price = ltp
                 
                 # Update core positions (Execution Layer)
@@ -206,7 +212,7 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
                     threading.Thread(target=self.process_iteration, daemon=True).start()
 
                 # 3. Real-time Monitoring (Always Live)
-                self.check_realtime_tsl()
+                self.check_realtime_exits()
                 self.check_realtime_entries()
                 
                 # 4. Heartbeat Status
@@ -267,14 +273,16 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
         else:
             df = df_hist
         
-        # Supertrend calculation - using full window
+        # === INDICATOR UPDATES ===
+        # 1. Supertrend: Uses full stitched dataset for ATR stability
         self.update_indicators(df)
         
-        # VWAP calculation - filter for TODAY to ensure intraday reset
-        today = datetime.now().date()
-        df_today = df[df['timestamp'].dt.date == today]
-        if not df_today.empty:
-            self.current_vwap = calculate_vwap(df_today)
+        # 2. VWAP: Uses tick-level data from WebSocket (zero API calls!)
+        #    VWAPCalculator automatically resets at session start (9:15 AM)
+        self.current_vwap = self.vwap_calculator.get_vwap(self.futures_key)
+        
+        
+        
         
         pcr = self.last_pcr
         if self.config.get('oi_check_enabled'):
@@ -298,24 +306,50 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
         
         self.log(f"Fut: {self.futures_price:.2f} | VWAP: {self.current_vwap:.2f} | ST: {self.current_st_direction} ({self.current_st_value:.2f}) | PCR: {pcr:.2f}")
 
+        trade_action = None
+        
         with self.lock:
             if self.positions:
-                # Check for Trend Reversal Exit (Only on Candle Close)
-                should_exit, ext_type, reason = self.check_exit_signal_candle()
-                if should_exit:
-                    self.execute_exit_all(f"{ext_type}: {reason}")
-                else:
-                    # Check for Pyramiding (Once per candle or at close)
-                    can_py, py_reason = self.can_add_pyramid()
-                    if can_py: 
-                        self.execute_trade(self.current_direction, py_reason, is_pyramid=True)
+                # Check for Trend Reversal Exit (If Configured for Candle Close)
+                if self.config.get('exit_on_candle_close', True):
+                    should_exit, ext_type, reason = self.check_exit_signal_candle()
+                    if should_exit:
+                        self.execute_exit_all(f"{ext_type}: {reason}")
+                        return
 
-    def check_realtime_tsl(self):
+                # Check for Pyramiding (Once per candle)
+                can_py, py_reason = self.can_add_pyramid()
+                if can_py: 
+                     trade_action = ("PYRAMID", self.current_direction, py_reason)
+            
+            # Check for Entry (If Configured for Candle Close)
+            elif self.config.get('enter_on_candle_close', False):
+                should_enter, direction, reason = self.check_entry_signal(pcr)
+                if should_enter:
+                    trade_action = ("ENTRY", direction, reason)
+
+        # Execute Trade Outside Lock
+        if trade_action:
+            if trade_action[0] == "ENTRY":
+                self.execute_trade(trade_action[1], trade_action[2])
+            elif trade_action[0] == "PYRAMID":
+                self.execute_trade(trade_action[1], trade_action[2], is_pyramid=True)
+
+    def check_realtime_exits(self):
         with self.lock:
             if not self.positions: return
+            
+            # 1. TSL Check (Always Live)
             should_exit, ext_type, reason = self.check_exit_signal() 
             if should_exit: 
                 self.execute_exit_all(f"{ext_type}: {reason}")
+                return
+
+            # 2. Trend Reversal Check (If Configured for Tick-by-Tick)
+            if not self.config.get('exit_on_candle_close', True):
+                should_exit, ext_type, reason = self.check_exit_signal_candle()
+                if should_exit:
+                    self.execute_exit_all(f"{ext_type} (Realtime): {reason}")
 
     def check_realtime_entries(self):
         """Checks for entries tick-by-tick based on static indicators"""
@@ -323,6 +357,9 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
         direction = None
         reason = ""
         
+        if self.config.get('enter_on_candle_close', False):
+            return
+
         with self.lock:
             if not self.positions:
                 should_enter, direction, reason = self.check_entry_signal(self.last_pcr)
