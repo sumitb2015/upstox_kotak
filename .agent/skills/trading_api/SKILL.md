@@ -185,6 +185,15 @@ class MyStrategy:
         self.kotak_client = self.kotak_broker.authenticate()
         # Initialize Order Manager
         self.order_mgr = OrderManager(self.kotak_client, dry_run=self.dry_run)
+        
+    def check_margin(self):
+        """Fetch available margin/funds."""
+        funds = self.kotak_broker.get_funds()
+        if funds:
+            # Example: Accessing cash balance
+             cash = funds.get('data', {}).get('cash', 0)
+             return float(cash)
+        return 0.0
 ```
 
 #### 2. Transaction Types
@@ -197,6 +206,31 @@ Upstox uses `instrument_key` (e.g., `NSE_FO|58689`). Kotak requires the **Tradin
 
 - **Strike to Symbol**: Use `kotak_api.lib.trading_utils.get_strike_token(broker, strike, type, expiry)` to resolve the correct symbol name.
 - **Latency Tip**: After `place_order()`, always wait ~1 second before calling `check_order_status()` to allow the exchange to process the request.
+
+#### 4. Order Verification (Get Execution Price)
+After an order is filled, **ALWAYS** fetch the actual traded price from the exchange. Do NOT rely on the limit price or current LTP.
+
+```python
+# After order status is 'complete' or 'filled'
+real_price = order_mgr.get_execution_price(order_id)
+logger.info(f"Actual Execution Price: {real_price}")
+```
+
+#### 5. Master Data Management
+The Kotak API requires local CSV master files for symbol resolution. If `get_strike_token` fails, ensure master data is fresh.
+
+```python
+# To force a fresh download (usually done in setup or maintenance)
+broker.download_fresh_master()
+broker.load_master_data()
+```
+
+#### 6. Instrument Mapping Utility
+Use `get_instrument_token` to resolve Kotak's internal `instrument_token` for quotes.
+
+```python
+token = broker.get_instrument_token("NIFTY22JAN25C24000", exchange="nse_fo")
+```
 
 ---
 
@@ -279,6 +313,20 @@ streamer.connect_market_data(
     instrument_keys=["NSE_INDEX|Nifty 50", "NSE_FO|58689"],
     mode="full", # 'full' required for OHLC
     on_message=on_market_update
+)
+```
+
+### Portfolio Streaming (Orders & Positions)
+The `UpstoxStreamer` can also monitor real-time order fills and position changes.
+
+```python
+def on_order_update(order_data):
+    print(f"Order Update: {order_data['order_id']} is {order_data['status']}")
+
+streamer.connect_portfolio(
+    order_update=True,
+    position_update=True,
+    on_order=on_order_update
 )
 ```
 
