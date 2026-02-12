@@ -31,7 +31,7 @@ __pycache__/
 Thumbs.db
 
 # Agent and IDE specific
-.agent/
+#.agent/
 .gemini/
 .vscode/
 .idea/

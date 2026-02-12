@@ -13,7 +13,7 @@ This document lists all important Upstox API functions available in your library
 - `get_vwap(token, instrument_key)` - **STANDARD** Get daily VWAP (Average Traded Price)
 - `get_market_quote_for_instrument(token, instrument_key)` - Get full quote with key mapping
 - `get_market_quotes(token, instrument_keys)` - Get quotes for multiple instruments
-- `get_ltp_quote(token, instrument_key)` - Get Last Traded Price
+- `get_ltp(token, instrument_key)` - **NEW** Get Last Traded Price (Simple Wrapper)
 - `get_multiple_ltp_quotes(token, instrument_keys)` - Get LTP for multiple instruments
 - `get_ohlc_quote(token, instrument_key, interval)` - Get OHLC data
 

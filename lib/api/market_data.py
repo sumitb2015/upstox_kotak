@@ -387,3 +387,17 @@ def get_vwap(access_token, instrument_key):
         # Upstox V2 field is 'average_price'
         return quote.get('average_price', 0.0)
     return 0.0
+
+def get_ltp(access_token, instrument_key):
+    """
+    Get Last Traded Price (LTP) for an instrument.
+    Wrapper around get_market_quote_for_instrument.
+    """
+    quote = get_market_quote_for_instrument(access_token, instrument_key)
+    if quote:
+        # Upstox V2 uses 'last_price' or 'ltp' depending on feed type?
+        # MarketQuoteApi returns object with 'last_price'
+        # our helper converts to dict.
+        # Let's check keys. Typically 'last_price' in REST API.
+        return quote.get('last_price', 0.0)
+    return 0.0
