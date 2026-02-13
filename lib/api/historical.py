@@ -189,3 +189,52 @@ def get_intraday_data_v3(access_token: str, instrument_key: str, interval_unit: 
     except Exception as e:
         print(f"❌ Exception in get_intraday_data_v3: {e}")
         return None
+
+def get_expired_historical_data(access_token: str, instrument_key: str, expiry_date: str, interval: str, from_date: str, to_date: str) -> Optional[List[Dict]]:
+    """
+    Fetch historical candle data for EXPIRED instruments.
+    This is the only endpoint that reliably returns Open Interest (OI) for option history.
+    
+    Endpoint: https://api.upstox.com/v2/historical-candle/expired/{instrument_key}/{interval}/{to_date}/{from_date}
+    """
+    import upstox_client
+    from upstox_client.rest import ApiException
+    
+    configuration = upstox_client.Configuration()
+    configuration.access_token = access_token
+    
+    # Map intervals
+    if interval == "minute": interval = "1minute"
+    elif interval == "day": interval = "day"
+    
+    try:
+        api_client = upstox_client.ApiClient(configuration)
+        expired_api = upstox_client.ExpiredInstrumentApi(api_client)
+        
+        # Note: instrument_key for expired usually includes expiry suffix e.g. NSE_FO|42391|10-02-2026
+        api_response = expired_api.get_expired_historical_candle_data(
+            expired_instrument_key=instrument_key,
+            interval=interval,
+            to_date=to_date,
+            from_date=from_date
+        )
+        
+        if api_response.status == 'success' and api_response.data.candles:
+            formatted_data = []
+            for candle in api_response.data.candles:
+                formatted_data.append({
+                    'timestamp': candle[0],
+                    'open': candle[1],
+                    'high': candle[2],
+                    'low': candle[3],
+                    'close': candle[4],
+                    'volume': candle[5],
+                    'oi': candle[6] if len(candle) > 6 else 0
+                })
+            # Sort ascending
+            formatted_data.sort(key=lambda x: x['timestamp'])
+            return formatted_data
+        return None
+    except Exception as e:
+        print(f"❌ Exception in get_expired_historical_data: {e}")
+        return None

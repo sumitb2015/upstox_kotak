@@ -317,8 +317,10 @@ def get_expired_option_contracts(access_token, instrument_key, expiry_date):
     """Get expired options using SDK"""
     api_instance = upstox_client.OptionsApi(_get_api_client(access_token))
     try:
-        api_response = api_instance.get_option_contracts(instrument_key, expiry_date)
-        return api_response.data
+        api_response = api_instance.get_option_contracts(instrument_key=instrument_key, expiry_date=expiry_date)
+        if api_response.status == 'success':
+            return api_response.data
+        return None
     except ApiException as e:
         print(f"Error fetching expired options: {e}")
         return None
