@@ -387,3 +387,17 @@ def get_equity_instrument_key(symbol, nse_data=None):
     except Exception as e:
         print(f"Error getting Equity Key: {e}")
         return None
+
+
+def get_atm_strike(spot_price, strike_step=50):
+    """
+    Calculate ATM strike price based on spot price and strike step.
+    
+    Args:
+        spot_price (float): Underlying spot price
+        strike_step (int): Strike interval (e.g., 50 for Nifty, 100 for BankNifty)
+        
+    Returns:
+        int: Calculated ATM strike
+    """
+    return int(round(spot_price / strike_step) * strike_step)

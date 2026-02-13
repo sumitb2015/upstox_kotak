@@ -22,15 +22,20 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def main():
     print(f"🚀 Starting IV Recorder for {SYMBOL}")
     
-    # 1. Login (simulated via manual token or existing mechanism)
-    # Ideally, we use the standard AccessTokenProvider if available, or load from config
-    # For now, we assume Config handles loading env/token if set up, 
-    # OR we rely on the user to have a valid token in secrets.yaml
-    
+    # 1. Login - Read from accessToken.txt
     try:
-        access_token = Config.get_access_token()
+        # Path relative to script: ../../lib/core/accessToken.txt
+        token_path = os.path.join(os.path.dirname(__file__), '../../lib/core/accessToken.txt')
+        
+        if not os.path.exists(token_path):
+             print(f"❌ Token file not found at: {token_path}")
+             return
+             
+        with open(token_path, "r") as file:
+            access_token = file.read().strip()
+            
         if not access_token:
-            print("❌ Access Token not found. Please ensure secrets.yaml is populated.")
+            print("❌ Access Token file is empty.")
             return
             
         print("✅ Access Token loaded.")
@@ -44,8 +49,9 @@ def main():
             current_date = now.strftime('%Y-%m-%d')
             csv_file = os.path.join(DATA_DIR, f"iv_history_{current_date}.csv")
             
+            
             # 2. Get Expiry
-            expiry = get_expiry_for_strategy(access_token, SYMBOL, "current_week")
+            expiry = get_expiry_for_strategy(access_token, expiry_type="current_week", instrument=SYMBOL)
             if not expiry:
                 print("⚠️ Could not fetch expiry. Retrying...")
                 time.sleep(10)
@@ -54,12 +60,17 @@ def main():
             print(f"⏰ {now.strftime('%H:%M:%S')} | Fetching Chain for Expiry: {expiry}")
             
             # 3. Fetch Option Chain
-            df_chain = get_option_chain_dataframe(access_token, f"NSE_INDEX|{SYMBOL} 50", expiry) 
-            # Note: "NSE_INDEX|Nifty 50" might be needed instead of just SYMBOL
-            # Let's verify the key. Standard is "NSE_INDEX|Nifty 50" for NIFTY
+            # Use specific casing standard "NSE_INDEX|Nifty 50"
+            instrument_key = "NSE_INDEX|Nifty 50" if SYMBOL == "NIFTY" else f"NSE_INDEX|{SYMBOL}"
+            
+            df_chain = get_option_chain_dataframe(access_token, instrument_key, expiry)
             
             if df_chain is None or df_chain.empty:
-                print("⚠️ Option Chain empty or failed.");
+                print(f"⚠️ Option Chain empty or failed for {instrument_key} @ {expiry}")
+                # Try getting raw to see error?
+                # from lib.api.option_chain import get_option_chain
+                # raw = get_option_chain(access_token, instrument_key, expiry)
+                # print(f"DEBUG RAW: {raw}")
                 time.sleep(10)
                 continue
                 
