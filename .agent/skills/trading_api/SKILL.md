@@ -429,3 +429,22 @@ latest_feed = streamer.get_latest_data("NSE_INDEX|Nifty 50")
 if latest_feed:
     print(latest_feed.get('ltp'))
 ```
+
+---
+
+## 🤖 7. Utility Scripts
+
+### IV Recorder (Historical IV)
+Since the API does not provide historical IV, use the `iv_recorder` script to build your own dataset.
+
+**Script**: `scripts/iv_recorder/record_iv.py`
+
+**Usage**:
+```bash
+python scripts/iv_recorder/record_iv.py
+```
+
+**Features**:
+- Polls Option Chain every 60 seconds.
+- records IV for ATM +/- 250 strikes.
+- Appends to `data/iv_history/iv_history_{date}.csv`.
