@@ -33,6 +33,7 @@ To maintain observability, all strategies MUST use the following tag prefixes in
 | :--- | :--- | :--- |
 | **Risk Management** | Hybrid Gated SL, Pyramiding, Step-Locking | `[.agent/skills/risk_management/SKILL.md](file:///c:/algo/upstox/.agent/skills/risk_management/SKILL.md)` |
 | **OI Analysis** | Sentiment from Option Chain, PCR | `[.agent/skills/oi_analysis/SKILL.md](file:///c:/algo/upstox/.agent/skills/oi_analysis/SKILL.md)` |
+| **OI Plotting** | Real-time visual tracking of Strike-wise OI | `[.agent/skills/oi_plotting/SKILL.md](file:///c:/algo/upstox/.agent/skills/oi_plotting/SKILL.md)` |
 | **CPR Intelligence** | Standardized logic for Daily/Weekly CPR | `[.agent/skills/cpr_intelligence/SKILL.md](file:///c:/algo/upstox/.agent/skills/cpr_intelligence/SKILL.md)` |
 | **Indicator Intelligence** | TA-Lib standards, Supertrend, Renko | `[.agent/skills/indicator_intelligence/SKILL.md](file:///c:/algo/upstox/.agent/skills/indicator_intelligence/SKILL.md)` |
 | **Backtesting** | Simulation scripts & verification | `[.agent/skills/backtesting_simulation/SKILL.md](file:///c:/algo/upstox/.agent/skills/backtesting_simulation/SKILL.md)` |

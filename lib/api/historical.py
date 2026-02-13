@@ -119,7 +119,8 @@ def get_historical_data_v3(access_token: str, instrument_key: str, interval_unit
                     'high': candle[2],
                     'low': candle[3],
                     'close': candle[4],
-                    'volume': candle[5]
+                    'volume': candle[5],
+                    'oi': candle[6] if len(candle) > 6 else 0
                 })
             formatted_data.sort(key=lambda x: x['timestamp'])
             return formatted_data
@@ -178,7 +179,8 @@ def get_intraday_data_v3(access_token: str, instrument_key: str, interval_unit: 
                     'high': candle[2],
                     'low': candle[3],
                     'close': candle[4],
-                    'volume': candle[5]
+                    'volume': candle[5],
+                    'oi': candle[6] if len(candle) > 6 else 0
                 })
             # Sort ascending
             formatted_data.sort(key=lambda x: x['timestamp'])

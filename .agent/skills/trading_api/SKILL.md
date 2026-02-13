@@ -97,28 +97,41 @@ if ohlc:
 ```
 
 ### Expired Instruments (V3)
-To perform historical analytics (PCR, OI Change) on options that have already expired, use the specialized **ExpiredInstrumentApi** class in the Upstox SDK. Our library wrappers handle this automatically.
+To perform historical analytics (PCR, OI Change) on options that have already expired, use the specialized **ExpiredInstrumentApi** class in the Upstox SDK. 
+
+**Key Capability**: Unlike standard historical endpoints, the `get_expired_historical_candle_data` method returns valid **Open Interest (OI)** for expired option contracts.
+
+#### Implementation Logic
+Our library wrapper `get_expired_historical_data` leverages this specialized SDK method.
 
 ```python
-from lib.api.market_data import get_expired_expiries, get_expired_option_contracts
 from lib.api.historical import get_expired_historical_data
 
-# These helpers use upstox_client.ExpiredInstrumentApi internally
+# Fetch 1-min candles WITH NON-ZERO OI
+# Internally calls: apiInstance.get_expired_historical_candle_data(...)
+candles = get_expired_historical_data(
+    access_token=token,
+    instrument_key="NSE_FO|42391|10-02-2026", # Note the expiry suffix
+    interval="minute", 
+    from_date="2026-02-10",
+    to_date="2026-02-10"
+)
+
+if candles:
+    # Now you have valid 'oi' field
+    print(f"OI at {candles[0]['timestamp']}: {candles[0]['oi']}")
+```
+
+#### Discovery Helpers
+Use these to resolve the correct keys and dates before fetching candles:
+```python
+from lib.api.market_data import get_expired_expiries, get_expired_option_contracts
+
 # 1. Get confirmed past expiry dates
 expiries = get_expired_expiries(token, "NSE_INDEX|Nifty 50")
 
 # 2. Get contracts for a specific past expiry
 contracts = get_expired_option_contracts(token, "NSE_INDEX|Nifty 50", expiry_date="2026-02-12")
-
-# 3. Fetch 1-min candles WITH NON-ZERO OI
-# Note: This is the ONLY way to get historical OI for options.
-candles = get_expired_historical_data(
-    access_token=token,
-    instrument_key="NSE_FO|42391|10-02-2026", # Use key from step 2
-    interval="minute", 
-    from_date="2026-02-10",
-    to_date="2026-02-10"
-)
 ```
 
 ### Option Chain Output Helper
@@ -477,3 +490,26 @@ python scripts/iv_recorder/record_iv.py
 > **Data Sources for Options OI Analytics**
 > 1. **Current Day (Live)**: Use `scripts/record_iv.py` (polls live quotes). Standard intraday API is not reliable for OI.
 > 2. **Expired History**: Use `get_expired_historical_data()` in `lib.api.historical`. This is the **only** API source providing non-zero historical OI for options.
+
+### Real-time OI Plotter
+Use the standalone plotter script to visualize Open Interest trends for any option strike in real-time.
+
+**Script**: `scripts/plotting/plot_oi_realtime.py`
+
+**Usage**:
+```bash
+# Default: ATM CE & PE (Dual Plot)
+python scripts/plotting/plot_oi_realtime.py
+
+# Plot CE and PE for specific strikes
+python scripts/plotting/plot_oi_realtime.py --symbol BANKNIFTY --strike 52000,52500 --type BOTH
+
+# Specific Strike and Type
+python scripts/plotting/plot_oi_realtime.py --symbol NIFTY --strike 25000 --type PE
+```
+
+**Features**:
+- **ATM Discovery**: Automatically identifies the ATM strike if omitted.
+- **Dual Mode**: Use `--type BOTH` to compare CE and PE OI on the same chart (CE=Green, PE=Red).
+- **Multi-Strike**: Comma-separate strikes to compare different levels.
+- **Real-time**: Animation updates every 60 seconds with latest V3 data.
