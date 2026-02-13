@@ -452,5 +452,9 @@ python scripts/iv_recorder/record_iv.py
 
 **Features**:
 - Polls Option Chain every 60 seconds.
-- records IV for ATM +/- 250 strikes.
+- Records IV, LTP, **and OI** for ATM +/- 250 strikes.
 - Appends to `data/iv_history/iv_history_{date}.csv`.
+
+> [!NOTE]
+> **Why use this for OI?**
+> The standard `get_intraday_data_v3` API often returns `0` for Open Interest on option contracts. This recorder is the **reliable** way to build historical OI and IV datasets for analytics.
