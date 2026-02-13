@@ -102,6 +102,25 @@ if holidays:
         print(f"Holiday: {d} - {desc}")
 ```
 
+### Option Contracts (V2)
+Fetch all available option contracts for an instrument (e.g., Nifty 50) to filter by strike, type, or expiry.
+
+```python
+from lib.api.market_data import get_option_contracts
+
+# Get all contracts (returns list of dicts)
+contracts = get_option_contracts(token, "NSE_INDEX|Nifty 50")
+
+# Filter by expiry
+contracts_expiry = get_option_contracts(token, "NSE_INDEX|Nifty 50", expiry_date="2026-02-19")
+
+if contracts:
+    c = contracts[0]
+    print(f"Symbol: {c.get('trading_symbol')}")
+    print(f"Expiry: {c.get('expiry')}")
+    print(f"Strike: {c.get('strike_price')}")
+```
+
 ### Option Instrument Keys (CRITICAL for LTP)
 To fetch LTP for options, you must resolve the **Upstox Instrument Key** (different from Kotak Trading Symbol).
 

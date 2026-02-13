@@ -1,5 +1,6 @@
 import requests as rq
 import pandas as pd
+import requests
 import upstox_client
 from upstox_client.rest import ApiException
 import math
@@ -400,4 +401,40 @@ def get_ltp(access_token, instrument_key):
         # our helper converts to dict.
         # Let's check keys. Typically 'last_price' in REST API.
         return quote.get('last_price', 0.0)
+
     return 0.0
+
+def get_option_contracts(access_token, instrument_key, expiry_date=None):
+    """
+    Get option contracts for an instrument key.
+    
+    Args:
+        access_token (str): Upstox Access Token
+        instrument_key (str): Underlying instrument key (e.g., 'NSE_INDEX|Nifty 50')
+        expiry_date (str, optional): Filter by expiry date (YYYY-MM-DD)
+        
+    Returns:
+        list: List of option contracts or None
+    """
+    url = 'https://api.upstox.com/v2/option/contract'
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {access_token}'
+    }
+    params = {'instrument_key': instrument_key}
+    
+    if expiry_date:
+        params['expiry_date'] = expiry_date
+        
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status') == 'success':
+            return data.get('data')
+        return None
+        
+    except requests.RequestException as e:
+        print(f"Error fetching option contracts: {e}")
+        return None
