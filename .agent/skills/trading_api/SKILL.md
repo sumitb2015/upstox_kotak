@@ -457,4 +457,4 @@ python scripts/iv_recorder/record_iv.py
 
 > [!NOTE]
 > **Why use this for OI?**
-> The standard `get_intraday_data_v3` API often returns `0` for Open Interest on option contracts. This recorder is the **reliable** way to build historical OI and IV datasets for analytics.
+> The standard `get_intraday_data_v3` and `get_historical_data_v3` APIs return `None` or `0` for Open Interest on option contracts (verified Feb 2026). This recorder is the **reliable** way to build historical OI and IV datasets for analytics.
