@@ -62,6 +62,22 @@ candles = get_intraday_data_v3(token, instrument_key, "minute", 1)
 candles = get_intraday_data_v3(token, instrument_key, "minute", 5)
 ```
 
+### OHLC Queries (Live V3)
+Use `get_ohlc_quote` for lightweight live OHLC data (Open, High, Low, Close, Volume) without full depth.
+
+```python
+from lib.api.market_quotes import get_ohlc_quote
+
+# Get Live & Previous OHLC
+# Interval: '1d', '1m', '30m'
+ohlc = get_ohlc_quote(token, "NSE_INDEX|Nifty 50", interval="1d")
+
+if ohlc:
+    data = ohlc['data']["NSE_INDEX|Nifty 50"]
+    print(f"Live High: {data['live_ohlc']['high']}")
+    print(f"Prev Close: {data['prev_ohlc']['close']}")
+```
+
 ### Option Chain
 ```python
 from lib.api.option_chain import get_option_chain_dataframe, get_greeks
