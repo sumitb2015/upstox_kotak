@@ -160,6 +160,12 @@ class FuturesBreakoutStrategy:
         
         while self.running:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    logger.info("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.running = False
+                    break
+
                 self.process_logic()
                 time.sleep(1)
             except KeyboardInterrupt:

@@ -774,6 +774,17 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         self.log("📡 Strategy Running... Press Ctrl+C to stop.")
         try:
             while True:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    # Clear state to prevent further actions
+                    with self.lock:
+                        self.active_positions.clear()
+                        self.active_symbols.clear()
+                        self.total_qty = 0
+                        self.entry_state = "STOPPED_BY_PORTFOLIO_MANAGER"
+                    break
+
                 current_dt = datetime.now()
                 
                 # Check for market close time

@@ -737,6 +737,12 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
         
         try:
             while True:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.execute_exit("Portfolio Manager Kill Switch")
+                    break
+
                 current_time = datetime.now()
                 
                 # Check if within trading hours

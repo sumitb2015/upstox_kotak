@@ -199,6 +199,12 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
         interval = self.config['candle_interval_minutes']
         while True:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.", "CORE")
+                    self.execute_exit_all("Portfolio Manager Kill Switch")
+                    break
+
                 now = datetime.now()
                 # 1. Market Close Check
                 exit_h, exit_m = map(int, self.config['exit_time'].split(':'))

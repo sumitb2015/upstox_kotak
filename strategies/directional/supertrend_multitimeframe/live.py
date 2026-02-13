@@ -393,6 +393,13 @@ class SupertrendMultiTimeframeLive:
         last_check = 0
         try:
             while self.running:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    logger.info("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.exit_all()
+                    self.running = False
+                    break
+
                 now = time.time()
                 
                 # Check Logic Every 5 Seconds

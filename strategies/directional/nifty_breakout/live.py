@@ -362,6 +362,12 @@ class NiftyBreakoutStrategy:
         # Keep main thread alive for WebSocket
         while True:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    logger.info("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.streamer.disconnect_all() # Ensure clean exit
+                    break
+
                 now = datetime.now()
                 if now.time() >= datetime.strptime(config.EXIT_TIME, "%H:%M:%S").time():
                     logger.info("[CORE] Exit Time Reached. Shutting down.")

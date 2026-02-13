@@ -308,6 +308,13 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         self.log("▶️ Live Monitoring Started")
         
         while True:
+            # 0. Global Kill Switch Check
+            if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                self.exit_all() # Ensure we are flat
+                self.running = False
+                break
+
             current_time = datetime.now().time()
             entry_time = datetime.strptime(self.config['entry_start_time'], '%H:%M').time()
             exit_time = datetime.strptime(self.config['exit_time'], '%H:%M').time()
