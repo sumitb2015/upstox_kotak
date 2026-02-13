@@ -54,6 +54,7 @@ from lib.utils.vwap_calculator import VWAPCalculator  # NEW: Tick-level VWAP
 from kotak_api.lib.broker import BrokerClient
 from kotak_api.lib.order_manager import OrderManager
 from kotak_api.lib.trading_utils import get_strike_token
+from kotak_api.lib.margin_helper import get_available_funds, check_margin_required
 
 # Force UTF-8 for Windows
 if sys.platform == 'win32':
@@ -448,6 +449,37 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
             self.log(f"❌ [CORE] Error scanning for short buildup: {e}", "CORE")
             return None
 
+    def check_margin_before_trade(self, symbol: str, lots: int, token: str) -> bool:
+        """
+        Validates if sufficient margin is available before placing an order.
+        """
+        if self.config.get('dry_run', False):
+            return True
+
+        deployment_pct = self.config.get('deployment_pct', 100.0)
+        tradeable, total = get_available_funds(self.order_mgr.client, deployment_pct)
+
+        # Confirm token or symbol availability
+        if not token:
+            self.log(f"⚠️ Could not resolve token for margin check: {symbol}", "CORE")
+            return False
+
+        # Determine transaction type for margin
+        side = 'S' # Strategy always Sells
+        
+        from kotak_api.lib.trading_utils import get_lot_size as get_kotak_lot_size
+        klot_size = get_kotak_lot_size(self.kotak_broker.master_df, symbol)
+        quantity = lots * klot_size
+
+        required = check_margin_required(self.order_mgr.client, token, quantity, side)
+        
+        if tradeable >= required:
+            self.log(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}", "CORE")
+            return True
+        else:
+            self.log(f"❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}", "CORE")
+            return False
+
     def execute_trade(self, direction: str, reason: str, is_pyramid: bool = False):
         self.log(f"⚡ [CORE] ENTRY SIGNAL: {reason}", "CORE")
         
@@ -490,6 +522,24 @@ class FuturesVWAPSupertrendLive(FuturesVWAPSupertrendCore):
 
             if not k_symbol or not u_key:
                 self.log(f"❌ [CORE] Failed to resolve symbols for strike {strike}", "CORE")
+                return
+
+            # === Margin Check ===
+            # Need Kotak Token for margin check.
+            # get_strike_token returns (token, symbol)
+            # We already called it above: `token, k_symbol = get_strike_token(...)`
+            # Wait, line 484 uses `_, k_symbol`. We discarded the token.
+            # Let's fix that.
+            
+            margin_token, k_symbol = get_strike_token(self.kotak_broker, strike, direction, expiry_dt)
+            
+            # Recheck symbols
+            if not k_symbol or not margin_token:
+                 self.log(f"❌ [CORE] Failed to resolve Kotak Token/Symbol for {strike}", "CORE")
+                 return
+
+            if not self.check_margin_before_trade(k_symbol, self.config['lot_size'], margin_token):
+                self.log(f"🚫 [CORE] Trade Aborted: Insufficient Margin for {k_symbol}", "CORE")
                 return
 
             ls = get_lot_size(u_key, self.nse_data)

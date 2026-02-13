@@ -60,6 +60,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 from kotak_api.lib.broker import BrokerClient
 from kotak_api.lib.order_manager import OrderManager
 from kotak_api.lib.trading_utils import get_strike_token
+from kotak_api.lib.margin_helper import get_available_funds, check_margin_required
 from lib.api.historical import get_historical_data, get_intraday_data_v3
 from lib.api.streaming import UpstoxStreamer
 from lib.api.market_data import download_nse_market_data, get_option_chain_atm
@@ -138,6 +139,12 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
              state_restored = self.load_state(self.config['state_file'])
 
         if state_restored:
+            # [FIX] Backward compatibility: Restore lot_size if missing
+            if self.total_qty > 0 and self.current_option_token and getattr(self, 'lot_size', 0) == 0:
+                from lib.utils.instrument_utils import get_lot_size
+                self.lot_size = get_lot_size(self.current_option_token, self.nse_data)
+                self.log(f"⚠️ [CORE] Restored missing lot_size ({self.lot_size}) from NSE data.")
+            
             self.is_warming_up = False
             self.log(f"✅ [CORE] State loaded. Strategy is LIVE. (RSI: {self.rsi:.2f})")
         else:
@@ -335,7 +342,13 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     symbol = self.active_symbols.get(p_type, "Unknown")
                     break
                     
-                details = f" | {symbol} | Qty:{self.total_qty} | Avg:{self.avg_price:.1f} | OptBrick:{opt_brick_size:.1f} | TSL:{tsl:5.1f}"
+                # Calculate Lots
+                lots_display = ""
+                if hasattr(self, 'lot_size') and self.lot_size > 0:
+                     curr_lots = self.total_qty // self.lot_size
+                     lots_display = f"Lots:{int(curr_lots)} | "
+                
+                details = f" | {symbol} | {lots_display}Qty:{self.total_qty} | Avg:{self.avg_price:.1f} | OptBrick:{opt_brick_size:.1f} | TSL:{tsl:5.1f}"
             else:
                 details = " | [WAITING]"
 
@@ -595,6 +608,38 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         except Exception as e:
             logger.error(f"  ⚠️ [CORE] RSI Update Failed: {e}")
 
+    def check_margin_before_trade(self, symbol: str, lots: int, action: str, token: str) -> bool:
+        """
+        Validates if sufficient margin is available before placing an order.
+        """
+        if self.config.get('dry_run', False):
+            return True
+
+        deployment_pct = self.config.get('deployment_pct', 100.0)
+        tradeable, total = get_available_funds(self.order_mgr.client, deployment_pct)
+
+        # Confirm token or symbol availability
+        if not token:
+            self.log(f"⚠️ Could not resolve token for margin check: {symbol}")
+            return False
+
+        # Determine transaction type for margin
+        # Action is usually "ENTRY" or "PYRAMID" (Selling)
+        side = 'S'
+        
+        from kotak_api.lib.trading_utils import get_lot_size as get_kotak_lot_size
+        klot_size = get_kotak_lot_size(self.kotak_broker.master_df, symbol)
+        quantity = lots * klot_size
+
+        required = check_margin_required(self.order_mgr.client, token, quantity, side)
+        
+        if tradeable >= required:
+            self.log(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return True
+        else:
+            self.log(f"❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return False
+
     def execute_entry(self, option_type: str, timestamp: datetime, is_pyramid: bool = False):
         if is_pyramid and not self.current_option_token:
             self.log("❌ Pyramid called but no active position found. Skipping.")
@@ -655,6 +700,38 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             
         # 2. Place Order
         lots = self.config['trading_lots']
+        
+        # === Margin Check ===
+        # Use Kotak Symbol/Token for check
+        ktok = k_token if not is_pyramid else self.current_option_token # Pyramid uses existing token (Upstox Key?) 
+        # Wait, for pyramid `self.current_option_token` is Upstox Key. We need Kotak Token.
+        # But `margin_helper` expects Kotak Token.
+        # Let's verify what `opt_key` and `k_token` are.
+        # In Entry block: k_token is resolved from `get_strike_token` (Kotak Token).
+        # In Pyramid block: `self.current_option_token` is Upstox Key.
+        
+        # Correction: We need Kotak Token for margin check.
+        # If Pyramid, we need to resolve Kotak Token again or store it.
+        # Strategy doesn't seem to store Kotak Token persistently, only Upstox Key.
+        # So we must resolve it.
+        
+        margin_token = None
+        if not is_pyramid:
+            margin_token = k_token
+        else:
+            # Resolve for Pyramid
+            # We know Upstox Key `self.current_option_token`.
+            # We have `opt_symbol` (Kotak Symbol).
+            # We can lookup token from `self.kotak_broker.master_df` using Symbol.
+            try:
+                margin_token = self.kotak_broker.master_df[self.kotak_broker.master_df['pTrdSymbol'] == opt_symbol].iloc[0]['pSymbol']
+            except:
+                pass
+
+        if not self.check_margin_before_trade(opt_symbol, lots, 'ENTRY', margin_token):
+             self.log(f"❌ Entry/Pyramid Aborted: Insufficient Margin for {opt_symbol}")
+             return
+
         from lib.utils.instrument_utils import get_lot_size
         lot_size = get_lot_size(opt_key, self.nse_data)
         
@@ -697,6 +774,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     self.current_option_token = opt_key
                     self.active_positions[option_type] = opt_key
                     self.active_symbols[option_type] = opt_symbol
+                    self.lot_size = lot_size # [NEW] Store lot size
                     # Initialize Option Renko
                     b_size = self.calculate_option_brick_size(exec_price)
                     self.option_renko = RenkoCalculator(
@@ -754,8 +832,10 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     self.option_renko = None
                     self.avg_price = 0.0
                     self.total_qty = 0
+                    self.lot_size = 0  # [RESET]
                     self.pyramid_count = 0
                     self.bricks_since_last_lot = 0
+                    self.last_pyramid_brick_idx = 0
                     self.entry_state = "WAITING"
                     
                     # [NEW] Record exit time (brick index) to prevent immediate re-entry
@@ -776,12 +856,25 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             while True:
                 # 0. Global Kill Switch Check
                 if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
-                    self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
-                    # Clear state to prevent further actions
+                    try:
+                        with open("c:/algo/upstox/.STOP_TRADING", "r") as f:
+                            content = f.read().strip()
+                        stats = os.stat("c:/algo/upstox/.STOP_TRADING")
+                        ts = datetime.fromtimestamp(stats.st_mtime).strftime('%H:%M:%S')
+                        self.log(f"🛑 Kill Switch Detected (.STOP_TRADING). Created: {ts}")
+                        self.log(f"   Reason: {content if content else '[Empty File]'}")
+                    except Exception as e:
+                        self.log(f"🛑 Kill Switch Detected (Read Error: {e})")
+                        
+                    # EXECUTING GRACEFUL EXIT
                     with self.lock:
-                        self.active_positions.clear()
-                        self.active_symbols.clear()
-                        self.total_qty = 0
+                        if self.active_positions:
+                            self.log("🚪 [CORE] Kill Switch Triggered. Exiting all positions...")
+                            # Create a copy of keys to avoid modification during iteration
+                            pos_types = list(self.active_positions.keys())
+                            for p_type in pos_types:
+                                self.execute_exit(p_type, "Kill Switch Activated", current_dt)
+                        
                         self.entry_state = "STOPPED_BY_PORTFOLIO_MANAGER"
                     break
 
@@ -822,7 +915,6 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             if hasattr(self, 'streamer'):
                 self.streamer.disconnect_all()
             
-            import os
             self.log("👋 [CORE] Strategy stopped safely.")
             os._exit(0) # Force exit all threads
 

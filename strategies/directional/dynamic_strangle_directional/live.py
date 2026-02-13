@@ -932,6 +932,13 @@ class DynamicStrangleStrategy:
         self.state = StrategyState.WAITING_FOR_ENTRY
         while self.is_running:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    print("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.exit_strategy()
+                    self.is_running = False
+                    break
+
                 if self.state == StrategyState.WAITING_FOR_ENTRY:
                     if self.validate_entry():
                         if self.enter_initial_position():

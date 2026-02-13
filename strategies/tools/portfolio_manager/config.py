@@ -6,22 +6,22 @@ Global Risk Management settings for the Kotak account.
 
 CONFIG = {
     # === P&L Thresholds (Absolute Values in ₹) ===
-    'TARGET_PROFIT': 5000.0,   # Exit ALL if Daily Profit >= 5000
+    'TARGET_PROFIT': 3000.0,   # Exit ALL if Daily Profit >= 5000
     'MAX_LOSS': -5000.0,       # Exit ALL if Daily Loss <= -5000
     
     # === Profit Locking (Step-Up Trailing) ===
     # If P&L reaches 'reach', we ensure it doesn't drop below 'lock_min'
     'PROFIT_LOCKING': [
-        {'reach': 2000, 'lock_min': 1000},  # Reach 2k, lock 1k
-        {'reach': 3000, 'lock_min': 2000},  # Reach 3k, lock 2k
-        {'reach': 4000, 'lock_min': 3000},  # Reach 4k, lock 3k
+        {'reach': 2000, 'lock_min': 1000, 'trail_buffer': 1000}, # Reach 2k, Lock 1k, Trail 1k
+        {'reach': 3000, 'lock_min': 2000, 'trail_buffer': 800},  # Reach 3k, Lock 2k, Trail 800 (Tighten)
+        {'reach': 4000, 'lock_min': 3000, 'trail_buffer': 500},  # Reach 4k, Lock 3k, Trail 500 (Tightest)
     ],
     
     # === Monitoring ===
     'POLL_INTERVAL': 5,        # Seconds between P&L checks
     
     # === Execution ===
-    'DRY_RUN': True,           # If True, simulates square-off logic without placing orders
+    'DRY_RUN': False,           # If True, simulates square-off logic without placing orders
     
     # === Safety ===
     'ENABLE_KILL_SWITCH': True, # Creates lock file to stop other strategies

@@ -522,6 +522,13 @@ class SyntheticCPRStrategy:
         
         while self.running:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    logger.info("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.exit_synthetic("Portfolio Manager Kill Switch")
+                    self.running = False
+                    break
+
                 now = datetime.now()
                 
                 # Periodic Status Log (Every 5 seconds)

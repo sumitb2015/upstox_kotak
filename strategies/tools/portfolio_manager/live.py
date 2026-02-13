@@ -33,6 +33,29 @@ class PortfolioManager:
         self.pnl_history = [] 
         self.highest_profit = -float('inf') # Track highest PnL for trailing lock
         
+    def get_active_lock(self):
+        """Calculate the currently locked profit based on high water mark."""
+        if 'PROFIT_LOCKING' not in CONFIG:
+            return 0.0
+            
+        step_lock = 0.0
+        current_buffer = None
+        
+        # Iterate to find:
+        # 1. The max step lock we've achieved
+        # 2. The trailing buffer corresponding to the highest level reached
+        for level in CONFIG['PROFIT_LOCKING']:
+            if self.highest_profit >= level['reach']:
+                step_lock = max(step_lock, level['lock_min'])
+                current_buffer = level.get('trail_buffer')
+        
+        # Calculate Trailing Lock if valid buffer found
+        trail_lock = 0.0
+        if current_buffer is not None:
+             trail_lock = self.highest_profit - current_buffer
+            
+        return max(step_lock, trail_lock)
+        
     def initialize(self):
         """Connect to Kotak API."""
         logger.info("🚀 Initializing Portfolio Manager...")
@@ -224,6 +247,12 @@ class PortfolioManager:
                 pnl, open_positions, is_valid = self.get_global_pnl()
                 
                 log_msg = f"Global P&L: {pnl:.2f} | Open Pos: {len(open_positions)}"
+                
+                # Add Lock Indication
+                active_lock = self.get_active_lock()
+                if active_lock > 0:
+                    log_msg += f" | Locked: {active_lock:.2f}"
+                
                 if not is_valid:
                     log_msg += " [INVALID DATA]"
                 
@@ -256,29 +285,21 @@ class PortfolioManager:
                         # logger.info(f"[INFO] New High Profit: {self.highest_profit:.2f}")
 
                     # 2. Check Locks
-                    for level in CONFIG['PROFIT_LOCKING']:
-                        reach = level['reach']
-                        lock = level['lock_min']
-                        
-                        # Use strictly greater logic to activate lock once reach is touched
-                        # We need to know if we HAVE reached 'reach' at any point today.
-                        # self.highest_profit tracks exactly that.
-                        
-                        if self.highest_profit >= reach:
-                            # We are in locking territory for this level
-                            if pnl < lock:
-                                reason = f"Profit Locking Hit (High: {self.highest_profit:.2f} >= {reach}, Current: {pnl:.2f} < {lock})"
-                                triggered = True
-                                logger.warning(f"[TRIGGER] {reason}")
-                                break # Exit loop on first trigger
+                    active_lock = self.get_active_lock()
+                    
+                    if active_lock > 0:
+                        if pnl < active_lock:
+                            reason = f"Profit Locking Hit (High: {self.highest_profit:.2f}, Current: {pnl:.2f} < Lock: {active_lock:.2f})"
+                            triggered = True
+                            logger.warning(f"[TRIGGER] {reason}")
                 
                 if triggered:
                     # 1. Activate Global Kill Switch
                     self.activate_kill_switch(reason)
                     
-                    # 2. Square Off
+                    # 2. Log wait status
                     if open_positions:
-                        self.square_off_all(open_positions)
+                        logger.info(f"[INFO] Kill switch activated. Waiting for {len(open_positions)} active strategies to exit themselves.")
                     else:
                         logger.info("[INFO] No open positions to close.")
                         

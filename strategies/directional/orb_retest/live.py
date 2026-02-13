@@ -640,6 +640,12 @@ class ORBRetestStrategy:
         
         while True:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    if self.position: self.exit_position("Kill Switch")
+                    break
+
                 now = datetime.now()
                 current_time = now.time()
                 

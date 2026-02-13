@@ -691,6 +691,13 @@ class EMAHedgeLiveStrategy(EMAHedgeCore):
             try:
                 current_time = datetime.now()
                 
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    print("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.exit_all()
+                    break
+
+                
                 # Check trading hours
                 if not is_market_open():
                     print(f"⏸️  Market closed - waiting...")

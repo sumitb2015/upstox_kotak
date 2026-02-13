@@ -250,6 +250,12 @@ class InsideCandleLive:
         
         while True:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    print("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.exit_all()
+                    break
+
                 # Time check
                 now = datetime.now()
                 if now.time() > self.config.EXIT_TIME:

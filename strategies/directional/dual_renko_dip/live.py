@@ -308,14 +308,25 @@ class DualRenkoLive(DualRenkoCore):
             if order_id:
                 logger.info(f"✅ Exit Order Placed for {option_type}. ID: {order_id}")
             
-            
             u_key = f"NSE_FO|{pos['symbol']}"
-            self.streamer.unsubscribe_market_data([u_key]) # Unsubscribe
+            if self.streamer:
+                self.streamer.unsubscribe_market_data([u_key]) # Unsubscribe
             
             self.option_renko = None
             self.save_state(self.state_file)
 
-
+    def exit_all(self, reason: str = "Kill Switch"):
+        """Exit all active positions."""
+        if not self.active_positions:
+            return
+            
+        logger.info(f"🏁 Exiting All Positions | Reason: {reason}")
+        # Create a list of types to avoid mutation during iteration
+        option_types = list(self.active_positions.keys())
+        for option_type in option_types:
+            self.execute_exit(option_type, reason)
+        
+        self.save_state(self.state_file)
 
     def run(self):
         self.running = True
@@ -325,6 +336,13 @@ class DualRenkoLive(DualRenkoCore):
         
         while self.running:
             try:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    logger.info("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.exit_all("Portfolio Manager Kill Switch")
+                    self.running = False
+                    break
+
                 curr_now = datetime.now()
                 # 1. CANDLE SYNC (Every Minute)
                 # Check if we moved to a new minute

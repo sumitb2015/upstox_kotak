@@ -122,6 +122,12 @@ class OptionScalperLive(OptionScalperCore):
         heartbeat_counter = 0
         try:
             while self.is_running:
+                # 0. Global Kill Switch Check
+                if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+                    logger.info("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    self.stop("Portfolio Manager Kill Switch")
+                    break
+
                 # Main Loop handles Signal Check & Trade Management based on latest state
                 
                 # Get latest LTP from Streamer (for currently selected trade, or both if monitoring)
@@ -230,8 +236,16 @@ class OptionScalperLive(OptionScalperCore):
         
         self.register_exit(price, datetime.now(), reason)
 
-    def stop(self):
+    def stop(self, reason="Kill Switch"):
         self.is_running = False
+        
+        # Immediate Exit if Position Active
+        if self.active_position and self.active_position.get('key'):
+            logger.info(f"🚨 Killing Active Position on Stop: {self.active_position['symbol']}")
+            ltp_data = self.streamer.get_latest_data(self.active_position['key']) if self.streamer else None
+            price = ltp_data.get('ltp', 0) if ltp_data else 0
+            self.execute_exit(price, reason)
+
         if self.streamer:
             self.streamer.disconnect_all()
 

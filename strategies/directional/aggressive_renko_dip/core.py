@@ -331,12 +331,14 @@ class AggressiveRenkoCore(ABC):
         self.rsi = 50.0                 
         self.pyramid_count = 0        
         self.bricks_since_last_lot = 0 
+        self.last_pyramid_brick_idx = 0 
         self.avg_price = 0.0
         self.total_qty = 0
         self.active_symbols = {}
         self.active_symbols = {}
         self.is_warming_up = True
         self.last_exit_brick_index = -1  # [NEW] Track when we last exited to prevent immediate reentry
+        self.lot_size = 0  # [NEW] Track lot size for display
 
     def calculate_option_brick_size(self, price: float) -> float:
         raw_size = price * self.option_brick_pct
@@ -543,21 +545,38 @@ class AggressiveRenkoCore(ABC):
         all_green = all(b.color == 'GREEN' for b in last_n)
         all_red = all(b.color == 'RED' for b in last_n)
         
-        # For selling options, GREEN bricks = profit (premium falling)
+        # For selling options, RED bricks = profit (premium falling)
         # Pyramid when option premium moves in profit direction
-        if self.entry_state == "IN_GREEN_TREND" and all_green:
-            # Selling PE, premium falling (GREEN bricks) = profit
+        
+        # [FIX] Discrete Interval Logic
+        last_brick = self.option_renko.bricks[-1]
+        
+        # Initialize last_pyramid_brick_idx if not present (backward compatibility)
+        if not hasattr(self, 'last_pyramid_brick_idx'):
+            self.last_pyramid_brick_idx = 0
+            
+        # Check if enough NEW bricks have formed since last pyramid
+        # If last_pyramid_brick_idx is 0 (start), we wait for 'pyramid_interval' bricks (Index >= interval)
+        if last_brick.index < (self.last_pyramid_brick_idx + pyramid_interval):
+            return
+
+        if self.entry_state == "IN_GREEN_TREND" and all_red:
+            # Selling PE, premium falling (RED bricks) = profit
             if self.pyramid_count < (self.max_pyramid_lots - 1):
-                logger.info(f"🔥 PYRAMID: Option moved {pyramid_interval} GREEN bricks (profit). Adding PE lot.")
+                logger.info(f"🔥 PYRAMID: Option moved {pyramid_interval} RED bricks (profit). Adding PE lot.")
                 self.execute_entry("PE", timestamp, is_pyramid=True)
                 self.pyramid_count += 1
+                self.last_pyramid_brick_idx = last_brick.index
+                self.save_state(self.config['state_file'])
         
-        elif self.entry_state == "IN_RED_TREND" and all_green:
-            # Selling CE, premium falling (GREEN bricks) = profit
+        elif self.entry_state == "IN_RED_TREND" and all_red:
+            # Selling CE, premium falling (RED bricks) = profit
             if self.pyramid_count < (self.max_pyramid_lots - 1):
-                logger.info(f"🔥 PYRAMID: Option moved {pyramid_interval} GREEN bricks (profit). Adding CE lot.")
+                logger.info(f"🔥 PYRAMID: Option moved {pyramid_interval} RED bricks (profit). Adding CE lot.")
                 self.execute_entry("CE", timestamp, is_pyramid=True)
                 self.pyramid_count += 1
+                self.last_pyramid_brick_idx = last_brick.index
+                self.save_state(self.config['state_file'])
 
     @abstractmethod
     def execute_entry(self, option_type: str, timestamp: datetime, is_pyramid: bool = False):
@@ -586,6 +605,7 @@ class AggressiveRenkoCore(ABC):
                 'option_renko': option_renko_dict,
                 'pyramid_count': self.pyramid_count,
                 'bricks_since_last_lot': self.bricks_since_last_lot,
+                'last_pyramid_brick_idx': getattr(self, 'last_pyramid_brick_idx', 0),
                 'active_positions': self.active_positions,
                 'active_symbols': self.active_symbols,
                 'avg_price': self.avg_price,
@@ -593,6 +613,7 @@ class AggressiveRenkoCore(ABC):
                 'avg_price': self.avg_price,
                 'total_qty': self.total_qty,
                 'last_exit_brick_index': self.last_exit_brick_index,
+                'lot_size': self.lot_size,
                 'last_update': datetime.now().isoformat()
             }
             with open(state_file, 'w') as f:
@@ -612,12 +633,14 @@ class AggressiveRenkoCore(ABC):
             self.current_option_token = state.get('current_option_token')
             self.pyramid_count = state.get('pyramid_count', 0)
             self.bricks_since_last_lot = state.get('bricks_since_last_lot', 0)
+            self.last_pyramid_brick_idx = state.get('last_pyramid_brick_idx', 0)
             self.active_positions = state.get('active_positions', {})
             self.active_symbols = state.get('active_symbols', {})
             self.avg_price = state.get('avg_price', 0.0)
             self.avg_price = state.get('avg_price', 0.0)
             self.total_qty = state.get('total_qty', 0)
             self.last_exit_brick_index = state.get('last_exit_brick_index', -1)
+            self.lot_size = state.get('lot_size', 0)
             self.nifty_renko.from_dict(state['nifty_renko'])
             if state.get('option_renko'):
                 # Initialize with current config values, then overwrite with stored state

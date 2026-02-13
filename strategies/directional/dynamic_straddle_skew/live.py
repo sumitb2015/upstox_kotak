@@ -86,6 +86,7 @@ from lib.core.authentication import check_existing_token, perform_authentication
 from kotak_api.lib.broker import BrokerClient
 from kotak_api.lib.order_manager import OrderManager
 from kotak_api.lib.trading_utils import get_strike_token
+from kotak_api.lib.margin_helper import get_available_funds, check_margin_required, check_straddle_margin
 
 # Logger setup
 logger = logging.getLogger("DynamicStraddleSkew")
@@ -118,7 +119,8 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         self.current_net_pnl = 0.0
         self.pnl_anchor = 0.0 # Tracks realized PnL at start of current session
         self.current_spot = 0.0
-        
+        self.running = True
+
     def initialize(self):
         self.log("📋 Validating configuration...")
         validate_config()
@@ -242,6 +244,48 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             self.log(f"⚠️ [CORE] Error calculating RSI: {e}")
             return -1
 
+
+    def check_margin_before_trade(self, option_type: str, lots: int, action: str, strike: int = None) -> bool:
+        """
+        Validates if sufficient margin is available before placing an order.
+        """
+        if self.config.get('dry_run', False):
+            return True
+
+        deployment_pct = self.config.get('deployment_pct', 100.0)
+        tradeable, total = get_available_funds(self.order_mgr.client, deployment_pct)
+        
+        # Resolve strike for margin calculation
+        if strike:
+             trade_strike = strike
+        else:
+             leg = self.ce_leg if option_type == 'CE' else self.pe_leg
+             trade_strike = leg.strike if leg else self.target_strike
+
+        expiry_dt = datetime.strptime(self.expiry, "%Y-%m-%d")
+        token, _ = get_strike_token(self.kotak_broker, trade_strike, option_type, expiry_dt)
+        
+        if not token:
+            self.log(f"⚠️ Could not resolve token for margin check: {option_type} {trade_strike}")
+            return False
+
+        # Determine transaction type for margin: 'S' for selling (Entry/Pyramid), 'B' for buying (Exit/Reduce)
+        # Buying back usually releases margin, but we check if we have enough to 'place' the order (broker might still check)
+        side = 'S' if action in ['ENTRY', 'PYRAMID'] else 'B'
+        
+        from kotak_api.lib.trading_utils import get_lot_size as get_kotak_lot_size
+        klot_size = get_kotak_lot_size(self.kotak_broker.master_df, _)
+        quantity = lots * klot_size
+
+        required = check_margin_required(self.order_mgr.client, token, quantity, side)
+        
+        if tradeable >= required:
+            self.log(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return True
+        else:
+            self.log(f"❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return False
+
     def execute_trade(self, option_type: str, action: str, lots: int, price: float, strike: int = None):
         """Action: ENTRY, PYRAMID, REDUCE, EXIT"""
         leg = self.ce_leg if option_type == 'CE' else self.pe_leg
@@ -304,15 +348,22 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             elif self.pe_leg and key == self.pe_leg.instrument_key:
                 self.pe_leg.update_price(ltp)
 
+    def check_global_stop(self):
+        """Check for global kill switch file."""
+        if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
+            self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+            self.exit_all() 
+            self.running = False
+            return True
+        return False
+
     def run(self):
+        self.running = True
         self.log("▶️ Live Monitoring Started")
         
         while True:
             # 0. Global Kill Switch Check
-            if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
-                self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
-                self.exit_all() # Ensure we are flat
-                self.running = False
+            if self.check_global_stop():
                 break
 
             current_time = datetime.now().time()
@@ -321,6 +372,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             
             if current_time < entry_time:
                 time.sleep(10)
+                if self.check_global_stop(): break
                 continue
             
             if current_time > exit_time:
@@ -334,6 +386,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 else:
                     # If entry skipped due to skew, wait and retry
                     time.sleep(10)
+                    if self.check_global_stop(): break
                     continue
 
             # Logic checks every 5 seconds
@@ -440,7 +493,11 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 break
                 
             self.display_status()
-            time.sleep(1)
+            self.display_status()
+            for _ in range(5):
+                time.sleep(1)
+                if self.check_global_stop(): break
+            if not self.running: break
 
     def update_pnl(self):
         """Calculates net P&L across all legs and updates current_net_pnl."""
@@ -694,6 +751,30 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             else:
                 self.log("⚠️ [CORE] RSI Filter enabled but value unavailable. Proceeding for safety.")
 
+
+        # === Margin Check (Straddle) ===
+        if not self.config.get('dry_run', False):
+            # Resolve tokens for both legs
+            expiry_dt = datetime.strptime(self.expiry, "%Y-%m-%d")
+            ce_tok, _ = get_strike_token(self.kotak_broker, ce_strike, 'CE', expiry_dt)
+            pe_tok, _ = get_strike_token(self.kotak_broker, pe_strike, 'PE', expiry_dt)
+            
+            if ce_tok and pe_tok:
+                # Use lot size from Kotak master data
+                from kotak_api.lib.trading_utils import get_lot_size as get_kotak_lot_size
+                klot_size = get_kotak_lot_size(self.kotak_broker.master_df, _) # Using pe sym for lot size
+                ce_qty = self.config['initial_lots'] * klot_size
+                pe_qty = self.config['initial_lots'] * klot_size
+                
+                required_margin = check_straddle_margin(self.order_mgr.client, ce_tok, ce_qty, pe_tok, pe_qty)
+                deployment_pct = self.config.get('deployment_pct', 100.0)
+                tradeable, _ = get_available_funds(self.order_mgr.client, deployment_pct)
+                
+                if tradeable < required_margin:
+                    self.log(f"❌ Aborting Entry: Insufficient Margin (Required ₹{required_margin:,.2f} | Available ₹{tradeable:,.2f})")
+                    return False
+                self.log(f"✅ Margin Check Passed: Required ₹{required_margin:,.2f} | Available ₹{tradeable:,.2f}")
+
         # Updated Execution Logic with Atomic Rollback
         oid_ce, exec_ce = self.execute_trade('CE', 'ENTRY', self.config['initial_lots'], ce_price, strike=ce_strike)
         
@@ -818,6 +899,13 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         q = get_market_quote_for_instrument(self.access_token, new_key)
         new_price = q.get('last_price', 0) if q else 0
         
+        # === Margin Check (Roll) ===
+        if not self.check_margin_before_trade(self.winning_type, roll_lots, 'ENTRY', strike=new_strike):
+            self.log(f"❌ Roll Aborted: Insufficient margin for new leg {new_strike}")
+            # Note: We already exited the old leg, so we are now effectively reduced/neutral.
+            # This is a safety failure state.
+            return
+
         oid_entry, exec_entry = self.execute_trade(self.winning_type, 'ENTRY', roll_lots, new_price, strike=new_strike)
         
         if oid_entry:
@@ -856,6 +944,11 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         leg = self.ce_leg if self.winning_type == 'CE' else self.pe_leg
         price = leg.current_price
         
+        # === Margin Check (Pyramid) ===
+        if not self.check_margin_before_trade(self.winning_type, self.config['pyramid_lot_size'], 'PYRAMID'):
+            self.log(f"❌ Pyramid Aborted: Insufficient margin for additional lots on {self.winning_type}")
+            return
+
         oid, exec_price = self.execute_trade(self.winning_type, 'PYRAMID', self.config['pyramid_lot_size'], price)
         if oid:
             leg.add_lots(self.config['pyramid_lot_size'], exec_price)

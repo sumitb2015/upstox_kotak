@@ -56,6 +56,7 @@ import numpy as np
 from kotak_api.lib.broker import BrokerClient
 from kotak_api.lib.order_manager import OrderManager
 from kotak_api.lib.trading_utils import get_strike_token, get_lot_size
+from kotak_api.lib.margin_helper import get_available_funds, check_margin_required, check_straddle_margin
 
 # Setup logging
 logging.basicConfig(
@@ -301,6 +302,56 @@ class RSIVWAPStrangle:
             traceback.print_exc()
             return False
 
+    def check_margin_before_trade(self, symbol: str, lots: int, token: str) -> bool:
+        """
+        Validates if sufficient margin is available before placing a single leg order.
+        """
+        if self.config.get('DRY_RUN', False):
+            return True
+
+        deployment_pct = 100.0
+        tradeable, total = get_available_funds(self.order_mgr.client, deployment_pct)
+
+        # Confirm token or symbol availability
+        if not token:
+            logger.warning(f"⚠️ Could not resolve token for margin check: {symbol}")
+            return False
+
+        # Determine transaction type for margin
+        side = 'S' # Pyramiding is Selling
+        
+        from kotak_api.lib.trading_utils import get_lot_size as get_kotak_lot_size
+        klot_size = get_kotak_lot_size(self.kotak_broker.master_df, symbol)
+        quantity = lots * klot_size
+
+        required = check_margin_required(self.order_mgr.client, token, quantity, side)
+        
+        if tradeable >= required:
+            logger.info(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return True
+        else:
+            logger.info(f"❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return False
+
+    def check_straddle_margin_before_trade(self, ce_token, ce_qty, pe_token, pe_qty) -> bool:
+        """
+        Validates if sufficient margin is available before placing a straddle.
+        """
+        if self.config.get('DRY_RUN', False):
+            return True
+
+        deployment_pct = 100.0 # Strangle usually uses full allocation if not specified
+        tradeable, total = get_available_funds(self.order_mgr.client, deployment_pct)
+
+        required = check_straddle_margin(self.order_mgr.client, ce_token, ce_qty, pe_token, pe_qty)
+        
+        if tradeable >= required:
+            logger.info(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return True
+        else:
+            logger.info(f"❌ Insufficient Margin for Strangle: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            return False
+
     def check_vwap_condition(self, ce_key: str, pe_key: str, ce_ltp: float, pe_ltp: float) -> bool:
         """Check if Combined Premium < Combined VWAP"""
         try:
@@ -374,6 +425,13 @@ class RSIVWAPStrangle:
         # User mandate: "Strategy entering multiple legs MUST implement Atomic Execution with Rollback logic"
         
         qty = get_lot_size(self.kotak_broker.master_df, ce_symbol) * INITIAL_LOT_MULTIPLIER
+        qty = get_lot_size(self.kotak_broker.master_df, ce_symbol) * INITIAL_LOT_MULTIPLIER
+        
+        # === Margin Check (Strangle) ===
+        if not self.check_straddle_margin_before_trade(ce_token, qty, pe_token, qty):
+            logger.info("🚫 [CORE] Entry Aborted: Insufficient Margin for Strangle")
+            return
+
         executed_legs = []
         
         try:
@@ -689,6 +747,31 @@ class RSIVWAPStrangle:
                 
                 lot_size = get_lot_size(self.kotak_broker.master_df, symbol)
                 add_qty = lot_size
+                
+                # Resolving Token for Check
+                # We need to map symbol -> token. The master_df has it.
+                # Strategy has `self.ce_token_map` but that maps Symbol -> Upstox Key (Wait, logic says Symbol -> Key)
+                # Let's check `initialize`: `self.ce_token_map[ce_symbol] = ce_key`
+                # But we need Kotak Token.
+                # `get_strike_token` returns it.
+                # Efficient way: Look it up from master_df or re-resolve (safer).
+                
+                # Re-resolve token for margin check (Robustness)
+                try: 
+                    # We can use the cached strike/type from Position
+                    p_strike = pos.ce_strike if active_side == "CE" else pos.pe_strike
+                    p_type = "CE" if active_side == "CE" else "PE"
+                    m_token, _ = get_strike_token(self.kotak_broker, p_strike, p_type, self.expiry_obj, symbol=self.short_symbol)
+                    
+                    if not self.check_margin_before_trade(symbol, 1, m_token):
+                        logger.info(f"🚫 [CORE] Pyramid Aborted: Insufficient Margin for {symbol}")
+                        # Skip this pyramid attempt
+                        # Maybe update reference price to avoid spamming? 
+                        # Or just let it retry next tick (it logs failure every time).
+                        # Let's update ref price slightly to back off? No, standard logic is just return.
+                        return 
+                except Exception as e:
+                    logger.error(f"Margin Check Error: {e}")
                 
                 order_id = self.order_mgr.place_order(symbol, add_qty, "S", tag="Pyramid_Entry")
                 if order_id:
