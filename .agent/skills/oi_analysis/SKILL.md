@@ -39,4 +39,26 @@ When analyzing the full chain (via `lib.api.option_chain`):
 ## 🚦 4. Confidence Thresholds
 For a strategy to take a trade based on OI:
 - **Directional Trades**: Require `confidence > 70` and matching sentiment.
-- **Non-Directional (Straddles)**: Require `confidence < 40` (Market indecision).
+
+## 🎯 5. Strike-Wise PCR Analysis
+For granular analysis of specific deviations, use the `get_strike_pcr_structure` method in `CumulativeOIAnalyzer`.
+
+### Features
+- **ATM Detection**: Automatically identifies the At-The-Money strike.
+- **Offset Filtering**: Returns data for a specific range (e.g., +/- 600 points).
+- **Per-Strike Data**: Provides PCR, CE OI, and PE OI for every strike in the range.
+
+### Usage Pattern
+```python
+from lib.oi_analysis.cumulative_oi_analysis import CumulativeOIAnalyzer
+
+analyzer = CumulativeOIAnalyzer(access_token)
+pcr_data = analyzer.get_strike_pcr_structure(offset=600)
+
+# Check ATM PCR
+atm = pcr_data['atm']
+atm_pcr = pcr_data['pcr_map'].get(atm, 0)
+
+if atm_pcr > 1.5:
+    print("Strong Put Support at ATM")
+```
