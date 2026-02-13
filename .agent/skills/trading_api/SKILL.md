@@ -82,8 +82,13 @@ if ohlc:
 ```python
 from lib.api.option_chain import get_option_chain_dataframe, get_greeks
 
-# Get full chain
+# Get full chain (DataFrame)
 chain_df = get_option_chain_dataframe(token, "NSE_INDEX|Nifty 50", expiry)
+
+# Get raw chain (Dict - matches API response)
+# See: https://upstox.com/developer/api-documentation/get-pc-option-chain
+from lib.api.option_chain import get_option_chain
+raw_data = get_option_chain(token, "NSE_INDEX|Nifty 50", expiry)
 ```
 
 ### Market Holidays
