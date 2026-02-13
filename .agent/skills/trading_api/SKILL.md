@@ -126,6 +126,27 @@ if contracts:
     print(f"Strike: {c.get('strike_price')}")
 ```
 
+### Place Order (V3)
+> [!WARNING] **Broker Rule Violation**
+> The `place_order` function exists in `lib.api.order_management` and supports V3 features like slicing.
+> **HOWEVER**, per agent rules, **Live Execution MUST use Kotak Neo API**.
+> This function should ONLY be used for paper trading or specific approved testing on Upstox.
+
+```python
+from lib.api.order_management import place_order
+
+# Example (DO NOT USE FOR LIVE STRATEGIES)
+order_id = place_order(
+    token,
+    instrument_token="NSE_EQ|INE002A01018",
+    quantity=10,
+    transaction_type="BUY",
+    order_type="MARKET",
+    product="D",
+    slice=True # V3 Feature
+)
+```
+
 ### Option Instrument Keys (CRITICAL for LTP)
 To fetch LTP for options, you must resolve the **Upstox Instrument Key** (different from Kotak Trading Symbol).
 
