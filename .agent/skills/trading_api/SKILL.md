@@ -96,21 +96,39 @@ if ohlc:
     print(f"Prev Close: {data['prev_ohlc']['close']}")
 ```
 
-### Option Chain
+### Expired Instruments (V3)
+To perform historical analytics (PCR, OI Change) on options that have already expired, use the specialized **ExpiredInstrumentApi** class in the Upstox SDK. Our library wrappers handle this automatically.
+
 ```python
-from lib.api.option_chain import get_option_chain_dataframe, get_greeks
+from lib.api.market_data import get_expired_expiries, get_expired_option_contracts
+from lib.api.historical import get_expired_historical_data
+
+# These helpers use upstox_client.ExpiredInstrumentApi internally
+# 1. Get confirmed past expiry dates
+expiries = get_expired_expiries(token, "NSE_INDEX|Nifty 50")
+
+# 2. Get contracts for a specific past expiry
+contracts = get_expired_option_contracts(token, "NSE_INDEX|Nifty 50", expiry_date="2026-02-12")
+
+# 3. Fetch 1-min candles WITH NON-ZERO OI
+# Note: This is the ONLY way to get historical OI for options.
+candles = get_expired_historical_data(
+    access_token=token,
+    instrument_key="NSE_FO|42391|10-02-2026", # Use key from step 2
+    interval="minute", 
+    from_date="2026-02-10",
+    to_date="2026-02-10"
+)
+```
+
+### Option Chain Output Helper
+```python
+from lib.api.option_chain import get_option_chain_dataframe, calculate_pcr
 
 # Get full chain (DataFrame)
 chain_df = get_option_chain_dataframe(token, "NSE_INDEX|Nifty 50", expiry)
 
-# Get raw chain (Dict - matches API response)
-# See: https://upstox.com/developer/api-documentation/get-pc-option-chain
-# See: https://upstox.com/developer/api-documentation/get-pc-option-chain
-from lib.api.option_chain import get_option_chain
-raw_data = get_option_chain(token, "NSE_INDEX|Nifty 50", expiry)
-
 # Calculate Total PCR (Put-Call Ratio)
-from lib.api.option_chain import calculate_pcr
 pcr = calculate_pcr(chain_df)
 print(f"Total PCR: {pcr}")
 ```

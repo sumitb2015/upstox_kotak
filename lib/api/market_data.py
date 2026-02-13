@@ -313,11 +313,23 @@ def get_market_status():
     else:
         return "CLOSED"
 
+def get_expired_expiries(access_token, instrument_key):
+    """Fetch list of past expiry dates for an instrument"""
+    api_instance = upstox_client.ExpiredInstrumentApi(_get_api_client(access_token))
+    try:
+        api_response = api_instance.get_expiries(instrument_key)
+        if api_response.status == 'success':
+            return api_response.data
+        return []
+    except ApiException as e:
+        print(f"Error fetching expired expiries: {e}")
+        return []
+
 def get_expired_option_contracts(access_token, instrument_key, expiry_date):
     """Get expired options using SDK"""
-    api_instance = upstox_client.OptionsApi(_get_api_client(access_token))
+    api_instance = upstox_client.ExpiredInstrumentApi(_get_api_client(access_token))
     try:
-        api_response = api_instance.get_option_contracts(instrument_key=instrument_key, expiry_date=expiry_date)
+        api_response = api_instance.get_expired_option_contracts(instrument_key=instrument_key, expiry_date=expiry_date)
         if api_response.status == 'success':
             return api_response.data
         return None
@@ -327,13 +339,15 @@ def get_expired_option_contracts(access_token, instrument_key, expiry_date):
 
 def get_expired_future_contracts(access_token, instrument_key):
     """Get expired futures using SDK"""
-    api_instance = upstox_client.OptionsApi(_get_api_client(access_token))
+    api_instance = upstox_client.ExpiredInstrumentApi(_get_api_client(access_token))
     try:
-        api_response = api_instance.get_future_contracts(instrument_key)
-        return api_response.data
+        api_response = api_instance.get_expired_future_contracts(instrument_key)
+        if api_response.status == 'success':
+            return api_response.data
+        return []
     except ApiException as e:
         print(f"Error fetching expired futures: {e}")
-        return None
+        return []
 
 def get_market_quotes(access_token, instrument_keys):
     """

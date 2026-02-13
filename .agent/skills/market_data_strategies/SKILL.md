@@ -45,3 +45,9 @@ def get_merged_data(token, key, timeframe):
 - **Lookback Period**: Ensure you fetch enough history for the indicator's warmup period (e.g., EMA-200 needs 200+ candles).
 - **Timezone**: Ensure all timestamps are consistent (usually `Asia/Kolkata`).
 - **NaN Handling**: Always fill or drop NaNs resulting from indicator calculations before making logic decisions.
+
+## 📊 Historical Option OI Analytics
+Standard historical APIs return `0` for Option OI. To build historical PCR or OI-Change charts:
+
+1. **For Expired Days**: Use `get_expired_historical_data` which targets the specialized V3 expired endpoint.
+2. **For Live Day**: Use the `record_iv.py` utility to capture the live OI stream, as intraday candle APIs often lack this data.

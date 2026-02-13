@@ -97,3 +97,15 @@ For strategies with **multiple conditional actions** (e.g., Pyramid, Roll, Reduc
   - **Example**: If Pyramid and Roll are both blocked, allow Reduction as a defensive fallback.
 
 - **Testing**: Create reproduction scripts to simulate edge cases where multiple guards could trigger simultaneously.
+
+## 📊 Statistical Option Analytics
+For strategies requiring PCR, OI Change, or IV Skew analytics, follow the **Dual-Track Data Pattern**:
+
+### 1. The Dual-Track Pattern
+- **Recorded Track (Live)**: For the current day, use a polling script (like `record_iv.py`) to build a local CSV of OI/IV. Standard intraday APIs are often incomplete for these metrics.
+- **Historical Track (Expired)**: For past days, use the `get_expired_historical_data` library helper. This is the only API source for reliable historical Option OI.
+
+### 2. Implementation
+- **PCR**: Use `lib.api.option_chain.calculate_pcr(df)`.
+- **Skew**: Reconstruct the curve from `record_iv.py` CSVs or live `get_option_chain_dataframe`.
+- **OI Change**: Plot the delta of `oi` values fetched from the specialized expired endpoint or recorded CSV.
