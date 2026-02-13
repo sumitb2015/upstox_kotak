@@ -58,8 +58,26 @@ from lib.api.historical import get_intraday_data_v3
 # 1-minute candles
 candles = get_intraday_data_v3(token, instrument_key, "minute", 1)
 
+
 # 5-minute candles
 candles = get_intraday_data_v3(token, instrument_key, "minute", 5)
+```
+
+### Historical Data (V3)
+Fetch historical candles for a specific date range.
+
+```python
+from lib.api.historical import get_historical_data_v3
+
+# Fetch daily candles for the last 30 days
+candles = get_historical_data_v3(
+    token, 
+    instrument_key="NSE_INDEX|Nifty 50", 
+    interval_unit="day", 
+    interval_value=1,
+    from_date="2025-01-01",
+    to_date="2025-01-30"
+)
 ```
 
 ### OHLC Queries (Live V3)
