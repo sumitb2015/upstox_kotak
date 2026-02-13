@@ -455,3 +455,30 @@ def get_atm_iv(df: pd.DataFrame) -> float:
         print(f"⚠️ Could not retrieve ATM IV: {e}")
     
     return 15.0
+
+
+def calculate_pcr(df: pd.DataFrame) -> float:
+    """
+    Calculate Total Put-Call Ratio (PCR) from Option Chain.
+    PCR = Total Put OI / Total Call OI
+    
+    Args:
+        df (pd.DataFrame): Option Chain DataFrame (must contain 'ce_oi' and 'pe_oi')
+        
+    Returns:
+        float: Total PCR value
+    """
+    if df.empty:
+        return 0.0
+        
+    try:
+        total_pe_oi = df['pe_oi'].sum()
+        total_ce_oi = df['ce_oi'].sum()
+        
+        if total_ce_oi == 0:
+            return 0.0
+            
+        return round(total_pe_oi / total_ce_oi, 4)
+    except Exception as e:
+        print(f"Error calculating PCR: {e}")
+        return 0.0

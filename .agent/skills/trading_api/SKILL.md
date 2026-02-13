@@ -105,8 +105,14 @@ chain_df = get_option_chain_dataframe(token, "NSE_INDEX|Nifty 50", expiry)
 
 # Get raw chain (Dict - matches API response)
 # See: https://upstox.com/developer/api-documentation/get-pc-option-chain
+# See: https://upstox.com/developer/api-documentation/get-pc-option-chain
 from lib.api.option_chain import get_option_chain
 raw_data = get_option_chain(token, "NSE_INDEX|Nifty 50", expiry)
+
+# Calculate Total PCR (Put-Call Ratio)
+from lib.api.option_chain import calculate_pcr
+pcr = calculate_pcr(chain_df)
+print(f"Total PCR: {pcr}")
 ```
 
 ### Market Holidays
