@@ -8,6 +8,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from lib.api.market_data import get_option_chain_atm
+from lib.api.option_chain import get_option_chain_dataframe, get_atm_strike_from_chain
 
 
 class CumulativeOIAnalyzer:
@@ -356,6 +357,88 @@ class CumulativeOIAnalyzer:
         except Exception as e:
             return {"error": f"Error analyzing OI trends: {str(e)}"}
     
+
+
+    def get_strike_pcr_structure(self, offset: int = 600) -> Dict:
+        """
+        Get PCR for strikes within a range from ATM.
+        
+        Args:
+            offset (int): Offset from ATM (e.g., 600) to filter strikes [ATM-offset, ATM+offset]
+            
+        Returns:
+            Dict: Structure containing ATM, offset range, and per-strike PCR data.
+        """
+        try:
+            # 1. Fetch Option Chain (Pandas DataFrame - Wide Format)
+            expiry = self._get_current_expiry()
+            df = get_option_chain_dataframe(
+                self.access_token, self.underlying_key, expiry
+            )
+            
+            if df is None or df.empty:
+                return {"error": "Option chain data empty"}
+            
+            # 2. Find ATM
+            # Use the helper from option_chain module which handles spot price extraction
+            atm = get_atm_strike_from_chain(df)
+            if not atm:
+                # Fallback if helper fails (unlikely if df not empty)
+                spot = df['spot_price'].iloc[0]
+                strike_step = 50 
+                if "Bank" in self.underlying_key: strike_step = 100
+                atm = round(spot / strike_step) * strike_step
+            else:
+                spot = df['spot_price'].iloc[0]
+
+            min_strike = atm - offset
+            max_strike = atm + offset
+            
+            # 3. Filter Strikes
+            subset = df[(df['strike_price'] >= min_strike) & (df['strike_price'] <= max_strike)].copy()
+            
+            # 4. Build Result Structure
+            strike_pcr_map = {}
+            pcr_data_list = []
+            
+            for _, row in subset.iterrows():
+                strike = int(row['strike_price'])
+                
+                # Prefer API PCR if available and valid
+                api_pcr = row.get('pcr')
+                
+                # Calculate manually as fallback or verification
+                ce_oi = row.get('ce_oi', 0)
+                pe_oi = row.get('pe_oi', 0)
+                calc_pcr = pe_oi / ce_oi if ce_oi > 0 else 0.0
+                
+                # Use API PCR if it exists, else calculated
+                final_pcr = api_pcr if (api_pcr is not None and not pd.isna(api_pcr)) else calc_pcr
+                
+                pcr_data = {
+                    'strike': strike,
+                    'pcr': float(final_pcr),
+                    'ce_oi': float(ce_oi),
+                    'pe_oi': float(pe_oi),
+                    'distance_from_atm': strike - atm
+                }
+                
+                strike_pcr_map[strike] = final_pcr
+                pcr_data_list.append(pcr_data)
+                
+            return {
+                'timestamp': datetime.now(),
+                'spot': spot,
+                'atm': atm,
+                'offset': offset,
+                'strikes_count': len(pcr_data_list),
+                'pcr_map': strike_pcr_map,  # {24000: 0.8, ...} Easy lookup
+                'details': pcr_data_list    # List of dicts with more info
+            }
+
+        except Exception as e:
+            return {"error": f"Error tracking PCR structure: {str(e)}"}
+
     def get_oi_momentum(self, lookback_periods: int = 3) -> Dict:
         """
         Calculate OI momentum over time
