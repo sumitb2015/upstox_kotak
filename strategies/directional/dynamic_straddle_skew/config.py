@@ -86,6 +86,12 @@ CONFIG = {
     'verbose': True,           # Detailed logging
     'use_websockets': True,
     
+    # === RSI Entry Filter ===
+    'rsi_filter_enabled': True,
+    'rsi_period': 14,
+    'rsi_lower_threshold': 40,
+    'rsi_upper_threshold': 60,
+    
     # === Expiry ===
     'expiry_type': 'current_week', # 'current_week', 'next_week', 'monthly'
 }
@@ -110,6 +116,10 @@ def validate_config():
     if CONFIG.get('target_profit_pct'):
         assert 0 < CONFIG['target_profit_pct'] < 10, "Target Profit Pct seems abnormal (Expected 0.0-10.0)"
         
+    if CONFIG.get('rsi_filter_enabled'):
+        assert CONFIG['rsi_period'] > 0, "RSI period must be positive"
+        assert 0 <= CONFIG['rsi_lower_threshold'] < CONFIG['rsi_upper_threshold'] <= 100, "Invalid RSI thresholds"
+
     print("✅ Configuration validated successfully")
 
 if __name__ == "__main__":

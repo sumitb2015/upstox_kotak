@@ -61,7 +61,7 @@ CONFIG = {
     # DYNAMIC TRAILING (PROFIT LOCKING)
     # -------------------------------------------------------------------------
     'dynamic_tightening': False,      # Enable aggressive TSL tightening when in profit.
-    'tighten_after_bricks': 2,       # Trigger: Start tightening after we are X bricks in profit.
+    'tighten_after_bricks': 1,       # Trigger: Start tightening after we are X bricks in profit.
     'tightened_multiplier': 1.5,     # Action: Reduce TSL width to 1.5x brick size (Standard is usually 2.0x or 3.0x).
                                      #   - This locks in profit faster as the trade moves in our favor.
 
@@ -71,7 +71,7 @@ CONFIG = {
     'enable_pyramiding': True,       # Enable adding chunks to a winning position.
     'trading_lots': 1,               # Initial entry quantity (in Lots).
     'max_pyramid_lots': 3,           # Maximum TOTAL lots allowed (Base + Pyramids).
-    'pyramid_interval': 2,           # Frequency: Add a new lot every X *Option Bricks* of movement in favor.
+    'pyramid_interval': 1,           # Frequency: Add a new lot every X *Option Bricks* of movement in favor.
 
     # =========================================================================
     # SYSTEM & SAFETY SETTINGS

@@ -12,6 +12,7 @@ LOGIC SUMMAY
 1. ENTRY:
    - Time: 09:20 AM (Configurable)
    - Action: Sell CE + PE (Straddle or Strangle based on config).
+   - RSI Filter: Optionally check if 14-period RSI is within a neutral range (e.g. 40-60).
    - Lot Size: 'initial_lots' (Default 1+1).
 
 2. SKEW DETECTION (Bias):
@@ -73,11 +74,12 @@ from strategies.directional.dynamic_straddle_skew.strategy_core import DynamicSt
 from strategies.directional.dynamic_straddle_skew.config import CONFIG, validate_config
 
 # Import library functions
-from lib.api.market_data import download_nse_market_data, get_market_quote_for_instrument
+from lib.api.market_data import download_nse_market_data, get_market_quote_for_instrument, fetch_historical_data
 from lib.api.streaming import UpstoxStreamer
 from lib.api.market_quotes import get_ltp_quote
 from lib.utils.instrument_utils import get_option_instrument_key
 from lib.utils.expiry_cache import get_expiry_for_strategy
+from lib.utils.indicators import calculate_rsi
 from lib.core.authentication import check_existing_token, perform_authentication, save_access_token
 
 # Kotak Neo API Imports
@@ -203,6 +205,42 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             
         strike_step = 50 if self.config['underlying'] == "NIFTY" else 100
         return round(spot / strike_step) * strike_step
+
+    def get_current_rsi(self) -> float:
+        """
+        Fetch 1-min candles for the underlying and calculate current 14-period RSI.
+        Used as an entry guard to ensure neutral market conditions.
+        
+        Returns:
+            float: Current RSI value, or -1 if calculation fails.
+        """
+        try:
+            # 1. Calculate dates for historical fetch
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=1) # Fetch at least 1 day to ensure enough candles
+            
+            # 2. Fetch candles
+            df = fetch_historical_data(
+                self.access_token, 
+                self.underlying_key, 
+                interval_type='minute', 
+                interval=1,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if df.empty:
+                self.log("⚠️ [CORE] Could not fetch candles for RSI. Skipping RSI check.")
+                return -1
+            
+            # 3. Calculate RSI
+            period = self.config.get('rsi_period', 14)
+            rsi_val = calculate_rsi(df, period=period)
+            
+            return rsi_val
+        except Exception as e:
+            self.log(f"⚠️ [CORE] Error calculating RSI: {e}")
+            return -1
 
     def execute_trade(self, option_type: str, action: str, lots: int, price: float, strike: int = None):
         """Action: ENTRY, PYRAMID, REDUCE, EXIT"""
@@ -633,6 +671,21 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         else:
             self.log("⚠️ [CORE] Entry Skipped: Could not fetch valid prices.")
             return False
+
+        # === RSI Entry Filter ===
+        if self.config.get('rsi_filter_enabled'):
+            rsi_val = self.get_current_rsi()
+            lower = self.config.get('rsi_lower_threshold', 40)
+            upper = self.config.get('rsi_upper_threshold', 60)
+            
+            if rsi_val != -1:
+                status = "Allowed" if lower <= rsi_val <= upper else "Skipped"
+                self.log(f"🔍 [CORE] RSI Check: {rsi_val:.2f} | Thresholds: {lower}-{upper} | Status: {status}")
+                
+                if status == "Skipped":
+                    return False
+            else:
+                self.log("⚠️ [CORE] RSI Filter enabled but value unavailable. Proceeding for safety.")
 
         # Updated Execution Logic with Atomic Rollback
         oid_ce, exec_ce = self.execute_trade('CE', 'ENTRY', self.config['initial_lots'], ce_price, strike=ce_strike)
