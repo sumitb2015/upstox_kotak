@@ -84,9 +84,22 @@ from lib.api.option_chain import get_option_chain_dataframe, get_greeks
 
 # Get full chain
 chain_df = get_option_chain_dataframe(token, "NSE_INDEX|Nifty 50", expiry)
+```
 
-# Get Greeks for specific strike
-greeks = get_greeks(chain_df, strike=25000, option_type="CE")
+### Market Holidays
+Fetch the list of trading holidays for the current year.
+
+```python
+from lib.api.market_data import get_market_holidays
+
+holidays = get_market_holidays(token)
+
+if holidays:
+    for h in holidays:
+        # Note: Attributes might be underscored in some SDK versions
+        d = getattr(h, 'date', getattr(h, '_date', None))
+        desc = getattr(h, 'description', getattr(h, '_description', 'Unknown'))
+        print(f"Holiday: {d} - {desc}")
 ```
 
 ### Option Instrument Keys (CRITICAL for LTP)
