@@ -135,6 +135,7 @@ def get_cached_nse_data():
 def get_v3_intraday_data(instrument_key, api_instance_token):
     """
     Fetch 1-minute intraday candle data from Upstox V3 API.
+    Fallback to last available trading day if today (holiday/weekend) is empty.
     
     Args:
         instrument_key (str): The instrument key (e.g., "NSE_FO|49229")
@@ -148,15 +149,48 @@ def get_v3_intraday_data(instrument_key, api_instance_token):
     api_instance = upstox_client.HistoryApi(upstox_client.ApiClient(configuration))
     
     try:
+        # 1. Try Intraday first
         api_response = api_instance.get_intra_day_candle_data(instrument_key, "1minute", "2.0")
         if api_response.status == 'success' and api_response.data.candles:
             df = pd.DataFrame(api_response.data.candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi'])
             df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
             df = df.sort_values('timestamp')
-            # Critical: Keep volume for VWAP
             return df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi']]
+            
+        # 2. Fallback: Historical (Last 5 days to find recent session)
+        # st.toast(f"Intraday empty for {instrument_key}, fetching historical backup...", icon="🔄")
+        to_date = datetime.now()
+        from_date = to_date - timedelta(days=5)
+        
+        # We need to manually call the historical endpoint since upstox-client might not have easy helper here
+        # Using the same logic as lib.api.historical.get_historical_data_v3 but inline for Streamlit
+        import urllib.parse as urlparse
+        import requests
+        
+        encoded_key = urlparse.quote(instrument_key, safe='')
+        url = f"https://api.upstox.com/v3/historical-candle/{encoded_key}/minutes/1/{to_date.strftime('%Y-%m-%d')}/{from_date.strftime('%Y-%m-%d')}"
+        headers = {'Accept': 'application/json', 'Authorization': f'Bearer {api_instance_token}'}
+        
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('status') == 'success' and data.get('data', {}).get('candles'):
+                candles = data['data']['candles']
+                df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi'])
+                df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None) # History is usually naive or UTC, verify? 
+                # Upstox history is typically offset-naive ISO8601 or similar. 
+                # Let's simple-parse and assume it matches
+                df = df.sort_values('timestamp')
+                
+                # Filter for only the LAST available date
+                last_date = df['timestamp'].dt.date.iloc[-1]
+                df = df[df['timestamp'].dt.date == last_date]
+                
+                return df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi']]
+                
         return pd.DataFrame()
     except Exception as e:
+        # st.error(f"Error fetching data: {e}")
         return pd.DataFrame()
 
 def calculate_vwap(df):
