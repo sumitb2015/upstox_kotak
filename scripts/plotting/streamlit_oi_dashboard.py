@@ -252,7 +252,7 @@ def main():
 
     # Sidebar Navigation
     st.sidebar.header("🗺️ Navigation")
-    page = st.sidebar.radio("Go to", ["Market Overview", "OI Trend Analysis", "Straddle Analysis"], index=0)
+    page = st.sidebar.radio("Go to", ["Market Overview", "OI Trend Analysis", "Cumulative OI Charts", "Straddle Analysis"], index=0)
     
     # Sidebar Filters
     st.sidebar.header("🎯 Filters")
@@ -302,7 +302,7 @@ def main():
     else:
         st.sidebar.error("Could not fetch spot price for calculation.")
         return
-
+        
     # --- Sidebar Content (Page Specific) ---
     st.sidebar.markdown("---")
     
@@ -313,6 +313,7 @@ def main():
     view_mode = "Single (OI)"
     visible_contracts = []
     straddle_strike = atm
+    cum_strikes_range = 10
     
     if page == "Market Overview":
         st.sidebar.subheader("👁️ View Controls")
@@ -337,6 +338,12 @@ def main():
                         visible_contracts.append(label)
         else:
             visible_contracts = []
+            
+    elif page == "Cumulative OI Charts":
+        st.sidebar.subheader("🎯 Strike Selection")
+        # Allow user to select range around ATM
+        cum_strikes_range = st.sidebar.slider("Strikes Range (ATM +/-)", 1, 20, 10)
+        st.sidebar.info(f"Analyzing {cum_strikes_range*2 + 1} strikes around ATM ({atm}).")
 
     elif page == "Straddle Analysis":
         st.sidebar.subheader("🧭 Strike Selection")
@@ -402,6 +409,111 @@ def main():
             st.warning("No data found for selected instruments.")
         else:
             combined_df = pd.concat(all_data)
+            
+    # --- Cumulative OI Page ---
+    if page == "Cumulative OI Charts":
+        st.subheader(f"📈 Cumulative OI Analysis ({symbol})")
+        
+        # Determine Strikes Range
+        step = 100 if symbol == "BANKNIFTY" else 50
+        target_strikes = [atm + (i * step) for i in range(-cum_strikes_range, cum_strikes_range + 1)]
+        
+        with st.spinner(f"Fetching data for {len(target_strikes)} strikes..."):
+            ce_dfs = []
+            pe_dfs = []
+            
+            # Fetch all data in loop
+            for strike in target_strikes:
+                # 1. CE Data
+                ce_key = get_option_instrument_key(symbol, strike, "CE", nse_data, selected_expiry)
+                if ce_key:
+                    df = get_v3_intraday_data(ce_key, access_token)
+                    if not df.empty:
+                        ce_dfs.append(df[['timestamp', 'oi']].set_index('timestamp'))
+                
+                # 2. PE Data
+                pe_key = get_option_instrument_key(symbol, strike, "PE", nse_data, selected_expiry)
+                if pe_key:
+                    df = get_v3_intraday_data(pe_key, access_token)
+                    if not df.empty:
+                        pe_dfs.append(df[['timestamp', 'oi']].set_index('timestamp'))
+            
+            if not ce_dfs or not pe_dfs:
+                st.error("Could not fetch enough data for cumulative analysis.")
+            else:
+                # Aggregate
+                # Concat all CE dfs and sum by timestamp (index)
+                total_ce_oi = pd.concat(ce_dfs).groupby(level=0).sum().sort_index()
+                total_pe_oi = pd.concat(pe_dfs).groupby(level=0).sum().sort_index()
+                
+                # Align indices (intersection of timestamps to ensure validity)
+                common_idx = total_ce_oi.index.intersection(total_pe_oi.index)
+                
+                final_df = pd.DataFrame(index=common_idx)
+                final_df['Total CE OI'] = total_ce_oi.loc[common_idx]['oi']
+                final_df['Total PE OI'] = total_pe_oi.loc[common_idx]['oi']
+                final_df['Net OI'] = final_df['Total PE OI'] - final_df['Total CE OI'] # Bullish if Positive (More Puts Sold)
+                
+                # --- Plot 1: Total OI (Separate Plot) ---
+                fig_total = go.Figure()
+                fig_total.add_trace(go.Scatter(
+                    x=final_df.index, y=final_df['Total CE OI'],
+                    mode='lines', name='Total CE OI',
+                    line=dict(color='#ff4b4b', width=2)
+                ))
+                fig_total.add_trace(go.Scatter(
+                    x=final_df.index, y=final_df['Total PE OI'],
+                    mode='lines', name='Total PE OI',
+                    line=dict(color='#00ff7f', width=2)
+                ))
+                
+                fig_total.update_layout(
+                    title=f"Total Cumulative OI (ATM +/- {cum_strikes_range})",
+                    xaxis_title="Time", 
+                    yaxis_title="Open Interest",
+                    template="plotly_dark", 
+                    height=500,
+                    margin=dict(l=20, r=20, t=50, b=20),
+                    hovermode='x unified',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_total, use_container_width=True)
+                
+                # --- Plot 2: Net OI (Separate Plot) ---
+                fig_net = go.Figure()
+                
+                # Fill Area: Green if Positive, Red if Negative
+                fig_net.add_trace(go.Scatter(
+                    x=final_df.index, y=final_df['Net OI'],
+                    mode='lines', name='Net OI (PE - CE)',
+                    line=dict(color='#ffd700', width=1),
+                    fill='tozeroy',
+                    # Conditional color logic is complex in simple fill, usually handled by checking value
+                ))
+                
+                # Add a zero line
+                fig_net.add_hline(y=0, line_dash="dash", line_color="gray")
+
+                last_net = final_df['Net OI'].iloc[-1]
+                sentiment = "BULLISH" if last_net > 0 else "BEARISH"
+                color = "green" if last_net > 0 else "red"
+                
+                fig_net.update_layout(
+                    title=f"Net OI Sentiment (PE - CE): <span style='color:{color}'>{sentiment}</span>",
+                    xaxis_title="Time", 
+                    yaxis_title="Net OI",
+                    template="plotly_dark", 
+                    height=400,
+                    margin=dict(l=20, r=20, t=50, b=20),
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig_net, use_container_width=True)
+                
+                # Stats Metrics
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Call OI", f"{final_df['Total CE OI'].iloc[-1]:,}", delta=f"{final_df['Total CE OI'].iloc[-1] - final_df['Total CE OI'].iloc[0]:,}")
+                c2.metric("Total Put OI", f"{final_df['Total PE OI'].iloc[-1]:,}", delta=f"{final_df['Total PE OI'].iloc[-1] - final_df['Total PE OI'].iloc[0]:,}")
+                c3.metric("Net OI (PE-CE)", f"{last_net:,}", delta=f"{last_net - final_df['Net OI'].iloc[0]:,}")
 
     # --- Option Chain Page/Section ---
     if page == "Market Overview" and show_chain:
