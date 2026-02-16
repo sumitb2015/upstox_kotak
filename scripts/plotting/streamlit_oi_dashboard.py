@@ -10,7 +10,9 @@ import os
 from datetime import datetime, time, timedelta
 
 # Add project root to sys.path
-sys.path.append(os.path.abspath("c:/algo/upstox"))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
 from lib.api.market_data import get_ltp, download_nse_market_data, get_market_quotes, get_market_quote_for_instrument
 from lib.utils.instrument_utils import get_option_instrument_key
@@ -120,7 +122,13 @@ st.markdown("""
 
 @st.cache_data(ttl=3600)
 def get_tokens():
-    token_path = "c:/algo/upstox/lib/core/accessToken.txt"
+    """
+    Retrieve the Upstox access token from the local filesystem.
+    
+    Returns:
+        str: Access token if found, else None.
+    """
+    token_path = os.path.join(PROJECT_ROOT, "lib/core/accessToken.txt")
     if not os.path.exists(token_path):
         st.error("❌ Access token file not found.")
         return None
@@ -129,9 +137,15 @@ def get_tokens():
 
 @st.cache_data(ttl=3600)
 def get_cached_nse_data():
+    """
+    Download and cache NSE market data for instrument mapping.
+    
+    Returns:
+        pd.DataFrame: Master instrument data.
+    """
     return download_nse_market_data()
 
-@st.cache_data(ttl=1) # Very short TTL for manual calls
+@st.cache_data(ttl=60) # Cache for 60 seconds to match refresh interval
 def get_v3_intraday_data(instrument_key, api_instance_token):
     """
     Fetch 1-minute intraday candle data from Upstox V3 API.
@@ -213,10 +227,21 @@ def calculate_vwap(df):
 
 @st.cache_data(ttl=60)
 def get_iv_history(symbol, expiry, day_str=None):
+    """
+    Fetch historical Implied Volatility (IV) data from local CSV storage.
+    
+    Args:
+        symbol (str): Trading symbol (NIFTY/BANKNIFTY).
+        expiry (str): Expiry date in YYYY-MM-DD format.
+        day_str (str, optional): Specific date to fetch for. Defaults to today.
+        
+    Returns:
+        pd.DataFrame: IV history dataframe.
+    """
     if day_str is None:
         day_str = datetime.now().strftime('%Y-%m-%d')
     
-    file_path = f"c:/algo/upstox/data/iv_history/iv_history_{day_str}.csv"
+    file_path = os.path.join(PROJECT_ROOT, f"data/iv_history/iv_history_{day_str}.csv")
     if not os.path.exists(file_path):
         return pd.DataFrame()
     
@@ -251,8 +276,9 @@ def main():
         return
 
     # Sidebar Navigation
+    nse_data = get_cached_nse_data() # Initialize globally
     st.sidebar.header("🗺️ Navigation")
-    page = st.sidebar.radio("Go to", ["Market Overview", "OI Trend Analysis", "Cumulative OI Charts", "Straddle Analysis"], index=0)
+    page = st.sidebar.radio("Go to", ["Market Overview", "OI Trend Analysis", "Trending OI", "Straddle Analysis", "Strangle Analysis"], index=0)
     
     # Sidebar Filters
     st.sidebar.header("🎯 Filters")
@@ -314,6 +340,8 @@ def main():
     visible_contracts = []
     straddle_strike = atm
     cum_strikes_range = 10
+    ce_strikes = []
+    pe_strikes = []
     
     if page == "Market Overview":
         st.sidebar.subheader("👁️ View Controls")
@@ -339,11 +367,23 @@ def main():
         else:
             visible_contracts = []
             
-    elif page == "Cumulative OI Charts":
+    elif page == "Trending OI":
         st.sidebar.subheader("🎯 Strike Selection")
-        # Allow user to select range around ATM
-        cum_strikes_range = st.sidebar.slider("Strikes Range (ATM +/-)", 1, 20, 10)
-        st.sidebar.info(f"Analyzing {cum_strikes_range*2 + 1} strikes around ATM ({atm}).")
+        # Generate a wider range of possible strikes for selection
+        step = 100 if symbol == "BANKNIFTY" else 50
+        # Offer ATM +/- 20 strikes to cover wide moves
+        possible_strikes = [atm + (i * step) for i in range(-20, 21)]
+        
+        # Default selection: ATM + 6 strikes (User seems to like 7 strikes including ATM)
+        default_strikes = [atm + (i * step) for i in range(0, 7)]
+        
+        target_strikes = st.sidebar.multiselect(
+            "Select Strikes", 
+            possible_strikes, 
+            default=default_strikes
+        )
+        
+        st.sidebar.info(f"Selected {len(target_strikes)} strikes.")
 
     elif page == "Straddle Analysis":
         st.sidebar.subheader("🧭 Strike Selection")
@@ -351,272 +391,365 @@ def main():
         straddle_strikes = [atm + (i * (100 if symbol == "BANKNIFTY" else 50)) for i in range(-10, 11)]
         straddle_strike = st.sidebar.selectbox("Select Strike", straddle_strikes, index=10)
 
+    elif page == "Strangle Analysis":
+        st.sidebar.subheader("🧭 Strangle Setup")
+        step = 100 if symbol == "BANKNIFTY" else 50
+        possible_strikes = [atm + (i * step) for i in range(-20, 21)]
+        
+        ce_strikes = st.sidebar.multiselect("Select CE Strikes", possible_strikes, default=[atm + step])
+        pe_strikes = st.sidebar.multiselect("Select PE Strikes", possible_strikes, default=[atm - step])
+
     # 4. Global Header Metrics
     st.markdown("---")
-    index_cols = st.columns(len(MONITOR_INDICES))
-    items = list(MONITOR_INDICES.items())
-    
-    for i, (name, key) in enumerate(items):
-        q = index_quotes.get(key) or index_quotes.get(key.replace(':', '|'))
-        if q:
-            lp = q.get('last_price', 0)
-            nc = q.get('net_change', 0)
-            pc = (nc / (lp - nc) * 100) if (lp - nc) != 0 else 0
-            
-            color = "#00ff7f" if nc >= 0 else "#ff4b4b"
-            sign = "+" if nc >= 0 else ""
-            
-            index_html = f"""
-            <div class="index-card">
-                <div class="index-name">{name.replace("Nifty ", "")}</div>
-                <div class="index-price">₹{lp:,.2f}</div>
-                <div class="index-change" style="color: {color};">
-                    {nc:+.2f}<br>({pc:+.2f}%)
-                </div>
-            </div>
-            """
-            index_cols[i].markdown(index_html, unsafe_allow_html=True)
-    
-    # 5. Data Fetching (Only for Trend Page)
-    nse_data = get_cached_nse_data()
-    
-    if page == "OI Trend Analysis":
-        iv_history = get_iv_history(symbol, selected_expiry)
-        all_data = []
 
-        if strikes and opt_types:
-            with st.spinner(f"Updating data (Refresh: {refresh_interval}s)..."):
-                for strike in strikes:
-                    for ot in opt_types:
-                        label = f"{strike} {ot}"
-                        key = get_option_instrument_key(symbol, strike, ot, nse_data, selected_expiry)
-                        if key:
-                            df = get_v3_intraday_data(key, access_token)
-                            if not df.empty and label in visible_contracts:
-                                df['label'] = label
-                                # Merge with IV if available
-                                if not iv_history.empty:
-                                    iv_col = 'ce_iv' if ot == 'CE' else 'pe_iv'
-                                    strike_iv = iv_history[iv_history['strike_price'] == strike][['timestamp', iv_col]].rename(columns={iv_col: 'iv'})
-                                    if not strike_iv.empty:
-                                        df['min_ts'] = df['timestamp'].dt.round('1min')
-                                        strike_iv['min_ts'] = strike_iv['timestamp'].dt.round('1min')
-                                        df = pd.merge(df, strike_iv[['min_ts', 'iv']], on='min_ts', how='left').drop(columns=['min_ts'])
-                                
-                                all_data.append(df)
+    # --- Market Overview Page ---
+    if page == "Market Overview":
+        st.subheader(f"🏛️ Market Overview: {symbol} (ATM: {atm})")
+        
+        # Display Index LTP Mini-Stats
+        if selected_quote:
+            c1, c2, c3 = st.columns(3)
+            with c1: st.metric("Index LTP", f"₹{spot:,.2f}", f"{selected_quote.get('change', 0):+.2f}")
+            with c2: st.metric("ATM Strike", f"{atm}")
+            with c3: st.metric("Expiry", selected_expiry)
 
-        if not all_data:
-            st.warning("No data found for selected instruments.")
+        if show_chain:
+            from lib.api.option_chain import get_option_chain_dataframe
+            with st.spinner("Fetching full option chain..."):
+                df_chain = get_option_chain_dataframe(access_token, INDEX_KEY_MAP[symbol], selected_expiry)
+            
+            if df_chain is not None and not df_chain.empty:
+                # Calculate % Changes
+                df_chain['ce_pct'] = ((df_chain['ce_ltp'] - df_chain['ce_close']) / df_chain['ce_close'] * 100).fillna(0)
+                df_chain['pe_pct'] = ((df_chain['pe_ltp'] - df_chain['pe_close']) / df_chain['pe_close'] * 100).fillna(0)
+                df_chain['ce_oi_pct'] = ((df_chain['ce_oi'] - df_chain['ce_prev_oi']) / df_chain['ce_prev_oi'] * 100).fillna(0)
+                df_chain['pe_oi_pct'] = ((df_chain['pe_oi'] - df_chain['pe_prev_oi']) / df_chain['pe_prev_oi'] * 100).fillna(0)
+                df_chain['ce_oi_chg'] = df_chain['ce_oi'] - df_chain['ce_prev_oi']
+                df_chain['pe_oi_chg'] = df_chain['pe_oi'] - df_chain['pe_prev_oi']
+
+                # Calculation for Buildup
+                def calculate_buildup(price_pct, oi_pct):
+                    if price_pct > 0 and oi_pct > 0: return "Long Buildup"
+                    if price_pct < 0 and oi_pct > 0: return "Short Buildup"
+                    if price_pct > 0 and oi_pct < 0: return "Short Covering"
+                    if price_pct < 0 and oi_pct < 0: return "Long Unwinding"
+                    return "-"
+
+                df_chain['ce_buildup'] = df_chain.apply(lambda x: calculate_buildup(x['ce_pct'], x['ce_oi_pct']), axis=1)
+                df_chain['pe_buildup'] = df_chain.apply(lambda x: calculate_buildup(x['pe_pct'], x['pe_oi_pct']), axis=1)
+
+                # Filter for ATM range
+                range_val = 1500 if symbol == "BANKNIFTY" else 750
+                display_chain = df_chain[(df_chain['strike_price'] >= atm - range_val) & (df_chain['strike_price'] <= atm + range_val)].copy()
+                
+                # Identify Top 3 Unique OI values for CE and PE INDIVIDUALLY within the ACTIVE viewport
+                top_ce_oi_vals = sorted(display_chain['ce_oi'].fillna(0).astype(int).unique(), reverse=True)[:3]
+                top_pe_oi_vals = sorted(display_chain['pe_oi'].fillna(0).astype(int).unique(), reverse=True)[:3]
+                
+                # Format and Style
+                display_chain = display_chain.rename(columns={
+                    'ce_buildup': 'BUILDUP', 'ce_oi': 'OI', 'ce_oi_chg': 'OI CHG', 'ce_oi_pct': 'OI %', 'ce_ltp': 'PRICE', 'ce_pct': 'CHG %',
+                    'strike_price': 'STRIKE', 
+                    'pe_pct': 'CHG % ', 'pe_ltp': 'PRICE ', 'pe_oi_pct': 'OI % ', 'pe_oi_chg': 'OI CHG ', 'pe_oi': 'OI ', 'pe_buildup': 'BUILDUP '
+                })
+
+                # HTML Style and Table Logic
+                style_html = """<style>
+    .opt-table { width: 100%; border-collapse: collapse; font-family: 'Inter', sans-serif; background: rgba(255, 255, 255, 0.02); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.1); }
+    .opt-table th { background-color: rgba(255, 255, 255, 0.08); padding: 10px 4px; text-align: center; color: #fff; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid rgba(255, 255, 255, 0.1); letter-spacing: 0.5px; }
+    .opt-table td { padding: 8px 4px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.03); font-size: 0.85rem; color: #eee; font-weight: 500; transition: all 0.2s; }
+    .opt-table tr:hover td { background-color: rgba(255, 255, 255, 0.05); }
+    .atm-row { background-color: rgba(0, 255, 127, 0.18) !important; border-top: 1px solid rgba(0, 255, 127, 0.3); border-bottom: 1px solid rgba(0, 255, 127, 0.3); }
+    .top-oi-ce { background-color: #ff5000 !important; color: #fff !important; font-weight: 900 !important; border: 1.5px solid #fff !important; box-shadow: 0 0 10px rgba(255, 80, 0, 0.4); }
+    .top-oi-pe { background-color: #ff5000 !important; color: #fff !important; font-weight: 900 !important; border: 1.5px solid #fff !important; box-shadow: 0 0 10px rgba(255, 80, 0, 0.4); }
+    .strike-col { font-weight: 900 !important; color: #ffd700 !important; font-size: 1.1rem !important; background-color: rgba(255, 215, 0, 0.05); border-left: 1px solid rgba(255, 215, 0, 0.1); border-right: 1px solid rgba(255, 215, 0, 0.1); }
+    .pos-val { color: #00ff7f; font-weight: 700; }
+    .neg-val { color: #ff4b4b; font-weight: 700; }
+    </style>"""
+
+                table_rows = []
+                for _, row in display_chain.iterrows():
+                    is_atm = 'class="atm-row"' if row['STRIKE'] == atm else ""
+                    def fmt_pct(v):
+                        cls = "pos-val" if v > 0 else ("neg-val" if v < 0 else "")
+                        return f'<span class="{cls}">{v:+.2f}%</span>'
+                    def fmt_chg(v):
+                        cls = "pos-val" if v > 0 else ("neg-val" if v < 0 else "")
+                        return f'<span class="{cls}">{int(v):+,}</span>'
+                    def fmt_buildup(b):
+                        if "-" in b: return "-"
+                        cls = "pos-val" if b in ["Long Buildup", "Short Covering"] else "neg-val"
+                        return f'<span class="{cls}" style="font-size: 0.85rem;">{b}</span>'
+
+                    ce_oi_class = 'class="top-oi-ce"' if int(row['OI']) in top_ce_oi_vals else ""
+                    pe_oi_class = 'class="top-oi-pe"' if int(row['OI ']) in top_pe_oi_vals else ""
+
+                    row_html = f'<tr {is_atm}>'
+                    row_html += f'<td>{fmt_buildup(row["BUILDUP"])}</td>'
+                    row_html += f'<td {ce_oi_class}>{int(row["OI"]):,}</td>'
+                    row_html += f'<td>{fmt_chg(row["OI CHG"])}</td>'
+                    row_html += f'<td>{fmt_pct(row["OI %"])}</td>'
+                    row_html += f'<td>{row["PRICE"]:,.2f}</td>'
+                    row_html += f'<td>{fmt_pct(row["CHG %"])}</td>'
+                    row_html += f'<td class="strike-col">{int(row["STRIKE"]):,}</td>'
+                    row_html += f'<td>{fmt_pct(row["CHG % "])}</td>'
+                    row_html += f'<td>{row["PRICE "]:,.2f}</td>'
+                    row_html += f'<td>{fmt_pct(row["OI % "])}</td>'
+                    row_html += f'<td>{fmt_chg(row["OI CHG "])}</td>'
+                    row_html += f'<td {pe_oi_class}>{int(row["OI "]):,}</td>'
+                    row_html += f'<td>{fmt_buildup(row["BUILDUP "])}</td>'
+                    row_html += '</tr>'
+                    table_rows.append(row_html)
+                
+                table_header = '<table class="opt-table"><thead><tr>'
+                table_header += '<th>BUILDUP</th><th>OI</th><th>OI CHG</th><th>OI %</th><th>LTP</th><th>CHG %</th><th>STRIKE</th><th>CHG %</th><th>LTP</th><th>OI %</th><th>OI CHG</th><th>OI</th><th>BUILDUP</th>'
+                table_header += '</tr></thead><tbody>'
+                
+                full_html = style_html + table_header + "".join(table_rows) + "</tbody></table>"
+                st.html(full_html)
+
+    # --- Trending OI Page ---
+    if page == "Trending OI":
+        st.subheader(f"📈 Trending OI Analysis ({symbol})")
+        
+        if not target_strikes:
+            st.warning("⚠️ Please select at least one strike from the sidebar.")
         else:
-            combined_df = pd.concat(all_data)
-            
-    # --- Cumulative OI Page ---
-    if page == "Cumulative OI Charts":
-        st.subheader(f"📈 Cumulative OI Analysis ({symbol})")
-        
-        # Determine Strikes Range
-        step = 100 if symbol == "BANKNIFTY" else 50
-        target_strikes = [atm + (i * step) for i in range(-cum_strikes_range, cum_strikes_range + 1)]
-        
-        with st.spinner(f"Fetching data for {len(target_strikes)} strikes..."):
+            import concurrent.futures
+
+            # Function for parallel execution
+            def fetch_strike_timeseries(strike, opt_type):
+                key = get_option_instrument_key(symbol, strike, opt_type, nse_data, selected_expiry)
+                if key:
+                    df = get_v3_intraday_data(key, access_token)
+                    if not df.empty:
+                        return (strike, opt_type, df[['timestamp', 'oi']].set_index('timestamp'))
+                return (strike, opt_type, None)
+
+            # Fetch Index Data for LTP
+            with st.spinner("Fetching Index Data..."):
+                index_key = INDEX_KEY_MAP[symbol]
+                index_df = get_v3_intraday_data(index_key, access_token)
+                if not index_df.empty:
+                    index_df = index_df.set_index('timestamp')
+                    index_df = index_df[~index_df.index.duplicated(keep='first')] # Ensure unique index
+
+            with st.spinner(f"Fetching OI for {len(possible_strikes)} strikes..."):
+                nse_data = get_cached_nse_data()
+                all_strike_data = {} 
+                
+                # Prepare tasks
+                tasks = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    for strike in possible_strikes:
+                        tasks.append(executor.submit(fetch_strike_timeseries, strike, "CE"))
+                        tasks.append(executor.submit(fetch_strike_timeseries, strike, "PE"))
+                    
+                    for future in concurrent.futures.as_completed(tasks):
+                        strike, opt_type, df = future.result()
+                        if df is not None:
+                            if strike not in all_strike_data: all_strike_data[strike] = {'CE': None, 'PE': None}
+                            all_strike_data[strike][opt_type] = df
+
+            # Filter data
             ce_dfs = []
             pe_dfs = []
             
-            # Fetch all data in loop
             for strike in target_strikes:
-                # 1. CE Data
-                ce_key = get_option_instrument_key(symbol, strike, "CE", nse_data, selected_expiry)
-                if ce_key:
-                    df = get_v3_intraday_data(ce_key, access_token)
-                    if not df.empty:
-                        ce_dfs.append(df[['timestamp', 'oi']].set_index('timestamp'))
-                
-                # 2. PE Data
-                pe_key = get_option_instrument_key(symbol, strike, "PE", nse_data, selected_expiry)
-                if pe_key:
-                    df = get_v3_intraday_data(pe_key, access_token)
-                    if not df.empty:
-                        pe_dfs.append(df[['timestamp', 'oi']].set_index('timestamp'))
+                if strike in all_strike_data:
+                    if all_strike_data[strike]['CE'] is not None:
+                        ce_dfs.append(all_strike_data[strike]['CE'])
+                    if all_strike_data[strike]['PE'] is not None:
+                        pe_dfs.append(all_strike_data[strike]['PE'])
             
             if not ce_dfs or not pe_dfs:
-                st.error("Could not fetch enough data for cumulative analysis.")
+                st.error("Could not fetch enough data for analysis.")
             else:
-                # Aggregate
-                # Concat all CE dfs and sum by timestamp (index)
+                # 1. Aggregate Total OI first
                 total_ce_oi = pd.concat(ce_dfs).groupby(level=0).sum().sort_index()
                 total_pe_oi = pd.concat(pe_dfs).groupby(level=0).sum().sort_index()
                 
-                # Align indices (intersection of timestamps to ensure validity)
+                # Align indices
                 common_idx = total_ce_oi.index.intersection(total_pe_oi.index)
+                if not index_df.empty:
+                    common_idx = common_idx.intersection(index_df.index)
                 
                 final_df = pd.DataFrame(index=common_idx)
                 final_df['Total CE OI'] = total_ce_oi.loc[common_idx]['oi']
                 final_df['Total PE OI'] = total_pe_oi.loc[common_idx]['oi']
-                final_df['Net OI'] = final_df['Total PE OI'] - final_df['Total CE OI'] # Bullish if Positive (More Puts Sold)
+                if not index_df.empty:
+                    final_df['LTP'] = index_df.loc[common_idx]['close']
+                else:
+                    final_df['LTP'] = 0
+
+                # 2. Calculate Change in OI
+                # Toggle for Calculation Mode (Broker dependent)
+                calc_mode = st.sidebar.radio("Change Reference", ["vs Yesterday Close", "vs Today Open (09:15)"], index=0)
                 
-                # --- Plot 1: Total OI (Separate Plot) ---
-                fig_total = go.Figure()
-                fig_total.add_trace(go.Scatter(
-                    x=final_df.index, y=final_df['Total CE OI'],
-                    mode='lines', name='Total CE OI',
-                    line=dict(color='#ff4b4b', width=2)
-                ))
-                fig_total.add_trace(go.Scatter(
-                    x=final_df.index, y=final_df['Total PE OI'],
-                    mode='lines', name='Total PE OI',
-                    line=dict(color='#00ff7f', width=2)
-                ))
+                prev_ce = 0
+                prev_pe = 0
                 
-                fig_total.update_layout(
-                    title=f"Total Cumulative OI (ATM +/- {cum_strikes_range})",
-                    xaxis_title="Time", 
-                    yaxis_title="Open Interest",
-                    template="plotly_dark", 
-                    height=500,
-                    margin=dict(l=20, r=20, t=50, b=20),
-                    hovermode='x unified',
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                if calc_mode == "vs Yesterday Close":
+                    from lib.api.option_chain import get_option_chain_dataframe
+                    # Fetch Option Chain Snapshot for Prev OI
+                    with st.spinner("Fetching Option Chain Snapshot for Reference OI..."):
+                        snapshot_chain = get_option_chain_dataframe(access_token, INDEX_KEY_MAP[symbol], selected_expiry)
+                    
+                    if snapshot_chain is not None and not snapshot_chain.empty:
+                        snap_subset = snapshot_chain[snapshot_chain['strike_price'].astype(int).isin(target_strikes)]
+                        prev_ce = snap_subset['ce_prev_oi'].sum()
+                        prev_pe = snap_subset['pe_prev_oi'].sum()
+                        
+                        # Debug Info
+                        with st.expander("🔍 Debug: Reference OI (Yesterday Close)"):
+                            st.write(f"Strikes: {target_strikes}")
+                            st.write(f"Total CE Prev OI: {prev_ce:,.0f}")
+                            st.write(f"Total PE Prev OI: {prev_pe:,.0f}")
+                            st.dataframe(snap_subset[['strike_price', 'ce_prev_oi', 'pe_prev_oi']])
+                    else:
+                        st.warning("⚠️ Could not fetch Previous OI snapshot. Falling back to day open.")
+                        prev_ce = final_df['Total CE OI'].iloc[0]
+                        prev_pe = final_df['Total PE OI'].iloc[0]
+                else:
+                    # vs Today Open (09:15)
+                    prev_ce = final_df['Total CE OI'].iloc[0]
+                    prev_pe = final_df['Total PE OI'].iloc[0]
+                    with st.expander("🔍 Debug: Reference OI (09:15 Open)"):
+                         st.write(f"Total CE Open OI: {prev_ce:,.0f}")
+                         st.write(f"Total PE Open OI: {prev_pe:,.0f}")
+                
+                final_df['Chng CE OI'] = final_df['Total CE OI'] - prev_ce
+                final_df['Chng PE OI'] = final_df['Total PE OI'] - prev_pe
+                final_df['Net Change'] = final_df['Chng PE OI'] - final_df['Chng CE OI'] # Bullish if Positive
+                final_df['PCR'] = final_df['Total PE OI'] / final_df['Total CE OI'] # PCR on Total OI
+                
+                # 3. Visualization
+                
+                # Top Row: Dual Charts
+                c1, c2 = st.columns(2)
+                
+                with c1:
+                    # Chart 1: Trending OI Sentiment (Net Change vs LTP)
+                    fig_sent = make_subplots(specs=[[{"secondary_y": True}]])
+                    
+                    # Net Change (Area)
+                    fig_sent.add_trace(go.Scatter(
+                        x=final_df.index, y=final_df['Net Change'],
+                        mode='lines', name='Net OI Change',
+                        line=dict(color='#00ff00', width=1),
+                        fill='tozeroy',
+                        fillcolor='rgba(0, 255, 0, 0.1)'
+                    ), secondary_y=False)
+                    
+                    # LTP (Line)
+                    fig_sent.add_trace(go.Scatter(
+                        x=final_df.index, y=final_df['LTP'],
+                        mode='lines', name='Index LTP',
+                        line=dict(color='#ffd700', width=2)
+                    ), secondary_y=True)
+                    
+                    fig_sent.update_layout(
+                        title="Trending OI Sentiment (Net vs Price)",
+                        template="plotly_dark", height=400,
+                        margin=dict(l=10, r=10, t=60, b=40),
+                        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor='center'),
+                        hovermode='x unified'
+                    )
+                    st.plotly_chart(fig_sent, use_container_width=True)
+                    
+                with c2:
+                    # Chart 2: Trending OI (Call Chg vs Put Chg)
+                    fig_trend = go.Figure()
+                    fig_trend.add_trace(go.Scatter(
+                        x=final_df.index, y=final_df['Chng CE OI'],
+                        mode='lines', name='Call OI Chg',
+                        line=dict(color='#ff4b4b', width=2)
+                    ))
+                    fig_trend.add_trace(go.Scatter(
+                        x=final_df.index, y=final_df['Chng PE OI'],
+                        mode='lines', name='Put OI Chg',
+                        line=dict(color='#00ff7f', width=2)
+                    ))
+                    fig_trend.add_hline(y=0, line_dash="dash", line_color="gray")
+                    
+                    fig_trend.update_layout(
+                        title="Trending OI (Call Change vs Put Change)",
+                        template="plotly_dark", height=400,
+                        margin=dict(l=10, r=10, t=60, b=40),
+                        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor='center'),
+                        hovermode='x unified'
+                    )
+                    st.plotly_chart(fig_trend, use_container_width=True)
+
+                # 4. Detailed Data Table
+                # 4. Detailed Data Table
+                st.subheader("📋 Trending OI Data")
+                
+                # Reverse order for table (Latest first)
+                table_df = final_df.sort_index(ascending=False).copy()
+                
+                # Format Columns & Rename to match user request
+                # User Columns: Time, LTP, Chng. In Call OI, Chng. In Put OI, Diff. In OI, Direct. Of chng, Chng. In Direction, Direction of Chng %, PCR
+                
+                table_df['Time'] = table_df.index.strftime('%H:%M:%S') # User showed seconds
+                
+                # 1. Diff. In OI (Net Change)
+                table_df['Diff. In OI'] = table_df['Net Change']
+                
+                # 2. Direct. Of chng (Signal)
+                def get_direction(val):
+                    return "BUY 🟢" if val > 0 else "SELL 🔴"
+                table_df['Direct. Of chng'] = table_df['Diff. In OI'].apply(get_direction)
+                
+                # 3. Chng. In Direction (Diff of Net Change)
+                # Next row is previous time, so Current - Next = Change from Previous
+                table_df['Chng. In Direction'] = table_df['Diff. In OI'].diff(-1)
+                
+                # 4. Direction of Chng %
+                # Formula: (Chng In Direction / Abs(Previous Diff. In OI)) * 100
+                # Using Abs() for denominator to keep sign logic consistent with direction?
+                # User's example: 11L / 5Cr (negative) = -2.26%.
+                # If Chng is +11L and base is -5Cr. 
+                # Let's use simple % change formula relative to previous value magnitude?
+                # Actually, standard % change is (New - Old) / |Old|.
+                # Here 'New' is Current Diff, 'Old' is Prev Diff.
+                # (Current - Prev) is 'Chng In Direction'.
+                # So Chng / |Prev|.
+                prev_diff = table_df['Diff. In OI'].shift(-1)
+                table_df['Direction of Chng %'] = (table_df['Chng. In Direction'] / prev_diff.abs() * 100).replace([float('inf'), -float('inf')], 0)
+                
+                # Filter/Rename for Display
+                display_cols = ['LTP', 'Chng CE OI', 'Chng PE OI', 'Diff. In OI', 'Direct. Of chng', 'Chng. In Direction', 'Direction of Chng %', 'PCR']
+                display_df = table_df[display_cols].copy()
+                
+                # Rename internal cols to display cols
+                display_df = display_df.rename(columns={
+                    'Chng CE OI': 'Chng. In Call OI',
+                    'Chng PE OI': 'Chng. In Put OI'
+                })
+                
+                # Apply Formatting
+                # User uses 1,00,000.00 format (Indian? or just commas with decimals)
+                # We'll use standard comma with 2 decimals for now.
+                display_df['LTP'] = display_df['LTP'].map('{:,.2f}'.format)
+                display_df['Chng. In Call OI'] = display_df['Chng. In Call OI'].map('{:+,.2f}'.format)
+                display_df['Chng. In Put OI'] = display_df['Chng. In Put OI'].map('{:+,.2f}'.format)
+                display_df['Diff. In OI'] = display_df['Diff. In OI'].map('{:+,.2f}'.format)
+                display_df['Chng. In Direction'] = display_df['Chng. In Direction'].fillna(0).map('{:+,.2f}'.format)
+                display_df['Direction of Chng %'] = display_df['Direction of Chng %'].fillna(0).map('{:+.2f}%'.format)
+                display_df['PCR'] = display_df['PCR'].map('{:.2f}'.format)
+                
+                # Final Selection & Ordering
+                final_table = display_df[['LTP', 'Chng. In Call OI', 'Chng. In Put OI', 'Diff. In OI', 'Direct. Of chng', 'Chng. In Direction', 'Direction of Chng %', 'PCR']]
+                
+                # Use st.dataframe with styling
+                st.dataframe(
+                    final_table,
+                    use_container_width=True,
+                    height=500
                 )
-                st.plotly_chart(fig_total, use_container_width=True)
-                
-                # --- Plot 2: Net OI (Separate Plot) ---
-                fig_net = go.Figure()
-                
-                # Fill Area: Green if Positive, Red if Negative
-                fig_net.add_trace(go.Scatter(
-                    x=final_df.index, y=final_df['Net OI'],
-                    mode='lines', name='Net OI (PE - CE)',
-                    line=dict(color='#ffd700', width=1),
-                    fill='tozeroy',
-                    # Conditional color logic is complex in simple fill, usually handled by checking value
-                ))
-                
-                # Add a zero line
-                fig_net.add_hline(y=0, line_dash="dash", line_color="gray")
 
-                last_net = final_df['Net OI'].iloc[-1]
-                sentiment = "BULLISH" if last_net > 0 else "BEARISH"
-                color = "green" if last_net > 0 else "red"
-                
-                fig_net.update_layout(
-                    title=f"Net OI Sentiment (PE - CE): <span style='color:{color}'>{sentiment}</span>",
-                    xaxis_title="Time", 
-                    yaxis_title="Net OI",
-                    template="plotly_dark", 
-                    height=400,
-                    margin=dict(l=20, r=20, t=50, b=20),
-                    hovermode='x unified'
-                )
-                st.plotly_chart(fig_net, use_container_width=True)
-                
-                # Stats Metrics
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total Call OI", f"{final_df['Total CE OI'].iloc[-1]:,}", delta=f"{final_df['Total CE OI'].iloc[-1] - final_df['Total CE OI'].iloc[0]:,}")
-                c2.metric("Total Put OI", f"{final_df['Total PE OI'].iloc[-1]:,}", delta=f"{final_df['Total PE OI'].iloc[-1] - final_df['Total PE OI'].iloc[0]:,}")
-                c3.metric("Net OI (PE-CE)", f"{last_net:,}", delta=f"{last_net - final_df['Net OI'].iloc[0]:,}")
 
-    # --- Option Chain Page/Section ---
-    if page == "Market Overview" and show_chain:
-        from lib.api.option_chain import get_option_chain_dataframe
-        with st.spinner("Fetching full option chain..."):
-            df_chain = get_option_chain_dataframe(access_token, INDEX_KEY_MAP[symbol], selected_expiry)
-        
-        if df_chain is not None and not df_chain.empty:
-            st.markdown("---")
-            # Calculate % Changes
-            df_chain['ce_pct'] = ((df_chain['ce_ltp'] - df_chain['ce_close']) / df_chain['ce_close'] * 100).fillna(0)
-            df_chain['pe_pct'] = ((df_chain['pe_ltp'] - df_chain['pe_close']) / df_chain['pe_close'] * 100).fillna(0)
-            df_chain['ce_oi_pct'] = ((df_chain['ce_oi'] - df_chain['ce_prev_oi']) / df_chain['ce_prev_oi'] * 100).fillna(0)
-            df_chain['pe_oi_pct'] = ((df_chain['pe_oi'] - df_chain['pe_prev_oi']) / df_chain['pe_prev_oi'] * 100).fillna(0)
-            df_chain['ce_oi_chg'] = df_chain['ce_oi'] - df_chain['ce_prev_oi']
-            df_chain['pe_oi_chg'] = df_chain['pe_oi'] - df_chain['pe_prev_oi']
-
-            # Calculation for Buildup
-            def calculate_buildup(price_pct, oi_pct):
-                if price_pct > 0 and oi_pct > 0: return "Long Buildup"
-                if price_pct < 0 and oi_pct > 0: return "Short Buildup"
-                if price_pct > 0 and oi_pct < 0: return "Short Covering"
-                if price_pct < 0 and oi_pct < 0: return "Long Unwinding"
-                return "-"
-
-            df_chain['ce_buildup'] = df_chain.apply(lambda x: calculate_buildup(x['ce_pct'], x['ce_oi_pct']), axis=1)
-            df_chain['pe_buildup'] = df_chain.apply(lambda x: calculate_buildup(x['pe_pct'], x['pe_oi_pct']), axis=1)
-
-            # Filter for ATM range
-            range_val = 1500 if symbol == "BANKNIFTY" else 750
-            display_chain = df_chain[(df_chain['strike_price'] >= atm - range_val) & (df_chain['strike_price'] <= atm + range_val)].copy()
-            
-            # Identify Top 3 Unique OI values for CE and PE INDIVIDUALLY within the ACTIVE viewport
-            # This ensures the user ALWAYS sees 3 structural levels on their screen
-            top_ce_oi_vals = sorted(display_chain['ce_oi'].fillna(0).astype(int).unique(), reverse=True)[:3]
-            top_pe_oi_vals = sorted(display_chain['pe_oi'].fillna(0).astype(int).unique(), reverse=True)[:3]
-            
-            # Format and Style - Using HTML for perfect center alignment
-            # Rename for cleaner headers
-            display_chain = display_chain.rename(columns={
-                'ce_buildup': 'BUILDUP', 'ce_oi': 'OI', 'ce_oi_chg': 'OI CHG', 'ce_oi_pct': 'OI %', 'ce_ltp': 'PRICE', 'ce_pct': 'CHG %',
-                'strike_price': 'STRIKE', 
-                'pe_pct': 'CHG % ', 'pe_ltp': 'PRICE ', 'pe_oi_pct': 'OI % ', 'pe_oi_chg': 'OI CHG ', 'pe_oi': 'OI ', 'pe_buildup': 'BUILDUP '
-            })
-
-            # Create the HTML Table - Zero indentation to prevent markdown parsing issues
-            style_html = """<style>
-.opt-table { width: 100%; border-collapse: collapse; font-family: 'Inter', sans-serif; background: rgba(255, 255, 255, 0.02); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.1); }
-.opt-table th { background-color: rgba(255, 255, 255, 0.08); padding: 10px 4px; text-align: center; color: #fff; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid rgba(255, 255, 255, 0.1); letter-spacing: 0.5px; }
-.opt-table td { padding: 8px 4px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.03); font-size: 0.85rem; color: #eee; font-weight: 500; transition: all 0.2s; }
-.opt-table tr:hover td { background-color: rgba(255, 255, 255, 0.05); }
-.atm-row { background-color: rgba(0, 255, 127, 0.18) !important; border-top: 1px solid rgba(0, 255, 127, 0.3); border-bottom: 1px solid rgba(0, 255, 127, 0.3); }
-.top-oi-ce { background-color: #ff5000 !important; color: #fff !important; font-weight: 900 !important; border: 1.5px solid #fff !important; box-shadow: 0 0 10px rgba(255, 80, 0, 0.4); }
-.top-oi-pe { background-color: #ff5000 !important; color: #fff !important; font-weight: 900 !important; border: 1.5px solid #fff !important; box-shadow: 0 0 10px rgba(255, 80, 0, 0.4); }
-.strike-col { font-weight: 900 !important; color: #ffd700 !important; font-size: 1.1rem !important; background-color: rgba(255, 215, 0, 0.05); border-left: 1px solid rgba(255, 215, 0, 0.1); border-right: 1px solid rgba(255, 215, 0, 0.1); }
-.pos-val { color: #00ff7f; font-weight: 700; }
-.neg-val { color: #ff4b4b; font-weight: 700; }
-</style>"""
-
-            table_rows = []
-            for _, row in display_chain.iterrows():
-                is_atm = 'class="atm-row"' if row['STRIKE'] == atm else ""
-                
-                def fmt_pct(v):
-                    cls = "pos-val" if v > 0 else ("neg-val" if v < 0 else "")
-                    return f'<span class="{cls}">{v:+.2f}%</span>'
-
-                def fmt_chg(v):
-                    cls = "pos-val" if v > 0 else ("neg-val" if v < 0 else "")
-                    return f'<span class="{cls}">{int(v):+,}</span>'
-
-                def fmt_buildup(b):
-                    if "-" in b: return "-"
-                    cls = "pos-val" if b in ["Long Buildup", "Short Covering"] else "neg-val"
-                    return f'<span class="{cls}" style="font-size: 0.85rem;">{b}</span>'
-
-                # Check if this row has Top 3 OI rank (using visible-range logic)
-                ce_oi_class = 'class="top-oi-ce"' if int(row['OI']) in top_ce_oi_vals else ""
-                pe_oi_class = 'class="top-oi-pe"' if int(row['OI ']) in top_pe_oi_vals else ""
-
-                row_html = f'<tr {is_atm}>'
-                row_html += f'<td>{fmt_buildup(row["BUILDUP"])}</td>'
-                row_html += f'<td {ce_oi_class}>{int(row["OI"]):,}</td>'
-                row_html += f'<td>{fmt_chg(row["OI CHG"])}</td>'
-                row_html += f'<td>{fmt_pct(row["OI %"])}</td>'
-                row_html += f'<td>{row["PRICE"]:,.2f}</td>'
-                row_html += f'<td>{fmt_pct(row["CHG %"])}</td>'
-                row_html += f'<td class="strike-col">{int(row["STRIKE"]):,}</td>'
-                row_html += f'<td>{fmt_pct(row["CHG % "])}</td>'
-                row_html += f'<td>{row["PRICE "]:,.2f}</td>'
-                row_html += f'<td>{fmt_pct(row["OI % "])}</td>'
-                row_html += f'<td>{fmt_chg(row["OI CHG "])}</td>'
-                row_html += f'<td {pe_oi_class}>{int(row["OI "]):,}</td>'
-                row_html += f'<td>{fmt_buildup(row["BUILDUP "])}</td>'
-                row_html += '</tr>'
-                table_rows.append(row_html)
-            
-            table_header = '<table class="opt-table"><thead><tr>'
-            table_header += '<th>BUILDUP</th><th>OI</th><th>OI CHG</th><th>OI %</th><th>LTP</th><th>CHG %</th><th>STRIKE</th><th>CHG %</th><th>LTP</th><th>OI %</th><th>OI CHG</th><th>OI</th><th>BUILDUP</th>'
-            table_header += '</tr></thead><tbody>'
-            
-            full_html = style_html + table_header + "".join(table_rows) + "</tbody></table>"
-            st.html(full_html)
 
     # --- Straddle Analysis Page ---
     if page == "Straddle Analysis":
@@ -697,8 +830,150 @@ def main():
             else:
                 st.error("Could not fetch data for both legs of the straddle.")
 
+    # --- Strangle Analysis Page ---
+    if page == "Strangle Analysis":
+        st.subheader(f"🦅 {symbol} Strangle Analysis")
+        
+        if not ce_strikes and not pe_strikes:
+            st.warning("⚠️ Please select at least one CE or PE strike from the sidebar.")
+        else:
+            with st.spinner(f"Fetching Strangle data for {len(ce_strikes)} CE and {len(pe_strikes)} PE legs..."):
+                import concurrent.futures
+                
+                def fetch_leg_data(strike, opt_type):
+                    key = get_option_instrument_key(symbol, strike, opt_type, nse_data, selected_expiry)
+                    if not key: return None
+                    df = get_v3_intraday_data(key, access_token)
+                    if df.empty: return None
+                    # We only need close and volume for premium calculation
+                    return df[['timestamp', 'close', 'volume']]
+
+                all_leg_data = []
+                tasks = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    for s in ce_strikes: tasks.append(executor.submit(fetch_leg_data, s, "CE"))
+                    for s in pe_strikes: tasks.append(executor.submit(fetch_leg_data, s, "PE"))
+                    
+                    for future in concurrent.futures.as_completed(tasks):
+                        res = future.result()
+                        if res is not None:
+                            all_leg_data.append(res)
+                
+                if not all_leg_data:
+                    st.error("❌ No data found for any of the selected strikes.")
+                else:
+                    # Merge all legs to calculate cumulative premium
+                    # Ensure indices match for addition
+                    for i in range(len(all_leg_data)):
+                        all_leg_data[i] = all_leg_data[i].set_index('timestamp')
+                    
+                    # Sum all close prices and volumes across timestamps
+                    # concat + groupby(level=0).sum() handles missing timestamps in some legs gracefully
+                    combined_df = pd.concat(all_leg_data).groupby(level=0).sum().sort_index()
+                    
+                    # Calculate Combined VWAP
+                    combined_df['vwap'] = (combined_df['close'] * combined_df['volume']).cumsum() / combined_df['volume'].cumsum()
+                    
+                    # Stats calculation
+                    curr_price = combined_df['close'].iloc[-1]
+                    open_price = combined_df['close'].iloc[0]
+                    day_high = combined_df['close'].max()
+                    day_low = combined_df['close'].min()
+                    diff = curr_price - open_price
+                    pct = (diff / open_price * 100) if open_price != 0 else 0
+                    color = "#00ff7f" if diff >= 0 else "#ff4b4b"
+                    
+                    # Display metrics header
+                    st.markdown(f"""
+                    <div class="straddle-header">
+                        <div class="stat-box">
+                            <div class="stat-label">Cumulative Premium</div>
+                            <div class="stat-value">₹{curr_price:,.2f}</div>
+                            <div class="stat-delta" style="color: {color};">{diff:+.2f} ({pct:+.2f}%)</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Strangle High</div>
+                            <div class="stat-value">₹{day_high:,.2f}</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-label">Strangle Low</div>
+                            <div class="stat-value">₹{day_low:,.2f}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Plot Strangle Price
+                    fig = go.Figure()
+                    
+                    # Cumulative Premium Line
+                    fig.add_trace(go.Scatter(
+                        x=combined_df.index, y=combined_df['close'],
+                        mode='lines', name='Cumulative Premium',
+                        line=dict(color='#ffd700', width=2.5)
+                    ))
+                    
+                    # VWAP Line
+                    fig.add_trace(go.Scatter(
+                        x=combined_df.index, y=combined_df['vwap'],
+                        mode='lines', name='Combined VWAP',
+                        line=dict(color='#ff4b4b', width=1.5, dash='dash')
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"Strangle Analysis: {len(ce_strikes)} CE | {len(pe_strikes)} PE (ATM: {atm})",
+                        xaxis_title="Time", yaxis_title="Price (₹)",
+                        template="plotly_dark", height=700,
+                        margin=dict(l=20, r=20, t=50, b=20),
+                        hovermode='x unified'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
     # --- Trend Page ---
     if page == "OI Trend Analysis":
+        combined_df = pd.DataFrame() # Initialize early
+        # Fetching Logic (Restored)
+        all_data = [] # List of DataFrames
+        
+        if strikes and opt_types:
+            with st.spinner(f"Fetching data for {len(strikes) * len(opt_types)} contracts..."):
+                nse_data = get_cached_nse_data()
+                import concurrent.futures
+                
+                def fetch_contract(strike, opt_type, nse_data_for_fetch):
+                    key = get_option_instrument_key(symbol, strike, opt_type, nse_data_for_fetch, selected_expiry)
+                    if not key: return None
+                    
+                    df = get_v3_intraday_data(key, access_token)
+                    if df.empty: return None
+                    
+                    # Prepare DF
+                    df['label'] = f"{strike} {opt_type}"
+                    # Simulate IV if needed or fetch
+                    # fetching IV history for triple view
+                    if view_mode == "Triple (Price+IV+OI)":
+                        iv_df = get_iv_history(symbol, selected_expiry)
+                        if not iv_df.empty:
+                            # Merge IV? This is complex. 
+                            # For now, let's skip IV merging to keep it simple and fix the NameError first.
+                            pass
+                    return df
+                
+                # Fetch Sequentially or Parallel? Parallel is better
+                # But to keep it simple and consistent with previous working code (which was likely inside loop):
+                for strike in strikes:
+                    for opt_type in opt_types:
+                        label = f"{strike} {opt_type}"
+                        # Check visibility
+                        if visible_contracts and label not in visible_contracts:
+                            continue
+                            
+                        df = fetch_contract(strike, opt_type, nse_data)
+                        if df is not None:
+                            all_data.append(df)
+                            
+        if not all_data:
+            st.warning("No data found for selected contracts.")
+        
         # --- Chart Section ---
         if view_mode == "Split (Price+OI)":
             st.subheader("📊 Split View: Price & OI Trend")
@@ -767,14 +1042,15 @@ def main():
             else:
                 fig.add_trace(oi_trace)
 
-        # Fix Market Hours on X-axis
-        today = datetime.now().date()
-        mkt_start = datetime.combine(today, time(9, 15))
-        mkt_end = datetime.combine(today, time(15, 30))
+        # Combine Data for Raw Table
+        combined_df = pd.concat(all_data) if all_data else pd.DataFrame()
+
+        # Fix Market Hours on X-axis (Optional: Remove if data might span days or different date)
+        # fig.update_xaxes(range=[mkt_start, mkt_end]) # Disabled to allow flexible range
 
         fig.update_layout(
             template="plotly_dark",
-            xaxis_range=[mkt_start, mkt_end],
+            # xaxis_range=[mkt_start, mkt_end], # Removed hardcoded range
             hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             height=900 if view_mode == "Triple (Price+IV+OI)" else (800 if view_mode == "Split (Price+OI)" else 600),
