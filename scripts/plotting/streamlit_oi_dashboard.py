@@ -278,7 +278,7 @@ def main():
     # Sidebar Navigation
     nse_data = get_cached_nse_data() # Initialize globally
     st.sidebar.header("🗺️ Navigation")
-    page = st.sidebar.radio("Go to", ["Market Overview", "OI Trend Analysis", "Trending OI", "Straddle Analysis", "Strangle Analysis"], index=0)
+    page = st.sidebar.radio("Go to", ["Market Overview", "OI Trend Analysis", "Trending OI", "Straddle Analysis", "Strangle Analysis", "PCR by Strike"], index=0)
     
     # Sidebar Filters
     st.sidebar.header("🎯 Filters")
@@ -1076,6 +1076,144 @@ def main():
         # --- Data Table Section ---
         if st.checkbox("Show Raw Data Table"):
             st.dataframe(combined_df.pivot(index='timestamp', columns='label', values='oi').sort_index(ascending=False))
+
+    # --- PCR by Strike Page ---
+    if page == "PCR by Strike":
+        st.subheader(f"📊 PCR by Strike Analysis ({symbol})")
+        
+        # Inputs
+        selected_expiry = st.sidebar.selectbox("Select Expiry", expiries, index=0)
+        
+        # Custom CSS for Small Grid
+        st.markdown("""
+        <style>
+        .pcr-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+            padding: 10px 0;
+        }
+        .pcr-box {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .pcr-box:hover {
+            transform: translateY(-3px);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .pcr-strike {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #ccc;
+            margin-bottom: 4px;
+        }
+        .pcr-value {
+            font-size: 1.4rem;
+            font-weight: 900;
+            margin-bottom: 4px;
+        }
+        .pcr-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        .bullish { color: #00ff7f; }
+        .bearish { color: #ff4b4b; }
+        .neutral { color: #888; }
+        
+        /* Tooltip container */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 140px;
+            background-color: #1e1e1e;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -70px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.75rem;
+            border: 1px solid #333;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        from lib.api.option_chain import get_option_chain_dataframe
+        
+        data_placeholder = st.empty()
+        
+        # Main Data Loop
+        with st.spinner("Calculating PCR Matrix..."):
+            df_chain = get_option_chain_dataframe(access_token, INDEX_KEY_MAP[symbol], selected_expiry)
+            
+            if df_chain is not None and not df_chain.empty:
+                # Filter Range (ATM +/- 15 Strikes)
+                step = 100 if symbol == "BANKNIFTY" else 50
+                range_mask = (df_chain['strike_price'] >= atm - (15 * step)) & (df_chain['strike_price'] <= atm + (15 * step))
+                df_view = df_chain[range_mask].copy()
+                
+                # Render Grid
+                html_content = '<div class="pcr-grid">'
+                
+                for _, row in df_view.iterrows():
+                    ce_oi = row['ce_oi'] if row['ce_oi'] > 0 else 1
+                    pe_oi = row['pe_oi'] if row['pe_oi'] > 0 else 0
+                    
+                    pcr = pe_oi / ce_oi
+                    
+                    # Sentiment Logic
+                    if pcr >= 1.0:
+                        sentiment = "BULLISH"
+                        color_cls = "bullish"
+                        desc = "Put Writers Dominating<br>(Support)"
+                    else:
+                        sentiment = "BEARISH"
+                        color_cls = "bearish"
+                        desc = "Call Writers Dominating<br>(Resistance)"
+                        
+                    # ATM Highlight
+                    border_style = 'style="border: 1px solid #ffd700; background: rgba(255, 215, 0, 0.05);"' if row['strike_price'] == atm else ''
+                    
+                    box_html = f"""
+                    <div class="pcr-box tooltip" {border_style}>
+                        <div class="pcr-strike">{int(row['strike_price'])}</div>
+                        <div class="pcr-value {color_cls}">{pcr:.2f}</div>
+                        <div class="pcr-label {color_cls}">{sentiment}</div>
+                        <span class="tooltiptext">{desc}<br>PE: {int(pe_oi/1000)}k | CE: {int(ce_oi/1000)}k</span>
+                    </div>
+                    """
+                    html_content += box_html
+                    
+                html_content += "</div>"
+                
+                data_placeholder.markdown(html_content, unsafe_allow_html=True)
+                
+                # Add Legend/Help
+                st.markdown("---")
+                c1, c2, c3 = st.columns(3)
+                c1.info("**Green (> 1.0)**: Bullish Sentiment. Puts are being sold more aggressively, indicating support.")
+                c2.error("**Red (< 1.0)**: Bearish Sentiment. Calls are being sold more aggressively, indicating resistance.")
+                c3.warning("**ATM Highlight**: The box with the Gold border indicates the At-The-Money strike.")
 
 if __name__ == "__main__":
     main()

@@ -451,14 +451,15 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None):
     }
 
 @app.get("/api/straddle-data")
-async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None):
+async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: float = None):
     """
-    Fetches intraday data for ATM straddle legs, calculates combined premium and VWAP,
+    Fetches intraday data for ATM or custom straddle legs, calculates combined premium and VWAP,
     and returns KPI metrics for the dashboard.
     
     Args:
         symbol: The underlying symbol (e.g., NIFTY, BANKNIFTY).
         expiry: Target expiry date (optional, defaults to current).
+        strike: Custom strike price (optional, defaults to ATM).
         
     Returns:
         JSON containing time-series data for chart and KPI metrics.
@@ -482,13 +483,24 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None):
             raise HTTPException(status_code=404, detail="No option chain data")
             
         spot = df['spot_price'].iloc[0]
-        df['strike_diff'] = (df['strike_price'] - spot).abs()
-        atm_row = df.loc[df['strike_diff'].idxmin()]
-        atm_strike = atm_row['strike_price']
-        ce_key = atm_row['ce_key']
-        pe_key = atm_row['pe_key']
         
-        print(f"🎯 ATM Strike: {atm_strike} | CE: {ce_key} | PE: {pe_key}")
+        # Determine target strike
+        if strike:
+            df['strike_diff'] = (df['strike_price'] - strike).abs()
+            target_row = df.loc[df['strike_diff'].idxmin()]
+            target_strike = target_row['strike_price']
+        else:
+            df['strike_diff'] = (df['strike_price'] - spot).abs()
+            target_row = df.loc[df['strike_diff'].idxmin()]
+            target_strike = target_row['strike_price']
+            
+        ce_key = target_row['ce_key']
+        pe_key = target_row['pe_key']
+        
+        # Get list of all strikes for the dropdown
+        all_strikes = sorted(df['strike_price'].unique().tolist())
+        
+        print(f"🎯 Target Strike: {target_strike} | CE: {ce_key} | PE: {pe_key}")
         
         # 2. Fetch Intraday Data for both legs
         ce_candles = await run_in_threadpool(get_intraday_data_v3, token, ce_key, "minute", 1)
@@ -515,13 +527,16 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None):
         change = current_val - open_val
         change_pct = (change / open_val * 100) if open_val > 0 else 0
         
-        # Straddle VWAP calculation
-        merged['ce_val'] = merged['close_ce'] * merged['volume_ce']
-        merged['pe_val'] = merged['close_pe'] * merged['volume_pe']
-        merged['cum_val'] = (merged['ce_val'] + merged['pe_val']).cumsum()
-        merged['cum_vol'] = (merged['volume_ce'] + merged['volume_pe']).cumsum()
-        # Avoid division by zero
-        merged['vwap'] = merged.apply(lambda x: x['cum_val'] / x['cum_vol'] if x['cum_vol'] > 0 else x['combined_premium'], axis=1)
+        # Straddle VWAP calculation (Individual Leg VWAPs summed)
+        merged['ce_cum_val'] = (merged['close_ce'] * merged['volume_ce']).cumsum()
+        merged['ce_cum_vol'] = merged['volume_ce'].cumsum()
+        merged['pe_cum_val'] = (merged['close_pe'] * merged['volume_pe']).cumsum()
+        merged['pe_cum_vol'] = merged['volume_pe'].cumsum()
+        
+        merged['ce_vwap'] = merged.apply(lambda x: x['ce_cum_val'] / x['ce_cum_vol'] if x['ce_cum_vol'] > 0 else x['close_ce'], axis=1)
+        merged['pe_vwap'] = merged.apply(lambda x: x['pe_cum_val'] / x['pe_cum_vol'] if x['pe_cum_vol'] > 0 else x['close_pe'], axis=1)
+        
+        merged['vwap'] = merged['ce_vwap'] + merged['pe_vwap']
         
         # Clean data for JSON
         merged = merged.replace([float('inf'), float('-inf')], 0).fillna(0)
@@ -533,7 +548,8 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None):
             "metadata": {
                 "symbol": symbol,
                 "expiry": expiry,
-                "atm_strike": atm_strike,
+                "target_strike": target_strike,
+                "all_strikes": all_strikes,
                 "spot": spot,
                 "kpis": {
                     "current": round(float(current_val), 2),

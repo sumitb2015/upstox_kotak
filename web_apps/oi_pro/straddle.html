@@ -43,6 +43,8 @@
             const [loading, setLoading] = useState(false);
             const [kpis, setKpis] = useState({});
             const [metadata, setMetadata] = useState({});
+            const [strike, setStrike] = useState("");
+            const [allStrikes, setAllStrikes] = useState([]);
             
             const chartRef = useRef(null);
 
@@ -72,17 +74,20 @@
                 fetchStraddleData();
                 const interval = setInterval(fetchStraddleData, 60000);
                 return () => clearInterval(interval);
-            }, [symbol, expiry]);
+            }, [symbol, expiry, strike]);
 
             const fetchStraddleData = async () => {
                 setLoading(true);
                 try {
-                    const res = await fetch(`/api/straddle-data?symbol=${symbol}&expiry=${expiry}`);
+                    const strikeParam = strike ? `&strike=${strike}` : "";
+                    const res = await fetch(`/api/straddle-data?symbol=${symbol}&expiry=${expiry}${strikeParam}`);
                     const result = await res.json();
                     if (result.status === "success") {
                         setData(result.data);
                         setKpis(result.metadata.kpis);
                         setMetadata(result.metadata);
+                        setAllStrikes(result.metadata.all_strikes || []);
+                        if (!strike) setStrike(result.metadata.target_strike);
                     }
                 } catch (err) {
                     console.error("Straddle fetch failed", err);
@@ -108,9 +113,7 @@
                     name: 'Combined Premium',
                     type: 'scatter',
                     mode: 'lines',
-                    line: { color: '#fbbf24', width: 3 },
-                    fill: 'tozeroy',
-                    fillcolor: 'rgba(251, 191, 36, 0.05)'
+                    line: { color: '#fbbf24', width: 3 }
                 };
 
                 const vwapTrace = {
@@ -138,7 +141,9 @@
                         title: 'Total Premium (₹)',
                         gridcolor: '#1e293b', 
                         zerolinecolor: '#334155',
-                        tickfont: { color: '#94a3b8' }
+                        tickfont: { color: '#94a3b8' },
+                        autorange: true,
+                        rangemode: 'normal'
                     },
                     hovermode: 'x unified',
                     hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
@@ -192,9 +197,23 @@
                                     <select 
                                         className="bg-transparent border-none text-slate-300 text-sm font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={expiry}
-                                        onChange={(e) => setExpiry(e.target.value)}
+                                        onChange={(e) => {
+                                            setExpiry(e.target.value);
+                                            setStrike(""); // Reset strike so it finds new ATM
+                                        }}
                                     >
                                         {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase">STRIKE</span>
+                                    <select 
+                                        className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer"
+                                        value={strike}
+                                        onChange={(e) => setStrike(e.target.value)}
+                                    >
+                                        {allStrikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -226,9 +245,9 @@
                             </div>
 
                             <div className="glass p-6 rounded-3xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2">ATM Strike</p>
-                                <h3 className="text-3xl font-black text-emerald-400 tracking-tighter">{metadata.atm_strike || "---"}</h3>
-                                <div className="mt-2 text-[10px] text-slate-600 font-bold uppercase tracking-widest">Nearest to {metadata.spot?.toFixed(1)}</div>
+                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2">Display Strike</p>
+                                <h3 className="text-3xl font-black text-emerald-400 tracking-tighter">{metadata.target_strike || "---"}</h3>
+                                <div className="mt-2 text-[10px] text-slate-600 font-bold uppercase tracking-widest">SPOT: {metadata.spot?.toFixed(1)}</div>
                             </div>
                         </div>
 

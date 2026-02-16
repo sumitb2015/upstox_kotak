@@ -482,3 +482,37 @@ def calculate_pcr(df: pd.DataFrame) -> float:
     except Exception as e:
         print(f"Error calculating PCR: {e}")
         return 0.0
+
+def calculate_volume_pcr(df: pd.DataFrame) -> float:
+    """
+    Calculate Total Volume Put-Call Ratio (PCR).
+    PCR = Total Put Volume / Total Call Volume
+    """
+    if df.empty:
+        return 0.0
+    try:
+        total_pe_vol = df['pe_volume'].sum()
+        total_ce_vol = df['ce_volume'].sum()
+        if total_ce_vol == 0:
+            return 0.0
+        return round(total_pe_vol / total_ce_vol, 4)
+    except Exception as e:
+        print(f"Error calculating Volume PCR: {e}")
+        return 0.0
+
+def calculate_oi_change_pcr(df: pd.DataFrame) -> float:
+    """
+    Calculate Total OI Change Put-Call Ratio (PCR).
+    PCR = Total Put OI Change / Total Call OI Change
+    """
+    if df.empty:
+        return 0.0
+    try:
+        pe_chg = (df['pe_oi'] - df['pe_prev_oi']).sum()
+        ce_chg = (df['ce_oi'] - df['ce_prev_oi']).sum()
+        if ce_chg == 0:
+            return 0.0
+        return round(pe_chg / ce_chg, 4)
+    except Exception as e:
+        print(f"Error calculating OI Change PCR: {e}")
+        return 0.0
