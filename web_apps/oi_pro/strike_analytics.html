@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strike Analytics | CE vs PE Comparison</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #030712; }
+        .glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .emerald-glow { box-shadow: 0 0 20px rgba(16, 185, 129, 0.15); }
+        .indicator-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
+
+        function StrikeAnalytics() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiry, setExpiry] = useState("");
+            const [expiries, setExpiries] = useState([]);
+            const [strike, setStrike] = useState(null);
+            const [allStrikes, setAllStrikes] = useState([]);
+            const [data, setData] = useState([]);
+            const [metadata, setMetadata] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "---";
+                const date = new Date(dateStr);
+                if (isNaN(date)) return dateStr;
+                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            // Fetch Expiries
+            useEffect(() => {
+                fetch(`/api/expiries?symbol=${symbol}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === "success" && data.expiries.length > 0) {
+                            setExpiries(data.expiries);
+                            setExpiry(data.expiries[0]);
+                        }
+                    });
+            }, [symbol]);
+
+            // Fetch Strike Data
+            useEffect(() => {
+                if (!expiry) return;
+                fetchData();
+                const interval = setInterval(fetchData, 60000);
+                return () => clearInterval(interval);
+            }, [symbol, expiry, strike]);
+
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    let url = `/api/strike-data?symbol=${symbol}&expiry=${expiry}`;
+                    if (strike) url += `&strike=${strike}`;
+                    
+                    const res = await fetch(url);
+                    const result = await res.json();
+                    if (result.status === "success") {
+                        setData(result.data);
+                        setMetadata(result.metadata);
+                        setAllStrikes(result.metadata.all_strikes);
+                        if (!strike) setStrike(result.metadata.strike);
+                    }
+                } catch (err) {
+                    console.error("Error fetching strike data:", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                if (data.length > 0) {
+                    renderCharts();
+                }
+            }, [data]);
+
+            const renderCharts = () => {
+                if (!data || data.length === 0) return;
+
+                const times = data.map(d => d.timestamp);
+                const ceOi = data.map(d => d.ce_oi);
+                const peOi = data.map(d => d.pe_oi);
+                const ceLtp = data.map(d => d.ce_ltp);
+                const peLtp = data.map(d => d.pe_ltp);
+
+                const commonLayout = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8' }, orientation: 'h', y: -0.2 },
+                    margin: { t: 20, b: 60, l: 60, r: 60 },
+                    font: { family: 'Inter', color: '#64748b' },
+                    xaxis: { gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 10 }, hoverformat: '%H:%M' },
+                    hovermode: 'x unified',
+                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
+                };
+
+                // 1. OI Chart (CE vs PE OI)
+                const ceOiTrace = {
+                    x: times, y: ceOi, name: 'Call OI', type: 'scatter', mode: 'lines',
+                    line: { color: '#ef4444', width: 3 }, fill: 'tozeroy', fillcolor: 'rgba(239, 68, 68, 0.05)'
+                };
+                const peOiTrace = {
+                    x: times, y: peOi, name: 'Put OI', type: 'scatter', mode: 'lines',
+                    line: { color: '#10b981', width: 3 }, fill: 'tozeroy', fillcolor: 'rgba(16, 185, 129, 0.05)'
+                };
+
+                Plotly.react('oi-chart', [ceOiTrace, peOiTrace], {
+                    ...commonLayout,
+                    yaxis: { title: 'Open Interest', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } }
+                }, { responsive: true, displayModeBar: false });
+
+                // 2. Price Chart (CE vs PE Price)
+                const ceLtpTrace = {
+                    x: times, y: ceLtp, name: 'Call LTP', type: 'scatter', mode: 'lines',
+                    line: { color: '#f87171', width: 2 }
+                };
+                const peLtpTrace = {
+                    x: times, y: peLtp, name: 'Put LTP', type: 'scatter', mode: 'lines',
+                    line: { color: '#34d399', width: 2 }
+                };
+
+                Plotly.react('price-chart', [ceLtpTrace, peLtpTrace], {
+                    ...commonLayout,
+                    yaxis: { title: 'Option Premium (₹)', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } }
+                }, { responsive: true, displayModeBar: false });
+            };
+
+            const formatNum = (num) => num ? num.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : "0.00";
+
+            return (
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased">
+                    <nav className="fixed left-0 top-0 h-full w-20 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-10 gap-8 z-50">
+                        <a href="/" title="Dashboard" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                        </a>
+                        <a href="/pcr" title="PCR Grid" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        </a>
+                        <a href="/cumulative" title="Cumulative OI" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+                        </a>
+                        <a href="/straddle" title="Straddle Analysis" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+                        </a>
+                        <a href="/strike" title="Strike Analytics" className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform hover:scale-105">
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2"/></svg>
+                        </a>
+                        <a href="/greeks" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Greeks Exposure">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        </a>
+                    </nav>
+
+                    <main className="pl-24 pr-8 py-8 max-w-[1400px] mx-auto">
+                        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                            <div>
+                                <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">Strike <span className="text-emerald-400">Analytics</span></h1>
+                                <p className="text-slate-500 text-xs font-bold tracking-widest uppercase mt-1">CE vs PE Leg-wise Comparison</p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3">
+                                <select value={symbol} onChange={(e) => { setSymbol(e.target.value); setStrike(null); }} className="bg-slate-900 border border-slate-800 text-white text-xs font-black px-4 py-2.5 rounded-xl outline-none focus:border-emerald-500/50 transition-all w-32 uppercase cursor-pointer">
+                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}</option>)}
+                                </select>
+                                <select value={expiry} onChange={(e) => { setExpiry(e.target.value); setStrike(null); }} className="bg-slate-900 border border-slate-800 text-white text-xs font-black px-4 py-2.5 rounded-xl outline-none focus:border-emerald-500/50 transition-all w-44 cursor-pointer">
+                                    {expiries.map(ex => <option key={ex} value={ex} className="bg-slate-900 text-slate-200">{formatDate(ex)}</option>)}
+                                </select>
+                                <select value={strike || ''} onChange={(e) => setStrike(parseFloat(e.target.value))} className="bg-slate-900 border border-emerald-500/30 text-emerald-400 text-xs font-black px-4 py-2.5 rounded-xl outline-none focus:border-emerald-400 transition-all w-32 cursor-pointer">
+                                    {allStrikes.map(s => <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}</option>)}
+                                </select>
+                            </div>
+                        </header>
+
+                        {/* KPI Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                            <div className="glass p-5 rounded-2xl">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">CALL OI</p>
+                                <p className="text-xl font-black text-rose-400 tabular-nums">{metadata ? formatNum(metadata.kpis.ce_oi) : "---"}</p>
+                            </div>
+                            <div className="glass p-5 rounded-2xl">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">PUT OI</p>
+                                <p className="text-xl font-black text-emerald-400 tabular-nums">{metadata ? formatNum(metadata.kpis.pe_oi) : "---"}</p>
+                            </div>
+                            <div className="glass p-5 rounded-2xl border-l-4 border-l-rose-500/50">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">CALL PRICE (LTP)</p>
+                                <p className="text-xl font-black text-white tabular-nums">₹{metadata ? formatNum(metadata.kpis.ce_ltp) : "---"}</p>
+                            </div>
+                            <div className="glass p-5 rounded-2xl border-l-4 border-l-emerald-500/50">
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">PUT PRICE (LTP)</p>
+                                <p className="text-xl font-black text-white tabular-nums">₹{metadata ? formatNum(metadata.kpis.pe_ltp) : "---"}</p>
+                            </div>
+                        </div>
+
+                        {/* Charts Area */}
+                        <div className="grid grid-cols-1 gap-8">
+                            <div className="glass rounded-3xl p-6 border-slate-800/80 shadow-2xl">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tighter">CE vs PE Open Interest (Real-time)</h3>
+                                    {loading && <div className="animate-spin rounded-full h-4 w-4 border-2 border-emerald-500 border-t-transparent"></div>}
+                                </div>
+                                <div id="oi-chart" style={{height: '350px'}}></div>
+                            </div>
+
+                            <div className="glass rounded-3xl p-6 border-slate-800/80 shadow-2xl">
+                                <h3 className="text-sm font-black text-white uppercase tracking-tighter mb-6">Premium Comparison (LTP Plot)</h3>
+                                <div id="price-chart" style={{height: '350px'}}></div>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<StrikeAnalytics />);
+    </script>
+</body>
+</html>
