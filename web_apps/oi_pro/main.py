@@ -424,6 +424,17 @@ async def serve_cumulative_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
+@app.get("/strike", response_class=HTMLResponse)
+async def serve_strike_page():
+    """
+    Serves the Strike Analysis page (Total OI & OI Change).
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "strike.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="strike.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
 @app.get("/greeks", response_class=HTMLResponse)
 async def serve_greeks_page():
     """
@@ -667,7 +678,7 @@ async def market_watch_endpoint(websocket: WebSocket):
             
             if prices:
                 await websocket.send_json({"type": "market_update", "prices": prices})
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         pass
 
 @app.websocket("/ws/price/{symbol}")
@@ -691,7 +702,7 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
                 latest = streamer.get_latest_data(key)
                 if latest and 'ltp' in latest:
                     await websocket.send_json({"type": "price", "ltp": latest['ltp']})
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.CancelledError):
         manager.disconnect(websocket, symbol.upper())
 
 @app.get("/api/expiries")
@@ -705,7 +716,16 @@ async def fetch_expiries(symbol: str = "NIFTY"):
     return {"status": "success", "expiries": expiries}
 
 @app.get("/api/option-chain")
-async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None):
+async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None, count: int = 6):
+    """
+    Fetch option chain data and return analytics.
+    
+    Args:
+        symbol: Market symbol (e.g., NIFTY).
+        expiry: Expiry date.
+        count: Number of strikes to return around ATM (default: 6). 
+               Use a higher number (e.g., 50) for full analysis pages.
+    """
     token = get_access_token()
     key = SYMBOL_MAP.get(symbol.upper())
     if not key:
@@ -733,7 +753,7 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None):
     df['ce_buildup'] = df.apply(lambda x: calculate_buildup(x['ce_chg_pct'], x['ce_oi_pct']), axis=1)
     df['pe_buildup'] = df.apply(lambda x: calculate_buildup(x['pe_chg_pct'], x['pe_oi_pct']), axis=1)
 
-    # ATM Strike Filtering (+/- 6 strikes)
+    # ATM Strike Filtering (+/- count strikes)
     spot = df['spot_price'].iloc[0] if not df.empty else 0
     if spot > 0:
         # Find ATM strike
@@ -741,8 +761,8 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None):
         atm_idx = df['strike_diff'].idxmin()
         
         # Get range of indices
-        start_idx = max(0, atm_idx - 6)
-        end_idx = min(len(df) - 1, atm_idx + 6)
+        start_idx = max(0, atm_idx - count)
+        end_idx = min(len(df) - 1, atm_idx + count)
         
         # Filter for display but keep full df for PCR
         oi_pcr = calculate_pcr(df)
