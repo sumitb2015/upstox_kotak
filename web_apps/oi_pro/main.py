@@ -17,6 +17,24 @@ from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
 from lib.core.authentication import get_access_token as auth_get_token
 import pandas as pd
+from datetime import datetime
+
+# --- Instrument Map for Dashboard ---
+SYMBOL_MAP = {
+    "NIFTY": "NSE_INDEX|Nifty 50",
+    "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "FINNIFTY": "NSE_INDEX|Nifty Fin Service", 
+    "NIFTYIT": "NSE_INDEX|Nifty IT",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+    "SENSEX": "BSE_INDEX|SENSEX"
+}
+# Reverse map for broadcasting
+KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
+
+# --- Global Cache for Greeks History ---
+# Structure: {(symbol, expiry): pd.DataFrame}
+# Columns: [timestamp, strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi, ...]
+GREEKS_HISTORY_CACHE: Dict[tuple, pd.DataFrame] = {}
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
 
@@ -114,48 +132,224 @@ async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- WebSocket Connection Manager ---
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, List[WebSocket]] = {}
+        # Map instrument keys to list of WebSocket connections (for Straddle/Custom subs)
+        self.subscriptions: Dict[str, List[WebSocket]] = {}
+        # List of connections for the main Dashboard Market Watch (indices)
+        self.market_watch_sockets: List[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket, symbol: str):
+    async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        if symbol not in self.active_connections:
-            self.active_connections[symbol] = []
-        self.active_connections[symbol].append(websocket)
 
-    def disconnect(self, websocket: WebSocket, symbol: str):
-        if symbol in self.active_connections:
-            self.active_connections[symbol].remove(websocket)
+    def disconnect(self, websocket: WebSocket):
+        # Remove from subscriptions
+        for key in list(self.subscriptions.keys()):
+            if websocket in self.subscriptions[key]:
+                self.subscriptions[key].remove(websocket)
+                if not self.subscriptions[key]:
+                    del self.subscriptions[key]
+        
+        # Remove from market watch
+        if websocket in self.market_watch_sockets:
+            self.market_watch_sockets.remove(websocket)
 
-    async def broadcast(self, message: dict, symbol: str):
-        if symbol in self.active_connections:
-            for connection in self.active_connections[symbol]:
+    async def connect_market_watch(self, websocket: WebSocket):
+        """Connect a socket specifically for dashboard market watch"""
+        await websocket.accept()
+        self.market_watch_sockets.append(websocket)
+
+    async def subscribe(self, websocket: WebSocket, instrument_keys: List[str]):
+        """Subscribe a websocket to specific instrument keys"""
+        for key in instrument_keys:
+            if key not in self.subscriptions:
+                self.subscriptions[key] = []
+            if websocket not in self.subscriptions[key]:
+                self.subscriptions[key].append(websocket)
+        
+        # Trigger subscription on Upstox Streamer
+        if streamer and streamer.market_streamer:
+            try:
+                streamer.subscribe_market_data(instrument_keys)
+            except Exception as e:
+                print(f"Error subscribing to keys {instrument_keys}: {e}")
+
+    async def broadcast(self, message: dict):
+        """
+        Broadcasts message to relevant subscribers based on instrument_key.
+        Also broadcasts to Market Watch if the key is an index.
+        This method must be called from an async loop.
+        """
+        instrument_key = message.get('instrument_key')
+        
+        # 1. Targeted Subscriptions (Straddle Chart)
+        if instrument_key and instrument_key in self.subscriptions:
+            to_remove = []
+            for connection in self.subscriptions[instrument_key]:
                 try:
                     await connection.send_json(message)
+                except Exception as e:
+                    to_remove.append(connection)
+            for conn in to_remove:
+                self.disconnect(conn)
+
+        # 2. Market Watch Broadcast (Dashboard Indices)
+        # Check if this key is one of our indices
+        if instrument_key and instrument_key in KEY_TO_SYMBOL:
+            symbol = KEY_TO_SYMBOL[instrument_key]
+            # Format message for dashboard: { type: "market_update", prices: { SYMBOL: { ltp: ... } } }
+            # Note: Dashboard expects 'chg', but we might only have 'ltp' or 'ohlc'.
+            # We will send what we have. API usually gives 'ltp'. 
+            # If we want change, we need close.
+            
+            dashboard_msg = {
+                "type": "market_update",
+                "prices": {
+                    symbol: {
+                        "ltp": message.get('ltp') or message.get('last_price'),
+                        "chg": 0.0 # Placeholder, calculating change requires yesterday's close
+                    }
+                }
+            }
+            
+            # Try to calculate change if 'ohlc' or 'close' is present
+            close = message.get('close') or message.get('ohlc', {}).get('close')
+            if close:
+                 ltp = dashboard_msg['prices'][symbol]['ltp']
+                 if ltp and close > 0:
+                     dashboard_msg['prices'][symbol]['chg'] = round(((ltp - close) / close) * 100, 2)
+            
+            to_remove_mw = []
+            for connection in self.market_watch_sockets:
+                try:
+                    await connection.send_json(dashboard_msg)
                 except:
-                    pass
+                    to_remove_mw.append(connection)
+            
+            for conn in to_remove_mw:
+                if conn in self.market_watch_sockets:
+                    self.market_watch_sockets.remove(conn)
 
 manager = ConnectionManager()
-streamer = None
+streamer: Optional[UpstoxStreamer] = None
+loop = None # Global event loop reference
 
-def on_price_update(data):
-    # This runs in a separate thread from streaming.py
-    instrument_key = data.get('instrument_key')
-    ltp = data.get('ltp')
-    if instrument_key and ltp:
-        # Map instrument key back to symbol for broadcast
-        symbol_map = {
-            "NSE_INDEX|Nifty 50": "NIFTY",
-            "NSE_INDEX|Nifty Bank": "BANKNIFTY",
-            "NSE_INDEX|Nifty Fin Service": "FINNIFTY"
-        }
-        symbol = symbol_map.get(instrument_key)
-        if symbol:
-            # We need to bridge the thread to the async loop
-            # But for simplicity, we can just use a global or a queue if needed.
-            # However, with FastAPI and uvicorn, we usually use a background task.
-            pass
+# --- WebSocket Endpoints ---
+
+@app.on_event("startup")
+async def startup_event():
+    global streamer, loop
+    loop = asyncio.get_event_loop()
+    print("🚀 Starting Upstox WebSocket Bridge...")
+    try:
+        # Initialize streamer with access token
+        token = get_access_token()
+        streamer = UpstoxStreamer(token)
+        
+        # Define callback that bridges Thread -> Async
+        def on_market_update(data):
+            if loop and manager:
+                asyncio.run_coroutine_threadsafe(manager.broadcast(data), loop)
+                
+        # Connect streamer
+        indices_keys = list(SYMBOL_MAP.values())
+        print(f"📡 Subscribing to Dashboard Indices: {indices_keys}")
+        
+        streamer.connect_market_data(
+            instrument_keys=indices_keys, 
+            mode="ltpc", 
+            on_message=on_market_update
+        )
+        print("✅ Upstox Streamer Connected & Listening")
+        
+    except Exception as e:
+        print(f"❌ Failed to initialize Upstox Streamer: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global streamer
+    if streamer:
+        print("🛑 Disconnecting Upstox Streamer...")
+        streamer.disconnect_all()
+
+@app.websocket("/ws/market-watch")
+async def websocket_market_watch(websocket: WebSocket):
+    """
+    WebSocket endpoint for Dashboard Indices (NIFTY, BANKNIFTY, etc.)
+    Broadcasts in format: { type: "market_update", prices: { SYMBOL: { ltp: ..., chg: ... } } }
+    """
+    await manager.connect_market_watch(websocket)
+    try:
+        # Send latest data immediately if available
+        if streamer:
+            initial_prices = {}
+            for symbol, key in SYMBOL_MAP.items():
+                data = streamer.get_latest_data(key)
+                if data:
+                    ltp = data.get('ltp') or data.get('last_price')
+                    close = data.get('close') or data.get('ohlc', {}).get('close')
+                    chg = 0.0
+                    if ltp and close:
+                        chg = round(((ltp - close) / close) * 100, 2)
+                    
+                    if ltp:
+                        initial_prices[symbol] = {"ltp": ltp, "chg": chg}
+            
+            if initial_prices:
+                await websocket.send_json({
+                    "type": "market_update",
+                    "prices": initial_prices
+                })
+
+        while True:
+            # Keep connection alive
+            await websocket.receive_text()
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        print(f"Market Watch WS Error: {e}")
+        manager.disconnect(websocket)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global streamer
+    if streamer:
+        print("🛑 Disconnecting Upstox Streamer...")
+        streamer.disconnect_all()
+
+@app.websocket("/ws/straddle")
+async def websocket_straddle(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time Straddle updates.
+    Client sends: {"action": "subscribe", "keys": ["NSE_FO|...", "NSE_FO|..."]}
+    Server sends: Stream of tick data for those keys.
+    """
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("action") == "subscribe":
+                keys = data.get("keys", [])
+                if keys:
+                    await manager.subscribe(websocket, keys)
+                    print(f"📡 Client subscribed to: {keys}")
+                    
+                    # Send immediate latest data if available
+                    if streamer:
+                        for key in keys:
+                            latest = streamer.get_latest_data(key)
+                            if latest:
+                                await websocket.send_json(latest)
+                                
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        print("🔌 Client disconnected")
+    except Exception as e:
+        print(f"WebSocket Error: {e}")
+        manager.disconnect(websocket)
 
 # CORS Configuration for React Frontend
 app.add_middleware(
@@ -229,6 +423,98 @@ async def serve_cumulative_page():
         raise HTTPException(status_code=404, detail="cumulative_oi.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/greeks", response_class=HTMLResponse)
+async def serve_greeks_page():
+    """
+    Serves the Greeks Exposure Analysis page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "greeks.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="greeks.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/api/greeks-data")
+async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
+                         expiry: str = Query(..., description="Expiry Date")):
+    """
+    Get Greeks (Delta, Gamma) data per strike.
+    Appends new data to a global cache history.
+    """
+    print(f"📊 [CORE] [Greeks API] Request received for {symbol} expiry {expiry}")
+    try:
+        instrument_key = SYMBOL_MAP.get(symbol.upper())
+        if not instrument_key:
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+            
+        token = get_access_token()
+        
+        # 1. Fetch Option Chain
+        print(f"📊 [Greeks API] Fetching option chain for {instrument_key}...")
+        df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
+        
+        if df is None or df.empty:
+            return {"status": "error", "data": []}
+            
+        # 2. Process & Add to Cache
+        timestamp = datetime.now()
+        
+        # Extract relevant columns
+        # We need strike, greeks, oi
+        # Assuming df has: strike_price, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi
+        
+        # Select columns if they exist
+        cols_to_keep = ['strike_price', 'spot_price', 
+                        'ce_delta', 'pe_delta', 'ce_gamma', 'pe_gamma', 
+                        'ce_vega', 'pe_vega', 'ce_theta', 'pe_theta',
+                        'ce_oi', 'pe_oi']
+        
+        # Ensure columns exist (fill 0 if missing)
+        for col in cols_to_keep:
+            if col not in df.columns:
+                df[col] = 0
+                
+        snapshot_df = df[cols_to_keep].copy()
+        snapshot_df['timestamp'] = timestamp
+        
+        # Update Global Cache
+        cache_key = (symbol, expiry)
+        if cache_key not in GREEKS_HISTORY_CACHE:
+            GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
+        else:
+            # Append new snapshot
+            GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+                
+        print(f"✅ [Greeks API] Cache updated. Total rows for {symbol}: {len(GREEKS_HISTORY_CACHE[cache_key])}")
+        
+        # 3. Prepare Response (Return LATEST snapshot for the chart)
+        # The user wants "plot a bar chart showing the delta or gamma for each strike"
+        # We return the data from the current fetch (snapshot_df)
+        
+        # Clean NaNs/Infs
+        snapshot_df = snapshot_df.replace([float('inf'), float('-inf')], 0).fillna(0)
+        
+        # Rename 'strike_price' to 'strike' for frontend consistency
+        snapshot_df = snapshot_df.rename(columns={'strike_price': 'strike'})
+        
+        spot = snapshot_df['spot_price'].iloc[0] if not snapshot_df.empty else 0
+        
+        return {
+            "status": "success", 
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "spot": spot,
+                "timestamp": timestamp.isoformat()
+            },
+            "data": snapshot_df.to_dict(orient="records")
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/pcr-data")
 async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
@@ -565,6 +851,8 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                 "symbol": symbol,
                 "expiry": expiry,
                 "target_strike": target_strike,
+                "ce_key": ce_key,
+                "pe_key": pe_key,
                 "all_strikes": all_strikes,
                 "spot": spot,
                 "kpis": {
@@ -573,6 +861,101 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                     "low": round(float(day_low), 2),
                     "change": round(float(change), 2),
                     "change_pct": round(float(change_pct), 2)
+                }
+            },
+            "data": chart_data
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/strike", response_class=HTMLResponse)
+async def serve_strike_analytics_page():
+    """
+    Serves the Strike-wise CE vs PE Comparison page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "strike_analytics.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="strike_analytics.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/api/strike-data")
+async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: float = None):
+    """
+    Fetches intraday data for a specific strike's CE and PE legs.
+    Returns: {ce_oi, pe_oi, ce_ltp, pe_ltp} time-series.
+    """
+    print(f"📈 [UPSTOX] [Strike API] Request for {symbol} {strike} {expiry}")
+    try:
+        token = get_access_token()
+        key = SYMBOL_MAP.get(symbol.upper())
+        if not key:
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+            
+        if not expiry:
+            expiries = get_expiries(token, key)
+            if not expiries:
+                raise HTTPException(status_code=404, detail="No expiries found")
+            expiry = expiries[0]
+            
+        # 1. Get Option Chain to find specific leg keys
+        df = await run_in_threadpool(get_option_chain_dataframe, token, key, expiry)
+        if df is None or df.empty:
+            raise HTTPException(status_code=404, detail="No option chain data")
+            
+        spot = df['spot_price'].iloc[0]
+        
+        # Select target strike
+        if strike:
+            df['strike_diff'] = (df['strike_price'] - strike).abs()
+            target_row = df.loc[df['strike_diff'].idxmin()]
+            target_strike = target_row['strike_price']
+        else:
+            # Default to ATM
+            df['strike_diff'] = (df['strike_price'] - spot).abs()
+            target_row = df.loc[df['strike_diff'].idxmin()]
+            target_strike = target_row['strike_price']
+            
+        ce_key = target_row['ce_key']
+        pe_key = target_row['pe_key']
+        
+        # 2. Fetch Intraday Data
+        ce_candles = await run_in_threadpool(get_intraday_data_v3, token, ce_key, "minute", 1)
+        pe_candles = await run_in_threadpool(get_intraday_data_v3, token, pe_key, "minute", 1)
+        
+        if not ce_candles or not pe_candles:
+            raise HTTPException(status_code=404, detail="Intraday data not found for legs")
+            
+        # 3. Merge and formatting
+        ce_df = pd.DataFrame(ce_candles).rename(columns={'close': 'ce_ltp', 'oi': 'ce_oi'})[['timestamp', 'ce_ltp', 'ce_oi']]
+        pe_df = pd.DataFrame(pe_candles).rename(columns={'close': 'pe_ltp', 'oi': 'pe_oi'})[['timestamp', 'pe_ltp', 'pe_oi']]
+        
+        merged = pd.merge(ce_df, pe_df, on='timestamp', how='inner')
+        merged['timestamp'] = pd.to_datetime(merged['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Calculate changes vs Yesterday Close if available in candles (using first candle as proxy for open)
+        # But for professional charts, we usually show absolute values or change from 09:15
+        
+        chart_data = merged.to_dict(orient="records")
+        latest = merged.iloc[-1] if not merged.empty else {}
+        
+        all_strikes = sorted(df['strike_price'].unique().tolist())
+        
+        return {
+            "status": "success",
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "strike": target_strike,
+                "all_strikes": all_strikes,
+                "spot": spot,
+                "kpis": {
+                    "ce_oi": round(float(latest.get('ce_oi', 0)), 0),
+                    "pe_oi": round(float(latest.get('pe_oi', 0)), 0),
+                    "ce_ltp": round(float(latest.get('ce_ltp', 0)), 2),
+                    "pe_ltp": round(float(latest.get('pe_ltp', 0)), 2)
                 }
             },
             "data": chart_data
