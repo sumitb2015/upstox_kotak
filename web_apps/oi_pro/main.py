@@ -457,6 +457,36 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         if df is None or df.empty:
             return {"status": "error", "data": []}
             
+        # Get Spot Price
+        spot_price = df['spot_price'].iloc[0] if not df.empty else 0
+        
+        # LOT SIZES MAPPING
+        LOT_SIZES = {
+            "NIFTY": 65, # As per 2026 standards mentioned
+            "BANKNIFTY": 30,
+            "FINNIFTY": 60,
+            "MIDCPNIFTY": 50, # Assuming standard
+            "SENSEX": 10
+        }
+        lot_size = LOT_SIZES.get(symbol, 65) # Default to NIFTY lot size if unknown
+
+        # Calculate GEX (Gamma Exposure)
+        # Formula: Gamma * OI * LotSize * Spot^2 * 0.01
+        # Call GEX is Positive, Put GEX is Negative (Dealer positioning)
+        
+        if 'ce_gamma' in df.columns and 'ce_oi' in df.columns:
+            df['ce_gex'] = df['ce_gamma'] * df['ce_oi'] * lot_size * (spot_price**2) * 0.01
+        else:
+            df['ce_gex'] = 0
+            
+        if 'pe_gamma' in df.columns and 'pe_oi' in df.columns:
+            df['pe_gex'] = df['pe_gamma'] * df['pe_oi'] * lot_size * (spot_price**2) * 0.01 * -1 # Puts are negative GEX
+        else:
+            df['pe_gex'] = 0
+
+        # Calculate Total Net GEX
+        total_gex = df['ce_gex'].sum() + df['pe_gex'].sum()
+
         # 2. Process & Add to Cache
         timestamp = datetime.now()
         
@@ -468,6 +498,7 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         cols_to_keep = ['strike_price', 'spot_price', 
                         'ce_delta', 'pe_delta', 'ce_gamma', 'pe_gamma', 
                         'ce_vega', 'pe_vega', 'ce_theta', 'pe_theta',
+                        'ce_gex', 'pe_gex',
                         'ce_oi', 'pe_oi']
         
         # Ensure columns exist (fill 0 if missing)
@@ -506,6 +537,7 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
                 "symbol": symbol,
                 "expiry": expiry,
                 "spot": spot,
+                "total_gex": total_gex,
                 "timestamp": timestamp.isoformat()
             },
             "data": snapshot_df.to_dict(orient="records")
@@ -878,6 +910,17 @@ async def serve_strike_analytics_page():
     html_path = os.path.join(os.path.dirname(__file__), "strike_analytics.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="strike_analytics.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/greeks", response_class=HTMLResponse)
+async def serve_greeks_page():
+    """
+    Serves the Greeks Exposure Analysis page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "greeks.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="greeks.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 

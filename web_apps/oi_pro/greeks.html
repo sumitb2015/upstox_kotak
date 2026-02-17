@@ -35,7 +35,7 @@
         const { useState, useEffect, useRef } = React;
 
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
-        const GREEKS = ["Delta", "Gamma", "Vega", "Theta"];
+        const GREEKS = ["Delta", "Gamma", "Vega", "Theta", "GEX"];
 
         function GreeksAnalytics() {
             const [symbol, setSymbol] = useState("NIFTY");
@@ -45,6 +45,8 @@
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(false);
             const [spotPrice, setSpotPrice] = useState(0);
+            const [totalGex, setTotalGex] = useState(0);
+            const [orientation, setOrientation] = useState("v"); // 'v' or 'h'
 
             // Format Date Helper
             const formatDate = (dateStr) => {
@@ -52,6 +54,12 @@
                 const date = new Date(dateStr);
                 if (isNaN(date)) return dateStr;
                 return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            const formatCurrency = (val) => {
+                if (Math.abs(val) >= 10000000) return (val / 10000000).toFixed(2) + " Cr";
+                if (Math.abs(val) >= 100000) return (val / 100000).toFixed(2) + " L";
+                return val.toFixed(2);
             };
 
             // Fetch Expiries
@@ -79,6 +87,7 @@
                             setData(res.data || []);
                             if(res.metadata && res.metadata.spot) {
                                 setSpotPrice(res.metadata.spot);
+                                setTotalGex(res.metadata.total_gex || 0);
                             }
                         }
                         setLoading(false);
@@ -96,114 +105,126 @@
                 const strikes = data.map(d => d.strike);
                 
                 // Determine values based on selected Greek
-                // Assuming data structure: { strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi }
-                // Exposure = Greek * OI
-                
-                const greekKey = greek.toLowerCase(); // delta or gamma
-                
-                const ceExposure = data.map(d => (d[`ce_${greekKey}`] || 0) * (d.ce_oi || 0));
-                
-                // For PE:
-                // If Delta: PE Delta is negative. PE Delta * PE OI is negative. This visualizes nicely as negative bars.
-                // If Gamma: PE Gamma is positive. PE Gamma * PE OI is positive. We might want to invert it for visualization or stack it?
-                // Usually Gamma exposure is total market gamma. But separate bars are good.
-                // If we want to show PE Gamma as "risk from Puts", maybe keep it positive?
-                // Or maybe invert it to show "Put Side"?
-                // Let's keep raw values first. If Gamma, both bars go up.
-                // Wait, if Gamma bars both go up, they overlap or stack? Grouped bars are better.
-                
-                let peExposure = data.map(d => (d[`pe_${greekKey}`] || 0) * (d.pe_oi || 0));
-                
-                // Optional: For Delta, PE Exposure is naturally negative.
-                // For Gamma, PE Exposure is naturally positive.
-                // Some traders prefer PE info to be "down" in the chart for symmetry (Butterfly chart).
-                // Let's enforce PE to be negative for visualization if it is Gamma?
-                // No, Gamma is positive risk. But "Put Gamma" comes from Puts.
-                // Let's stick to grouped bars.
+                let ceValues = [];
+                let peValues = [];
+                let axisTitle = `${greek} Exposure`; // The value axis title
+                let ceGreekValues = [];
+                let peGreekValues = [];
 
-                // Refine: Plotly Bar with 'group' barmode.
+                if (greek === "GEX") {
+                    axisTitle = "Gamma Exposure (GEX)";
+                    ceValues = data.map(d => d.ce_gex || 0);
+                    peValues = data.map(d => d.pe_gex || 0);
+                    ceGreekValues = ceValues;
+                    peGreekValues = peValues;
+                } else {
+                    const greekKey = greek.toLowerCase();
+                    ceValues = data.map(d => (d[`ce_${greekKey}`] || 0) * (d.ce_oi || 0));
+                    peValues = data.map(d => (d[`pe_${greekKey}`] || 0) * (d.pe_oi || 0));
+                    ceGreekValues = data.map(d => d[`ce_${greekKey}`] || 0);
+                    peGreekValues = data.map(d => d[`pe_${greekKey}`] || 0);
+                }
+                
+                const ceFormatted = ceValues.map(v => formatCurrency(v));
+                const peFormatted = peValues.map(v => formatCurrency(v));
+                
+                // Orientation Logic
+                const isVertical = orientation === 'v';
+                
+                // If Vertical: X=Strikes, Y=Values
+                // If Horizontal: X=Values, Y=Strikes
                 
                 const traceCE = {
-                    x: strikes,
-                    y: ceExposure,
+                    x: isVertical ? strikes : ceValues,
+                    y: isVertical ? ceValues : strikes,
                     name: `Call ${greek} Exposure`,
                     type: 'bar',
+                    orientation: orientation,
                     marker: { color: '#10b981' }, // Green
-                    hovertemplate: `
-                        <b>%{x} CE</b><br>
-                        Exposure: %{y:.2f}<br>
-                        ${greek}: %{text:.4f}<br>
-                        <extra></extra>
-                    `,
-                    text: data.map(d => d[`ce_${greekKey}`] || 0) // Pass raw greek value for tooltip
+                    customdata: ceFormatted,
+                    text: ceGreekValues,
+                    hovertemplate: greek === "GEX"
+                        ? (isVertical 
+                            ? `<b>%{x} CE</b><br>GEX: %{customdata}<br><extra></extra>`
+                            : `<b>%{y} CE</b><br>GEX: %{customdata}<br><extra></extra>`)
+                        : (isVertical
+                            ? `<b>%{x} CE</b><br>Exposure: %{customdata}<br>${greek}: %{text:.4f}<br><extra></extra>`
+                            : `<b>%{y} CE</b><br>Exposure: %{customdata}<br>${greek}: %{text:.4f}<br><extra></extra>`)
                 };
 
                 const tracePE = {
-                    x: strikes,
-                    y: peExposure,
+                    x: isVertical ? strikes : peValues,
+                    y: isVertical ? peValues : strikes,
                     name: `Put ${greek} Exposure`,
                     type: 'bar',
+                    orientation: orientation,
                     marker: { color: '#ef4444' }, // Red
-                    hovertemplate: `
-                        <b>%{x} PE</b><br>
-                        Exposure: %{y:.2f}<br>
-                        ${greek}: %{text:.4f}<br>
-                        <extra></extra>
-                    `,
-                    text: data.map(d => d[`pe_${greekKey}`] || 0)
+                    customdata: peFormatted,
+                    text: peGreekValues,
+                    hovertemplate: greek === "GEX"
+                        ? (isVertical 
+                            ? `<b>%{x} PE</b><br>GEX: %{customdata}<br><extra></extra>`
+                            : `<b>%{y} PE</b><br>GEX: %{customdata}<br><extra></extra>`)
+                        : (isVertical
+                            ? `<b>%{x} PE</b><br>Exposure: %{customdata}<br>${greek}: %{text:.4f}<br><extra></extra>`
+                            : `<b>%{y} PE</b><br>Exposure: %{customdata}<br>${greek}: %{text:.4f}<br><extra></extra>`)
                 };
+
+                // Spot Line Shape
+                let spotShape = {};
+                let spotAnnotation = {};
+                
+                if (isVertical) {
+                    spotShape = {
+                        type: 'line',
+                        x0: spotPrice, y0: 0, x1: spotPrice, y1: 1,
+                        yref: 'paper',
+                        line: { color: '#f59e0b', width: 2, dash: 'dot' }
+                    };
+                    spotAnnotation = {
+                        x: spotPrice, y: 1, xref: 'x', yref: 'paper',
+                        text: `Spot: ${spotPrice}`, showarrow: false,
+                        font: { color: '#f59e0b' }, yshift: 10
+                    };
+                } else {
+                    spotShape = {
+                        type: 'line',
+                        x0: 0, y0: spotPrice, x1: 1, y1: spotPrice,
+                        xref: 'paper',
+                        line: { color: '#f59e0b', width: 2, dash: 'dot' }
+                    };
+                    spotAnnotation = {
+                        x: 1, y: spotPrice, xref: 'paper', yref: 'y',
+                        text: `Spot: ${spotPrice}`, showarrow: false,
+                        font: { color: '#f59e0b' }, xshift: 10
+                    };
+                }
 
                 const layout = {
                     title: { text: `${greek} Exposure by Strike`, font: { color: '#fff' } },
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    barmode: 'group', // Side by side
+                    barmode: greek === 'GEX' ? 'relative' : 'group',
                     showlegend: true,
                     legend: { font: { color: '#94a3b8' } },
                     xaxis: { 
-                        title: { text: 'Strike Price', font: { color: '#94a3b8' } }, 
+                        title: { text: isVertical ? 'Strike Price' : axisTitle, font: { color: '#94a3b8' } }, 
                         tickfont: { color: '#94a3b8' },
                         gridcolor: '#334155'
                     },
                     yaxis: { 
-                        title: { text: `${greek} Exposure`, font: { color: '#94a3b8' } }, 
+                        title: { text: isVertical ? axisTitle : 'Strike Price', font: { color: '#94a3b8' } }, 
                         tickfont: { color: '#94a3b8' },
                         gridcolor: '#334155'
                     },
-                    hovermode: 'x unified',
-                    shapes: [
-                        // Spot Line
-                        {
-                            type: 'line',
-                            x0: spotPrice,
-                            y0: 0,
-                            x1: spotPrice,
-                            y1: 1,
-                            yref: 'paper',
-                            line: {
-                                color: '#f59e0b', // Amber
-                                width: 2,
-                                dash: 'dot'
-                            }
-                        }
-                    ],
-                    annotations: [
-                        {
-                            x: spotPrice,
-                            y: 1,
-                            xref: 'x',
-                            yref: 'paper',
-                            text: `Spot: ${spotPrice}`,
-                            showarrow: false,
-                            font: { color: '#f59e0b' },
-                            yshift: 10
-                        }
-                    ]
+                    hovermode: isVertical ? 'x unified' : 'y unified',
+                    shapes: [spotShape],
+                    annotations: [spotAnnotation]
                 };
 
                 Plotly.newPlot('chart-div', [traceCE, tracePE], layout, { responsive: true, displayModeBar: false });
 
-            }, [data, greek, spotPrice]); // Re-render when data or greek changes
+            }, [data, greek, spotPrice, orientation]); // Re-render when data or greek changes
 
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30">
@@ -242,11 +263,22 @@
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                             <div>
-                                <h1 className="text-3xl font-black text-white tracking-tight">Greeks Exposure</h1>
-                                <p className="text-slate-500 font-medium">Gamma and Delta Exposure across Strikes</p>
+                                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
+                                    Greeks Exposure Analysis
+                                </h1>
+                                <p className="text-slate-400 mt-1">Analyze Delta, Gamma, Vega, Theta, GEX Levels</p>
                             </div>
-    
-                            <div className="flex gap-4">
+                            <div className="flex gap-4 items-center"> {/* Added items-center for vertical alignment */}
+                                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
+                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Spot Price</p>
+                                    <p className="text-2xl font-bold text-white">{spotPrice}</p>
+                                </div>
+                                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
+                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Net GEX</p>
+                                    <p className={`text-2xl font-bold ${totalGex >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                        {formatCurrency(totalGex)}
+                                    </p>
+                                </div>
                                 <select 
                                     value={symbol} 
                                     onChange={e => setSymbol(e.target.value)}
@@ -270,17 +302,25 @@
                                 >
                                     {GREEKS.map(g => <option key={g} value={g} className="bg-[#0b0f1a]">{g}</option>)}
                                 </select>
+                                
+                                <button
+                                    onClick={() => setOrientation(prev => prev === 'v' ? 'h' : 'v')}
+                                    className="glass w-10 h-10 flex items-center justify-center rounded-xl hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 transition-all font-bold"
+                                    title="Toggle Orientation"
+                                >
+                                    {orientation === 'v' ? '⟳' : '⟲'}
+                                </button>
                             </div>
                         </div>
     
                         {/* Chart Area */}
-                        <div className="glass p-6 rounded-3xl min-h-[600px] relative">
+                        <div className="glass p-6 rounded-3xl min-h-[900px] relative">
                             {loading && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 rounded-3xl">
                                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
                                 </div>
                             )}
-                            <div id="chart-div" className="w-full h-[600px]"></div>
+                            <div id="chart-div" className="w-full h-[900px]"></div>
                         </div>
                     </main>
                 </div>
