@@ -15,6 +15,7 @@ from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calcu
 from lib.utils.instrument_utils import get_option_instrument_key
 from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
+from lib.core.authentication import get_access_token as auth_get_token
 import pandas as pd
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
@@ -40,7 +41,7 @@ async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY")
     """
     Get data for Premium vs PoP Scatter Plot.
     """
-    print(f"📉 [PoP API] Request received for {symbol} expiry {expiry}")
+    print(f"📉 [CORE] [PoP API] Request received for {symbol} expiry {expiry}")
     try:
         instrument_key = SYMBOL_MAP.get(symbol.upper())
         if not instrument_key:
@@ -166,11 +167,14 @@ app.add_middleware(
 )
 
 def get_access_token():
-    token_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../lib/core/accessToken.txt"))
-    if not os.path.exists(token_path):
-        raise HTTPException(status_code=500, detail="Access token not found")
-    with open(token_path, "r") as f:
-        return f.read().strip()
+    """
+    Returns a valid access token using the core authentication library.
+    Automatically handles validation and refresh if credentials are in .env.
+    """
+    token = auth_get_token(auto_refresh=True)
+    if not token:
+        raise HTTPException(status_code=500, detail="Failed to retrieve or refresh access token. Please check .env credentials.")
+    return token
 
 def calculate_buildup(price_chg_pct, oi_chg_pct):
     if price_chg_pct > 0 and oi_chg_pct > 0: return "Long Buildup"
@@ -214,6 +218,18 @@ async def serve_straddle_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
+@app.get("/cumulative", response_class=HTMLResponse)
+async def serve_cumulative_page():
+    """
+    Serves the Cumulative OI Analysis dashboard page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "cumulative_oi.html")
+    if not os.path.exists(html_path):
+        # Create it later or error out
+        raise HTTPException(status_code=404, detail="cumulative_oi.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
 @app.get("/api/pcr-data")
 async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
                       expiry: str = Query(..., description="Expiry Date")):
@@ -221,7 +237,7 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
     Get data for PCR by Strike Grid.
     Returns list of {strike, pcr, sentiment, ce_oi, pe_oi, call_writer_domination, put_writer_domination}
     """
-    print(f"📊 [PCR API] Request received for {symbol} expiry {expiry}")
+    print(f"📊 [CORE] [PCR API] Request received for {symbol} expiry {expiry}")
     try:
         instrument_key = SYMBOL_MAP.get(symbol.upper())
         if not instrument_key:
@@ -464,7 +480,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
     Returns:
         JSON containing time-series data for chart and KPI metrics.
     """
-    print(f"📊 [Straddle API] Request for {symbol} expiry {expiry}")
+    print(f"📊 [CORE] [Straddle API] Request for {symbol} expiry {expiry}")
     try:
         token = get_access_token()
         key = SYMBOL_MAP.get(symbol.upper())
@@ -561,7 +577,180 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
             },
             "data": chart_data
         }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cumulative-oi")
+async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_range: int = 4):
+    """
+    Fetches intraday data for ATM +/- strike_range strikes, aggregates OI, 
+    and returns time-series for cumulative OI charts.
+    
+    Logic:
+    1. Identifies relevant strikes based on current ATM.
+    2. Fetches 1-minute intraday snapshots for all Call/Put legs and index LTP.
+    3. Aggregates OI across all legs using robust Outer Merge to handle data gaps.
+    4. Calculates cumulative change using Yesterday's close (prev_oi) as baseline.
+    5. Computes momentum (Direction of Change) and PCR metrics.
+    """
+    print(f"📈 [UPSTOX] [Cumulative OI] Fetching data for {symbol} expiry {expiry}")
+    try:
+        token = get_access_token()
+        key = SYMBOL_MAP.get(symbol.upper())
+        if not key:
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+            
+        if not expiry:
+            expiries = get_expiries(token, key)
+            if not expiries:
+                raise HTTPException(status_code=404, detail="No expiries found")
+            expiry = expiries[0]
+            
+        # 1. Get Option Chain to find current ATM and relevant strikes
+        df = await run_in_threadpool(get_option_chain_dataframe, token, key, expiry)
+        if df is None or df.empty:
+            raise HTTPException(status_code=404, detail="No option chain data")
+            
+        spot = df['spot_price'].iloc[0]
+        step = 100 if symbol == "BANKNIFTY" else 50
+        atm = round(spot / step) * step
         
+        # Select strikes (ATM +/- strike_range)
+        target_strikes = [atm + (i * step) for i in range(-strike_range, strike_range + 1)]
+        df_subset = df[df['strike_price'].isin(target_strikes)].copy()
+        
+        if df_subset.empty:
+            raise HTTPException(status_code=404, detail="No strikes found in range")
+            
+        # 2. Fetch Intraday Data for all legs in parallel
+        async def fetch_candle(instr_key):
+            return await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
+
+        tasks = []
+        for _, row in df_subset.iterrows():
+            tasks.append(fetch_candle(row['ce_key']))
+            tasks.append(fetch_candle(row['pe_key']))
+            
+        # Also fetch index index data for the LTP line
+        tasks.append(fetch_candle(key))
+        
+        results = await asyncio.gather(*tasks)
+        
+        # 3. Process and Aggregate
+        index_candles = results[-1]
+        leg_results = results[:-1]
+        
+        if not index_candles:
+            raise HTTPException(status_code=404, detail="Index intraday data not found")
+            
+        index_df = pd.DataFrame(index_candles).rename(columns={'close': 'ltp'})[['timestamp', 'ltp']]
+        index_df['timestamp'] = pd.to_datetime(index_df['timestamp'])
+        
+        ce_dfs = []
+        pe_dfs = []
+        
+        # Leg results are in pairs: (CE, PE)
+        for i in range(0, len(leg_results), 2):
+            ce_candles = leg_results[i]
+            pe_candles = leg_results[i+1]
+            
+            if ce_candles:
+                cdf = pd.DataFrame(ce_candles)[['timestamp', 'oi']].rename(columns={'oi': 'ce_oi'})
+                cdf['timestamp'] = pd.to_datetime(cdf['timestamp'])
+                ce_dfs.append(cdf)
+
+            if pe_candles:
+                pdf = pd.DataFrame(pe_candles)[['timestamp', 'oi']].rename(columns={'oi': 'pe_oi'})
+                pdf['timestamp'] = pd.to_datetime(pdf['timestamp'])
+                pe_dfs.append(pdf)
+
+        # Calculate yesterday's closing OI baseline from the option chain
+        # df columns: ce_key, pe_key (or keys like NSE_FO|...), ce_oi, pe_oi, ce_oi_chg, pe_oi_chg
+        # Note: the df passed into run_in_threadpool has 'ce_oi' and 'ce_oi_chg'.
+        
+        # Calculate yesterday's closing OI baseline from the option chain (Prev OI)
+        total_yest_ce = df_subset['ce_prev_oi'].sum()
+        total_yest_pe = df_subset['pe_prev_oi'].sum()
+
+        # Robust aggregation using pivot to ensure alignment
+        # ce_dfs is a list of DataFrames with ['timestamp', 'ce_oi']
+        # We want to merge them all on timestamp and handle missing data
+        
+        # 1. Align CE Data
+        if ce_dfs:
+            ce_combined = ce_dfs[0]
+            for i in range(1, len(ce_dfs)):
+                ce_combined = pd.merge(ce_combined, ce_dfs[i], on='timestamp', how='outer', suffixes=(f'_{i-1}', f'_{i}'))
+            
+            # Sum all ce_oi columns
+            oi_cols = [c for c in ce_combined.columns if 'ce_oi' in c]
+            ce_combined['ce_oi_total'] = ce_combined[oi_cols].sum(axis=1)
+            ce_total_df = ce_combined[['timestamp', 'ce_oi_total']].rename(columns={'ce_oi_total': 'ce_oi'})
+        else:
+            raise HTTPException(status_code=404, detail="No CE data found")
+
+        # 2. Align PE Data
+        if pe_dfs:
+            pe_combined = pe_dfs[0]
+            for i in range(1, len(pe_dfs)):
+                pe_combined = pd.merge(pe_combined, pe_dfs[i], on='timestamp', how='outer', suffixes=(f'_{i-1}', f'_{i}'))
+            
+            oi_cols = [c for c in pe_combined.columns if 'pe_oi' in c]
+            pe_combined['pe_oi_total'] = pe_combined[oi_cols].sum(axis=1)
+            pe_total_df = pe_combined[['timestamp', 'pe_oi_total']].rename(columns={'pe_oi_total': 'pe_oi'})
+        else:
+            raise HTTPException(status_code=404, detail="No PE data found")
+        
+        # Merge all
+        merged = pd.merge(ce_total_df, pe_total_df, on='timestamp', how='inner')
+        merged = pd.merge(merged, index_df, on='timestamp', how='inner')
+        
+        # Sort by timestamp to ensure correct calculation of diff and latest
+        merged = merged.sort_values('timestamp').reset_index(drop=True)
+        
+        # Calculate changes vs Yesterday's Close
+        merged['ce_chg'] = merged['ce_oi'] - total_yest_ce
+        merged['pe_chg'] = merged['pe_oi'] - total_yest_pe
+        merged['net_chg'] = merged['pe_chg'] - merged['ce_chg']
+        
+        # Direction and Momentum (Match Streamlit formulas)
+        merged['direction_chg'] = merged['net_chg'].diff().fillna(0)
+        merged['direction_chg_pct'] = (merged['direction_chg'] / merged['net_chg'].shift().abs() * 100).replace([float('inf'), float('-inf')], 0).fillna(0)
+        merged['direction'] = merged['net_chg'].apply(lambda x: "BUY 🟢" if x > 0 else "SELL 🔴")
+        
+        # PCR
+        merged['pcr'] = merged['pe_oi'] / merged['ce_oi']
+        
+        # Metadata for KPIs (Before string formatting)
+        latest = merged.iloc[-1]
+        
+        # Final formatting
+        merged = merged.replace([float('inf'), float('-inf')], 0).fillna(0)
+        merged['timestamp'] = merged['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        chart_data = merged[['timestamp', 'ce_oi', 'pe_oi', 'ce_chg', 'pe_chg', 'net_chg', 'direction', 'direction_chg', 'direction_chg_pct', 'ltp', 'pcr']].to_dict(orient="records")
+        
+        return {
+            "status": "success",
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "spot": spot,
+                "atm": atm,
+                "kpis": {
+                    "net_chg": round(float(latest['net_chg']), 0),
+                    "ce_chg": round(float(latest['ce_chg']), 0),
+                    "pe_chg": round(float(latest['pe_chg']), 0),
+                    "total_ce": round(float(latest['ce_oi']), 0),
+                    "total_pe": round(float(latest['pe_oi']), 0),
+                    "pcr": round(float(latest['pcr']), 2),
+                    "ltp": round(float(latest['ltp']), 2)
+                }
+            },
+            "data": chart_data
+        }
     except Exception as e:
         import traceback
         traceback.print_exc()

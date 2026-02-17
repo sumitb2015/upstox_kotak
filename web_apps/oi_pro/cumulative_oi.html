@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cumulative OI Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #030712; color: #f8fafc; margin: 0; overflow-x: hidden; }
+        .glass { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glass-strong { background: rgba(17, 24, 39, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.12); }
+        
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
+
+        function CumulativeOI() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiry, setExpiry] = useState("");
+            const [strikeRange, setStrikeRange] = useState(4);
+            const [expiries, setExpiries] = useState([]);
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [kpis, setKpis] = useState({});
+            const [metadata, setMetadata] = useState({});
+
+            // Format Date Helper
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "---";
+                const date = new Date(dateStr);
+                if (isNaN(date)) return dateStr;
+                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            // Fetch Expiries
+            useEffect(() => {
+                fetch(`/api/expiries?symbol=${symbol}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.expiries && data.expiries.length > 0) {
+                            setExpiries(data.expiries);
+                            setExpiry(data.expiries[0]);
+                        }
+                    });
+            }, [symbol]);
+
+            // Fetch Cumulative OI Data
+            useEffect(() => {
+                if (!expiry) return;
+                fetchData();
+                const interval = setInterval(fetchData, 60000);
+                return () => clearInterval(interval);
+            }, [symbol, expiry, strikeRange]);
+
+            const fetchData = async () => {
+                setLoading(true);
+                try {
+                    const res = await fetch(`/api/cumulative-oi?symbol=${symbol}&expiry=${expiry}&strike_range=${strikeRange}`);
+                    const result = await res.json();
+                    if (result.status === "success") {
+                        setData(result.data);
+                        setKpis(result.metadata.kpis);
+                        setMetadata(result.metadata);
+                    }
+                } catch (err) {
+                    console.error("Cumulative OI fetch failed", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                if (data.length > 0) {
+                    renderCharts();
+                }
+            }, [data]);
+
+            const renderCharts = () => {
+                if (!data || data.length === 0) return;
+
+                const times = data.map(d => d.timestamp);
+                const netChg = data.map(d => d.net_chg);
+                const ltp = data.map(d => d.ltp);
+                const ceChg = data.map(d => d.ce_chg);
+                const peChg = data.map(d => d.pe_chg);
+                const ceTotal = data.map(d => d.ce_oi);
+                const peTotal = data.map(d => d.pe_oi);
+
+                // 1. Sentiment Chart (Net Chg vs LTP)
+                const netTrace = {
+                    x: times,
+                    y: netChg,
+                    name: 'Net OI Change',
+                    type: 'scatter',
+                    mode: 'lines',
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(16, 185, 129, 0.1)',
+                    line: { color: '#10b981', width: 2 }
+                };
+
+                const ltpTrace = {
+                    x: times,
+                    y: ltp,
+                    name: 'Index LTP',
+                    type: 'scatter',
+                    mode: 'lines',
+                    yaxis: 'y2',
+                    line: { color: '#fbbf24', width: 2 }
+                };
+
+                const commonLayout = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8' }, orientation: 'h', y: -0.2 },
+                    margin: { t: 20, b: 60, l: 60, r: 60 },
+                    font: { family: 'Inter', color: '#64748b' },
+                    xaxis: { gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 10 } },
+                    hovermode: 'x unified',
+                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
+                };
+
+                const sentimentLayout = {
+                    ...commonLayout,
+                    yaxis: { title: 'Net OI Change', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } },
+                    yaxis2: { title: 'Index LTP', overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#fbbf24' } }
+                };
+
+                Plotly.react('sentiment-chart', [netTrace, ltpTrace], sentimentLayout, { responsive: true, displayModeBar: false });
+
+                // 2. Trend Chart (CE Chg vs PE Chg)
+                const ceChgTrace = {
+                    x: times,
+                    y: ceChg,
+                    name: 'Call OI Change',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#ef4444', width: 2 }
+                };
+
+                const peChgTrace = {
+                    x: times,
+                    y: peChg,
+                    name: 'Put OI Change',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#10b981', width: 2 }
+                };
+
+                const trendLayout = {
+                    ...commonLayout,
+                    yaxis: { title: 'OI Change', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } }
+                };
+
+                Plotly.react('trend-chart', [ceChgTrace, peChgTrace], trendLayout, { responsive: true, displayModeBar: false });
+
+                // 3. Total OI Chart (Total CE vs Total PE)
+                const ceTotalTrace = {
+                    x: times,
+                    y: ceTotal,
+                    name: 'Total Call OI',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#f87171', width: 2, dash: 'dot' }
+                };
+
+                const peTotalTrace = {
+                    x: times,
+                    y: peTotal,
+                    name: 'Total Put OI',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#34d399', width: 2, dash: 'dot' }
+                };
+
+                const totalLayout = {
+                    ...commonLayout,
+                    yaxis: { title: 'Total OI', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } }
+                };
+
+                Plotly.react('total-oi-chart', [ceTotalTrace, peTotalTrace], totalLayout, { responsive: true, displayModeBar: false });
+            };
+
+            const formatLargeNumber = (num) => {
+                if (num === undefined || num === null) return "0.00";
+                return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            };
+
+            return (
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased">
+                    {/* Navigation Sidebar */}
+                    <nav className="fixed left-0 top-0 h-full w-20 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-10 gap-8 z-50">
+                        <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Main Dashboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        </a>
+                        
+                        <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Premium vs PoP Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        </a>
+                        
+                        <a href="/pcr" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PCR By Strike">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </a>
+
+                        <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+                        </a>
+
+                        <a href="/cumulative" className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform hover:scale-105" title="Cumulative OI Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
+                        </a>
+                    </nav>
+
+                    <main className="pl-24 pr-8 py-8 max-w-[1400px] mx-auto">
+                        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+                            <div>
+                                <h1 className="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+                                    Cumulative <span className="text-emerald-500">OI Analysis</span>
+                                </h1>
+                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Aggregate Market Sentiment Tracker</p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-3">
+                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-black uppercase">Symbol</span>
+                                    <select 
+                                        className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        value={symbol}
+                                        onChange={(e) => setSymbol(e.target.value)}
+                                    >
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-black uppercase">Expiry</span>
+                                    <select 
+                                        className="bg-transparent border-none text-slate-300 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        value={expiry}
+                                        onChange={(e) => setExpiry(e.target.value)}
+                                    >
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                    </select>
+                                </div>
+
+                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-black uppercase">Range</span>
+                                    <select 
+                                        className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        value={strikeRange}
+                                        onChange={(e) => setStrikeRange(Number(e.target.value))}
+                                    >
+                                        {[2, 4, 6, 8, 10, 15, 20].map(r => <option key={r} value={r} className="bg-[#0b0f1a]">±{r} Strikes</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* KPI Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg">
+                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Intraday Net Change</p>
+                                <h3 className={`text-xl font-black tracking-tighter ${kpis.net_chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {formatLargeNumber(kpis.net_chg)}
+                                </h3>
+                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">Sentiment: {kpis.net_chg >= 0 ? 'Bullish' : 'Bearish'}</div>
+                            </div>
+
+                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg">
+                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Cumulative PCR</p>
+                                <h3 className={`text-xl font-black tracking-tighter ${kpis.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {kpis.pcr || "---"}
+                                </h3>
+                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">{kpis.pcr >= 1 ? 'PUT HEAVY' : 'CALL HEAVY'}</div>
+                            </div>
+
+                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg">
+                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Underlying LTP</p>
+                                <h3 className="text-xl font-black text-white tracking-tighter">₹{kpis.ltp?.toLocaleString() || "---"}</h3>
+                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">{symbol} Spot Price</div>
+                            </div>
+
+                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg border-l-rose-500/30">
+                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Total Call OI</p>
+                                <h3 className="text-xl font-black text-rose-400 tracking-tighter">{formatLargeNumber(kpis.total_ce)}</h3>
+                                <div className="mt-1 text-[8px] text-rose-500/50 font-bold uppercase tracking-widest">Resistance Basis</div>
+                            </div>
+
+                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg border-l-emerald-500/30">
+                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Total Put OI</p>
+                                <h3 className="text-xl font-black text-emerald-400 tracking-tighter">{formatLargeNumber(kpis.total_pe)}</h3>
+                                <div className="mt-1 text-[8px] text-emerald-500/50 font-bold uppercase tracking-widest">Support Basis</div>
+                            </div>
+                        </div>
+
+                        {/* Charts Section */}
+                        <div className="space-y-6">
+                            <div className="glass p-6 rounded-3xl border-slate-800/80 shadow-lg">
+                                <h3 className="text-sm font-black text-white tracking-tighter uppercase mb-4 py-2 border-b border-white/5">Net OI Change vs Index LTP</h3>
+                                <div id="sentiment-chart" className="w-full h-[380px]">
+                                    {loading && (
+                                        <div className="w-full h-full flex items-center justify-center">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-emerald-500"></div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div className="glass p-6 rounded-3xl border-slate-800/80 shadow-lg">
+                                    <h3 className="text-sm font-black text-white tracking-tighter uppercase mb-4 py-2 border-b border-white/5">Intraday CE vs PE OI Change</h3>
+                                    <div id="trend-chart" className="w-full h-[350px]">
+                                        {loading && (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-emerald-500"></div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="glass p-6 rounded-3xl border-slate-800/80 shadow-lg">
+                                    <h3 className="text-sm font-black text-white tracking-tighter uppercase mb-4 py-2 border-b border-white/5">Total Cumulative Call vs Put OI</h3>
+                                    <div id="total-oi-chart" className="w-full h-[350px]">
+                                        {loading && (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-emerald-500"></div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Detailed Data Table */}
+                        <div className="mt-8 glass rounded-3xl border-slate-800/80 shadow-2xl overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-800/60 bg-slate-900/40 flex justify-between items-center">
+                                <h3 className="text-sm font-black text-white tracking-tighter uppercase">Detailed Intraday Analysis</h3>
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest bg-slate-800/40 px-2 py-0.5 rounded">Real-time Feed</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-slate-900/60 border-b border-slate-800/60">
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Time</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">LTP</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Chng. In Call OI</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Chng. In Put OI</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Diff. In OI</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Direct. Of chng</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Chng. In Direction</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Direction of Chng %</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">PCR</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/40">
+                                        {[...data].reverse().map((row, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-800/20 transition-colors">
+                                                <td className="px-6 py-3 text-xs font-black text-emerald-400 tabular-nums">
+                                                    {new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                                                </td>
+                                                <td className="px-6 py-3 text-xs font-bold text-white tabular-nums">
+                                                    {row.ltp?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-3 text-xs font-bold text-rose-400 tabular-nums">
+                                                    {formatLargeNumber(row.ce_chg)}
+                                                </td>
+                                                <td className="px-6 py-3 text-xs font-bold text-emerald-400 tabular-nums">
+                                                    {formatLargeNumber(row.pe_chg)}
+                                                </td>
+                                                <td className={`px-6 py-3 text-xs font-black tabular-nums ${row.net_chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {formatLargeNumber(row.net_chg)}
+                                                </td>
+                                                <td className={`px-6 py-3 text-xs font-black tabular-nums ${row.direction.includes('BUY') ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {row.direction}
+                                                </td>
+                                                <td className={`px-6 py-3 text-xs font-black tabular-nums ${row.direction_chg >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                    {formatLargeNumber(row.direction_chg)}
+                                                </td>
+                                                <td className={`px-6 py-3 text-xs font-black text-right tabular-nums ${row.direction_chg_pct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                    {row.direction_chg_pct.toFixed(2)}%
+                                                </td>
+                                                <td className={`px-6 py-3 text-xs font-black text-right tabular-nums ${row.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {row.pcr.toFixed(2)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<CumulativeOI />);
+    </script>
+</body>
+</html>
