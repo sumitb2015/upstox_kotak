@@ -1,17 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ATM Straddle Analysis</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #030712; color: #f8fafc; margin: 0; overflow-x: hidden; }
-        .glass { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        .glass-strong { background: rgba(17, 24, 39, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.12); }
-        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030712;
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-strong {
+            background: rgba(17, 24, 39, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
         select {
             appearance: none;
             -webkit-appearance: none;
@@ -23,6 +41,7 @@
         }
     </style>
 </head>
+
 <body>
     <div id="root"></div>
 
@@ -45,7 +64,7 @@
             const [metadata, setMetadata] = useState({});
             const [strike, setStrike] = useState("");
             const [allStrikes, setAllStrikes] = useState([]);
-            
+
             const chartRef = useRef(null);
             const wsRef = useRef(null);
             const pricesRef = useRef({ ce: 0, pe: 0 });
@@ -96,16 +115,16 @@
                     setLoading(false);
                 }
             };
-            
+
             // WebSocket Connection
             useEffect(() => {
                 if (!metadata.ce_key || !metadata.pe_key) return;
 
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/ws/straddle`;
-                
+
                 pricesRef.current = { ce: 0, pe: 0 }; // Reset
-                
+
                 const ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
 
@@ -126,7 +145,7 @@
                         // Only update if both legs have data (or at least valid LTPs from somewhere)
                         if (pricesRef.current.ce > 0 && pricesRef.current.pe > 0) {
                             const newStraddle = pricesRef.current.ce + pricesRef.current.pe;
-                            
+
                             // Update KPI immediately
                             setKpis(prev => ({
                                 ...prev,
@@ -209,14 +228,14 @@
                     legend: { font: { color: '#94a3b8', size: 12 }, orientation: 'h', y: -0.2 },
                     margin: { t: 20, b: 60, l: 60, r: 20 },
                     font: { family: 'Inter', color: '#64748b' },
-                    xaxis: { 
-                        gridcolor: '#1e293b', 
+                    xaxis: {
+                        gridcolor: '#1e293b',
                         zerolinecolor: '#334155',
                         tickfont: { color: '#94a3b8', size: 10 }
                     },
-                    yaxis: { 
+                    yaxis: {
                         title: 'Total Premium (₹)',
-                        gridcolor: '#1e293b', 
+                        gridcolor: '#1e293b',
                         zerolinecolor: '#334155',
                         tickfont: { color: '#94a3b8' },
                         autorange: true,
@@ -236,11 +255,11 @@
                         <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Main Dashboard">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                         </a>
-                        
+
                         <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Premium vs PoP Analysis">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
                         </a>
-                        
+
                         <a href="/pcr" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PCR By Strike">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
                         </a>
@@ -253,10 +272,16 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
                         </a>
                         <a href="/strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strike Analytics">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2"/></svg>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2" /></svg>
                         </a>
                         <a href="/greeks" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Greeks Exposure">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        </a>
+                        <a href="/max-pain" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Max Pain & IV Smile">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        </a>
+                        <a href="/multi-strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Multi-Strike Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"></path></svg>
                         </a>
                     </nav>
 
@@ -271,7 +296,7 @@
 
                             <div className="flex gap-4">
                                 <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
-                                    <select 
+                                    <select
                                         className="bg-transparent border-none text-emerald-400 text-sm font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={symbol}
                                         onChange={(e) => setSymbol(e.target.value)}
@@ -281,7 +306,7 @@
                                 </div>
 
                                 <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
-                                    <select 
+                                    <select
                                         className="bg-transparent border-none text-slate-300 text-sm font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={expiry}
                                         onChange={(e) => {
@@ -295,7 +320,7 @@
 
                                 <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
                                     <span className="text-[10px] font-bold text-slate-500 uppercase">STRIKE</span>
-                                    <select 
+                                    <select
                                         className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer"
                                         value={strike}
                                         onChange={(e) => setStrike(e.target.value)}
@@ -370,4 +395,5 @@
         root.render(<StraddleAnalytics />);
     </script>
 </body>
+
 </html>

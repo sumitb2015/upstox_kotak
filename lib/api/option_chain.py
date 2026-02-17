@@ -516,3 +516,72 @@ def calculate_oi_change_pcr(df: pd.DataFrame) -> float:
     except Exception as e:
         print(f"Error calculating OI Change PCR: {e}")
         return 0.0
+
+def calculate_max_pain(df: pd.DataFrame) -> Dict:
+    """
+    Calculate Max Pain Strike and Total Pain Table.
+    
+    Max Pain is the strike price at which the total value of all options 
+    (Calls + Puts) expires worthless (or minimal value).
+    
+    Algorithm:
+    1. For each unique strike in the chain (potential spot price at expiry):
+       a. Calculate loss for Call Writers: max(0, PotentialSpot - Strike) * CE_OI
+       b. Calculate loss for Put Writers:  max(0, Strike - PotentialSpot) * PE_OI
+       c. Total Pain = Sum(Call Pain) + Sum(Put Pain) for ALL strikes against this PotentialSpot
+    2. The strike with the MINIMUM Total Pain is the Max Pain Strike.
+    """
+    if df.empty:
+        return {"max_pain_strike": 0, "pain_data": []}
+    
+    try:
+        # Ensure minimal columns exist
+        required = ['strike_price', 'ce_oi', 'pe_oi']
+        for col in required:
+            if col not in df.columns:
+                return {"max_pain_strike": 0, "pain_data": []}
+                
+        # Get unique strikes and sort them
+        strikes = sorted(df['strike_price'].unique())
+        
+        pain_data = [] # List of {strike: <potential_spot>, total_pain: <val>, ce_pain: <val>, pe_pain: <val>}
+        
+        # Pre-calculate data for faster access (vectorization would be better but loops are fine for <100 strikes)
+        ce_ois = df.set_index('strike_price')['ce_oi'].to_dict()
+        pe_ois = df.set_index('strike_price')['pe_oi'].to_dict()
+        
+        for potential_spot in strikes:
+            total_ce_pain = 0.0
+            total_pe_pain = 0.0
+            
+            # Calculate pain for THIS potential spot against ALL outstanding contracts
+            for k in strikes:
+                # Call Pain: Value if Spot > Strike
+                if potential_spot > k:
+                    total_ce_pain += (potential_spot - k) * ce_ois.get(k, 0)
+                    
+                # Put Pain: Value if Spot < Strike
+                if potential_spot < k:
+                    total_pe_pain += (k - potential_spot) * pe_ois.get(k, 0)
+            
+            pain_data.append({
+                "strike": potential_spot,
+                "total_pain": total_ce_pain + total_pe_pain,
+                "ce_pain": total_ce_pain,
+                "pe_pain": total_pe_pain
+            })
+            
+        # Find Strike with Minimum Total Pain
+        if not pain_data:
+            return {"max_pain_strike": 0, "pain_data": []}
+            
+        min_pain_entry = min(pain_data, key=lambda x: x['total_pain'])
+        
+        return {
+            "max_pain_strike": min_pain_entry['strike'],
+            "pain_data": pain_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating Max Pain: {e}")
+        return {"max_pain_strike": 0, "pain_data": []}

@@ -44,7 +44,11 @@ class BrokerClient:
             self.client = NeoAPI(environment='prod', consumer_key=self.consumer_key)
             totp = pyotp.TOTP(self.totp_secret).now()
             self.client.totp_login(mobile_number=self.mobile, ucc=self.ucc, totp=totp)
-            self.client.totp_validate(mpin=self.mpin)
+            resp = self.client.totp_validate(mpin=self.mpin)
+            if "error" in resp or "Error" in resp:
+                logger.error(f"Authentication Failed: {resp}")
+                raise Exception(f"Auth Failed: {resp}")
+                
             logger.info("Authentication successful!")
             return self.client
         except Exception as e:

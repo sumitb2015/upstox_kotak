@@ -11,7 +11,7 @@ import asyncio
 # Add project root to path for lib imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr
+from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr, calculate_max_pain
 from lib.utils.instrument_utils import get_option_instrument_key
 from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
@@ -446,6 +446,28 @@ async def serve_greeks_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
+@app.get("/max-pain", response_class=HTMLResponse)
+async def serve_max_pain_page():
+    """
+    Serves the Max Pain & Volatility Smile Analysis page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "max_pain.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="max_pain.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/multi-strike", response_class=HTMLResponse)
+async def serve_multi_strike_page():
+    """
+    Serves the Multi-Strike Analysis page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "multi_strike.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="multi_strike.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
 @app.get("/api/greeks-data")
 async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
                          expiry: str = Query(..., description="Expiry Date")):
@@ -626,6 +648,74 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
         
         print(f"✅ [PCR API] Returning {len(grid_data)} rows")
         return {"data": grid_data}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/max-pain-data")
+async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
+                           expiry: str = Query(..., description="Expiry Date")):
+    """
+    Get Max Pain and Volatility Smile data.
+    Returns:
+    - max_pain_strike: The strike with minimum total pain
+    - pain_data: Array of {strike, total_pain, ce_pain, pe_pain}
+    - iv_data: Array of {strike, ce_iv, pe_iv}
+    - spot_price: Current spot price
+    """
+    print(f"📊 [CORE] [Max Pain API] Request received for {symbol} expiry {expiry}")
+    try:
+        instrument_key = SYMBOL_MAP.get(symbol.upper())
+        if not instrument_key:
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+            
+        token = get_access_token()
+        
+        print(f"📊 [Max Pain API] Fetching option chain for {instrument_key}...")
+        df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
+        
+        if df is None or df.empty:
+            return {"status": "error", "data": {}}
+            
+        # 1. Calculate Max Pain
+        max_pain_result = calculate_max_pain(df)
+        
+        # 2. Extract IV Data for Volatility Smile
+        iv_data = []
+        for _, row in df.iterrows():
+            strike = row['strike_price']
+            ce_iv = row.get('ce_iv') or 0
+            pe_iv = row.get('pe_iv') or 0
+            
+            # Only include strikes with valid IV data
+            if ce_iv > 0 or pe_iv > 0:
+                iv_data.append({
+                    "strike": strike,
+                    "ce_iv": round(ce_iv, 2) if ce_iv else 0,
+                    "pe_iv": round(pe_iv, 2) if pe_iv else 0
+                })
+        
+        # Sort by strike
+        iv_data.sort(key=lambda x: x['strike'])
+        
+        # Get spot price
+        spot_price = df['spot_price'].iloc[0] if not df.empty else 0
+        
+        print(f"✅ [Max Pain API] Max Pain Strike: {max_pain_result['max_pain_strike']}, IV Data Points: {len(iv_data)}")
+        
+        return {
+            "status": "success",
+            "data": {
+                "max_pain_strike": max_pain_result['max_pain_strike'],
+                "pain_data": max_pain_result['pain_data'],
+                "iv_data": iv_data,
+                "spot_price": spot_price,
+                "symbol": symbol,
+                "expiry": expiry
+            }
+        }
         
     except Exception as e:
         import traceback

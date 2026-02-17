@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Strike Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030712;
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-strong {
+            background: rgba(17, 24, 39, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        select,
+        button {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+        }
+
+        select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+
+        select option {
+            background-color: #111827;
+            color: #10b981;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
+
+        function MultiStrikeAnalytics() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiry, setExpiry] = useState("");
+            const [expiries, setExpiries] = useState([]);
+            const [allStrikes, setAllStrikes] = useState([]);
+            const [selectedLegs, setSelectedLegs] = useState([]); // [{id, strike, type: 'CE'|'PE', direction: 'BUY'|'SELL', instrumentKey, price}]
+            const [chartData, setChartData] = useState([]);
+            const [prices, setPrices] = useState({}); // {instrumentKey: price}
+            const [totalPremium, setTotalPremium] = useState(0);
+            const [loading, setLoading] = useState(false);
+            const [vwapValue, setVwapValue] = useState(0);
+
+            const chartRef = useRef(null);
+            const wsRef = useRef(null);
+            const nextIdRef = useRef(1);
+            const selectedLegsRef = useRef([]);
+            const pricesRef = useRef({});
+            const totalSumRef = useRef(0);
+            const countRef = useRef(0);
+
+            // Maintain refs for WebSocket closure
+            useEffect(() => {
+                selectedLegsRef.current = selectedLegs;
+                // Reset VWAP when legs change to avoid stale scaling
+                totalSumRef.current = 0;
+                countRef.current = 0;
+            }, [selectedLegs]);
+
+            useEffect(() => {
+                pricesRef.current = prices;
+            }, [prices]);
+
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "---";
+                const date = new Date(dateStr);
+                if (isNaN(date)) return dateStr;
+                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            // Fetch Expiries
+            useEffect(() => {
+                fetch(`/api/expiries?symbol=${symbol}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.expiries && data.expiries.length > 0) {
+                            setExpiries(data.expiries);
+                            setExpiry(data.expiries[0]);
+                        }
+                    });
+            }, [symbol]);
+
+            // Fetch Strikes and store option chain data
+            const [optionChainData, setOptionChainData] = useState([]);
+
+            useEffect(() => {
+                if (!expiry) return;
+                setLoading(true);
+                fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.status === "success") {
+                            setOptionChainData(res.data);
+                            const strikes = res.data.map(d => d.strike_price);
+                            setAllStrikes([...new Set(strikes)].sort((a, b) => a - b));
+                        }
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Fetch failed", err);
+                        setLoading(false);
+                    });
+            }, [symbol, expiry]);
+
+            /**
+             * Adds a new option leg to the selection.
+             * @param {number} strike - The strike price.
+             * @param {string} type - 'CE' or 'PE'.
+             * @param {string} direction - 'BUY' or 'SELL'.
+             */
+            const addLeg = (strike, type, direction) => {
+                // Find the actual instrument key from option chain data
+                const optionData = optionChainData.find(d => Number(d.strike_price) === Number(strike));
+
+                const instrumentKey = type === 'CE' ? optionData?.ce_key : optionData?.pe_key;
+
+                if (!instrumentKey) {
+                    return;
+                }
+
+                const id = nextIdRef.current++;
+                const initialPrice = type === 'CE' ? (optionData?.ce_ltp || 0) : (optionData?.pe_ltp || 0);
+                setSelectedLegs(prev => [...prev, { id, strike, type, direction, instrumentKey, price: initialPrice }]);
+            };
+
+            /**
+             * Removes a leg from the selection by its unique ID.
+             * @param {number} id - The leg ID.
+             */
+            const removeLeg = (id) => {
+                setSelectedLegs(prev => prev.filter(leg => leg.id !== id));
+            };
+
+            /**
+             * Toggles the option type (CE/PE) for a specific leg and updates its instrument key.
+             * @param {number} id - The leg ID.
+             */
+            const toggleType = (id) => {
+                setSelectedLegs(prev => prev.map(leg => {
+                    if (leg.id === id) {
+                        const newType = leg.type === 'CE' ? 'PE' : 'CE';
+                        const optionData = optionChainData.find(d => Number(d.strike_price) === Number(leg.strike));
+                        const newInstrumentKey = newType === 'CE' ? optionData?.ce_key : optionData?.pe_key;
+                        const newPrice = newType === 'CE' ? (optionData?.ce_ltp || 0) : (optionData?.pe_ltp || 0);
+                        return { ...leg, type: newType, instrumentKey: newInstrumentKey, price: newPrice };
+                    }
+                    return leg;
+                }));
+            };
+
+            /**
+             * Toggles the trade direction (BUY/SELL) for a specific leg.
+             * @param {number} id - The leg ID.
+             */
+            const toggleDirection = (id) => {
+                setSelectedLegs(prev => prev.map(leg =>
+                    leg.id === id ? { ...leg, direction: leg.direction === 'BUY' ? 'SELL' : 'BUY' } : leg
+                ));
+            };
+
+            // Get Instrument Key
+            const getInstrumentKey = (strike, type) => {
+                // We need to fetch the actual instrument key from the option chain data
+                // For now, return a placeholder - we'll get the real key from the API
+                return `${symbol}_${strike}_${type}_${expiry}`;
+            };
+
+            // WebSocket Connection
+            useEffect(() => {
+                if (selectedLegs.length === 0) {
+                    if (wsRef.current) {
+                        wsRef.current.close();
+                        wsRef.current = null;
+                    }
+                    return;
+                }
+
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/straddle`;
+
+                pricesRef.current = {};
+
+                const ws = new WebSocket(wsUrl);
+                wsRef.current = ws;
+
+                ws.onopen = () => {
+                    const keys = selectedLegs.map(leg => leg.instrumentKey);
+                    ws.send(JSON.stringify({
+                        action: "subscribe",
+                        keys: keys
+                    }));
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        const key = msg.instrument_key;
+                        const ltp = msg.ltp;
+
+                        // Update prices state and ref
+                        setPrices(prev => {
+                            const newPrices = { ...prev, [key]: ltp };
+                            pricesRef.current = newPrices;
+                            return newPrices;
+                        });
+
+                        // Calculate combined premium using the most recent data
+                        const legs = selectedLegsRef.current;
+                        let combined = 0;
+
+                        // Use ref for calculation to avoid stale state in closure
+                        const currentPrices = pricesRef.current;
+
+                        legs.forEach(leg => {
+                            const price = currentPrices[leg.instrumentKey] || leg.price || 0;
+                            const multiplier = leg.direction === 'BUY' ? 1 : -1;
+                            combined += price * multiplier;
+                        });
+
+                        setTotalPremium(combined);
+
+                        // Calculate VWAP (Running Average)
+                        totalSumRef.current += combined;
+                        countRef.current += 1;
+                        const vwap = totalSumRef.current / countRef.current;
+                        setVwapValue(vwap);
+
+                        updateChart(combined, vwap, msg.timestamp || Date.now());
+
+                    } catch (e) {
+                        console.error("WS Message Error", e);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error("WebSocket error:", error);
+                };
+
+                return () => {
+                    if (ws.readyState === 1) ws.close();
+                };
+            }, [selectedLegs.map(l => l.instrumentKey).join(',')]);
+
+            const updateChart = (price, vwap, timestamp) => {
+                setChartData(prevData => {
+                    const newData = [...prevData];
+                    const time = new Date(timestamp);
+                    const formattedTime = time.getHours().toString().padStart(2, '0') + ":" +
+                        time.getMinutes().toString().padStart(2, '0') + ":" +
+                        time.getSeconds().toString().padStart(2, '0');
+
+                    newData.push({
+                        timestamp: formattedTime,
+                        premium: price,
+                        vwap: vwap
+                    });
+
+                    // Keep last 100 points for performance
+                    if (newData.length > 100) newData.shift();
+                    return newData;
+                });
+            };
+
+            useEffect(() => {
+                if (chartData.length > 0 && chartRef.current) {
+                    renderChart();
+                }
+            }, [chartData]);
+
+            const renderChart = () => {
+                const times = chartData.map(d => d.timestamp);
+                const premiums = chartData.map(d => d.premium);
+                const vwap = chartData.map(d => d.vwap);
+
+                const premiumTrace = {
+                    x: times,
+                    y: premiums,
+                    name: 'Premium',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#10b981', width: 3 }
+                };
+
+                const vwapTrace = {
+                    x: times,
+                    y: vwap,
+                    name: 'VWAP',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#fbbf24', width: 2, dash: 'dot' }
+                };
+
+                const layout = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8', size: 12 }, orientation: 'h', y: -0.2 },
+                    margin: { t: 20, b: 40, l: 60, r: 20 },
+                    font: { family: 'Inter', color: '#64748b' },
+                    xaxis: {
+                        gridcolor: '#1e293b',
+                        zerolinecolor: '#334155',
+                        tickfont: { color: '#94a3b8', size: 10 },
+                        type: 'date',
+                        tickformat: '%H:%M:%S'
+                    },
+                    yaxis: {
+                        title: 'Premium (₹)',
+                        gridcolor: '#1e293b',
+                        zerolinecolor: '#334155',
+                        tickfont: { color: '#94a3b8' },
+                        autorange: true
+                    },
+                    hovermode: 'x unified',
+                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
+                };
+
+                Plotly.react(chartRef.current, [premiumTrace, vwapTrace], layout, { responsive: true, displayModeBar: false });
+            };
+
+            return (
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30">
+                    <nav className="fixed left-0 top-0 h-full w-20 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-10 gap-8 z-50">
+                        <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Dashboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        </a>
+                        <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Premium vs PoP Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        </a>
+                        <a href="/pcr" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PCR By Strike">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </a>
+                        <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+                        </a>
+                        <a href="/cumulative" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Cumulative OI Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
+                        </a>
+                        <a href="/strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strike Analytics">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2" /></svg>
+                        </a>
+                        <a href="/greeks" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Greeks Exposure">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        </a>
+                        <a href="/max-pain" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Max Pain & IV Smile">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        </a>
+                        <a href="/multi-strike" className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform hover:scale-105" title="Multi-Strike Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"></path></svg>
+                        </a>
+                    </nav>
+
+                    <main className="pl-24 pr-8 py-8 max-w-[1800px] mx-auto">
+                        {/* Header */}
+                        <div className="flex flex-col lg:flex-row gap-8 mb-8 items-start">
+                            <div className="flex-shrink-0">
+                                <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
+                                    MULTI-STRIKE <span className="bg-emerald-500 text-white px-2 py-0.5 rounded text-xs font-black tracking-widest">LIVE</span>
+                                </h1>
+                                <p className="text-slate-500 text-xs font-bold uppercase tracking-[0.3em] mt-2">Custom Position Builder</p>
+
+                                <div className="mt-8 flex items-center gap-3 bg-slate-900/40 p-2 rounded-xl border border-slate-800/40">
+                                    <select
+                                        className="bg-transparent border-none text-emerald-400 text-sm font-black tracking-widest focus:ring-0 cursor-pointer pr-10"
+                                        value={symbol}
+                                        onChange={(e) => setSymbol(e.target.value)}
+                                    >
+                                        {SYMBOLS.map(sym => (
+                                            <option key={sym} value={sym} className="bg-[#0b0f1a]">{sym}</option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        className="bg-transparent border-none text-emerald-400 text-sm font-black tracking-widest focus:ring-0 cursor-pointer pr-10"
+                                        value={expiry}
+                                        onChange={(e) => setExpiry(e.target.value)}
+                                    >
+                                        {expiries.map(exp => (
+                                            <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Total Premium Display */}
+                            <div className="glass px-5 py-3 rounded-2xl border-slate-800/60 shadow-lg flex items-center justify-between gap-6 min-w-[280px]">
+                                <div>
+                                    <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Combined Premium</p>
+                                    <div className="flex items-center gap-3">
+                                        <h2 className={`text-3xl font-black tracking-tighter leading-none ${totalPremium >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            ₹{totalPremium.toFixed(2)}
+                                        </h2>
+                                    </div>
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                            {/* Strike Selection Panel */}
+                            <div className="glass-strong p-6 rounded-[2rem] border-slate-800/80 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+                                <h3 className="text-xl font-black text-white tracking-tighter uppercase mb-4">Position Legs</h3>
+
+                                {/* Add Strike Form */}
+                                <div className="mb-6 p-4 bg-slate-900/50 rounded-xl border border-slate-800/40">
+                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Add New Leg</p>
+                                    <select
+                                        className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-emerald-400 font-semibold mb-3"
+                                        onChange={(e) => {
+                                            if (e.target.value) {
+                                                addLeg(Number(e.target.value), 'CE', 'BUY');
+                                                e.target.value = '';
+                                            }
+                                        }}
+                                    >
+                                        <option value="">Select Strike...</option>
+                                        {allStrikes.map(strike => (
+                                            <option key={strike} value={strike}>{strike}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Selected Legs */}
+                                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {selectedLegs.length === 0 && (
+                                        <p className="text-slate-600 text-sm text-center py-8">No legs added yet</p>
+                                    )}
+                                    {selectedLegs.map(leg => (
+                                        <div key={leg.id} className="glass p-3 rounded-xl border-slate-700/50 hover:border-slate-600 transition-colors">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-base font-black text-white tracking-tight">{leg.strike}</span>
+                                                <button
+                                                    onClick={() => removeLeg(leg.id)}
+                                                    className="w-6 h-6 flex items-center justify-center rounded-full bg-slate-800 hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-all text-xs"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-800/50">
+                                                    <button
+                                                        onClick={() => toggleType(leg.id)}
+                                                        className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all ${leg.type === 'CE' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    >C</button>
+                                                    <button
+                                                        onClick={() => toggleType(leg.id)}
+                                                        className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all ${leg.type === 'PE' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    >P</button>
+                                                </div>
+                                                <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-800/50">
+                                                    <button
+                                                        onClick={() => toggleDirection(leg.id)}
+                                                        className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all ${leg.direction === 'BUY' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    >B</button>
+                                                    <button
+                                                        onClick={() => toggleDirection(leg.id)}
+                                                        className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black transition-all ${leg.direction === 'SELL' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    >S</button>
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 pt-2 border-t border-slate-800/30 flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tighter">Premium</span>
+                                                <span className="text-xs font-black text-emerald-400">₹{(prices[leg.instrumentKey] || leg.price).toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Chart */}
+                            <div className="lg:col-span-4 glass p-8 rounded-[2.5rem] border-slate-800/80 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                                    <div>
+                                        <h3 className="text-2xl font-black text-white tracking-tighter uppercase">Combined Premium</h3>
+                                        <p className="text-slate-600 text-xs font-heavy uppercase tracking-widest mt-1 text-emerald-400">
+                                            {selectedLegs.length > 0 ? (
+                                                <span className="flex items-center gap-2">
+                                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                                                    Live Value: ₹{totalPremium.toFixed(2)} | VWAP: ₹{vwapValue.toFixed(2)}
+                                                </span>
+                                            ) : (
+                                                'Real-Time Position Value'
+                                            )}
+                                        </p>
+                                    </div>
+                                    {selectedLegs.length > 0 && (
+                                        <div className="flex gap-4">
+                                            <div className="bg-slate-900/40 px-3 py-1.5 rounded-xl border border-slate-800/50">
+                                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">VWAP</p>
+                                                <p className="text-sm font-black text-amber-400">₹{vwapValue.toFixed(2)}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-black text-slate-500 uppercase">Live PnL (Estimated)</p>
+                                                <p className={`text-xl font-black ${totalPremium >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {totalPremium >= 0 ? '+' : ''}₹{totalPremium.toFixed(2)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div ref={chartRef} className="w-full h-[600px] relative">
+                                    {selectedLegs.length === 0 && (
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <div className="text-center">
+                                                <p className="text-slate-600 text-lg font-bold">Add strikes to start tracking</p>
+                                                <p className="text-slate-700 text-sm mt-2">Select strikes from the panel on the left</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {loading && (
+                                        <div className="absolute inset-0 bg-[#030712]/40 backdrop-blur-md z-10 flex items-center justify-center rounded-3xl">
+                                            <div className="text-emerald-400 text-sm font-black tracking-widest animate-pulse">LOADING...</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MultiStrikeAnalytics />);
+    </script>
+</body>
+
+</html>

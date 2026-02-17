@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Max Pain & Volatility Smile</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030712;
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
+
+        function MaxPainAnalytics() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiry, setExpiry] = useState("");
+            const [expiries, setExpiries] = useState([]);
+            const [maxPainStrike, setMaxPainStrike] = useState(0);
+            const [painData, setPainData] = useState([]);
+            const [ivData, setIvData] = useState([]);
+            const [spotPrice, setSpotPrice] = useState(0);
+            const [loading, setLoading] = useState(false);
+
+            // Format Date Helper
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "---";
+                const date = new Date(dateStr);
+                if (isNaN(date)) return dateStr;
+                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            const formatCurrency = (val) => {
+                if (Math.abs(val) >= 10000000) return (val / 10000000).toFixed(2) + " Cr";
+                if (Math.abs(val) >= 100000) return (val / 100000).toFixed(2) + " L";
+                return val.toFixed(2);
+            };
+
+            // Fetch Expiries
+            useEffect(() => {
+                fetch(`/api/expiries?symbol=${symbol}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.expiries && data.expiries.length > 0) {
+                            setExpiries(data.expiries);
+                            setExpiry(data.expiries[0]);
+                        }
+                    });
+            }, [symbol]);
+
+            // Fetch Max Pain Data
+            useEffect(() => {
+                if (!expiry) return;
+                setLoading(true);
+                fetch(`/api/max-pain-data?symbol=${symbol}&expiry=${expiry}`)
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res.status === "success") {
+                            setMaxPainStrike(res.data.max_pain_strike);
+                            setPainData(res.data.pain_data);
+                            setIvData(res.data.iv_data);
+                            setSpotPrice(res.data.spot_price);
+                        }
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Fetch failed", err);
+                        setLoading(false);
+                    });
+            }, [symbol, expiry]);
+
+            // Render Max Pain Chart
+            useEffect(() => {
+                if (painData.length === 0) return;
+
+                const strikes = painData.map(d => d.strike);
+                const totalPain = painData.map(d => d.total_pain);
+
+                const trace = {
+                    x: strikes,
+                    y: totalPain,
+                    type: 'bar',
+                    marker: {
+                        color: strikes.map(s => s === maxPainStrike ? '#10b981' : '#64748b'),
+                        line: { color: '#030712', width: 1 }
+                    },
+                    hovertemplate: '<b>Strike: %{x}</b><br>Total Pain: %{y:,.0f}<extra></extra>'
+                };
+
+                const layout = {
+                    title: { text: `Max Pain Analysis - ${symbol}`, font: { color: '#fff', size: 18 } },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    xaxis: {
+                        title: { text: 'Strike Price', font: { color: '#94a3b8' } },
+                        tickfont: { color: '#94a3b8' },
+                        gridcolor: '#334155'
+                    },
+                    yaxis: {
+                        title: { text: 'Total Pain (Loss)', font: { color: '#94a3b8' } },
+                        tickfont: { color: '#94a3b8' },
+                        gridcolor: '#334155',
+                        tickformat: '.2s'
+                    },
+                    hovermode: 'x unified',
+                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } },
+                    shapes: [
+                        {
+                            type: 'line',
+                            x0: maxPainStrike, y0: 0, x1: maxPainStrike, y1: 1,
+                            yref: 'paper',
+                            line: { color: '#10b981', width: 3, dash: 'dot' }
+                        },
+                        {
+                            type: 'line',
+                            x0: spotPrice, y0: 0, x1: spotPrice, y1: 1,
+                            yref: 'paper',
+                            line: { color: '#f59e0b', width: 2, dash: 'dot' }
+                        }
+                    ],
+                    annotations: [
+                        {
+                            x: maxPainStrike, y: 1, xref: 'x', yref: 'paper',
+                            text: `Max Pain: ${maxPainStrike}`, showarrow: false,
+                            font: { color: '#10b981', size: 12 }, yshift: 10
+                        },
+                        {
+                            x: spotPrice, y: 0.95, xref: 'x', yref: 'paper',
+                            text: `Spot: ${spotPrice}`, showarrow: false,
+                            font: { color: '#f59e0b', size: 12 }, yshift: 10
+                        }
+                    ]
+                };
+
+                Plotly.react('pain-chart', [trace], layout, { responsive: true, displayModeBar: false });
+
+            }, [painData, maxPainStrike, spotPrice, symbol]);
+
+            // Render Volatility Smile Chart
+            useEffect(() => {
+                if (ivData.length === 0) return;
+
+                const strikes = ivData.map(d => d.strike);
+                const ceIV = ivData.map(d => d.ce_iv);
+                const peIV = ivData.map(d => d.pe_iv);
+
+                const traceCE = {
+                    x: strikes,
+                    y: ceIV,
+                    name: 'Call IV',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    marker: { color: '#10b981', size: 6 },
+                    line: { color: '#10b981', width: 2 },
+                    hovertemplate: '<b>%{x} CE</b><br>IV: %{y:.2f}%<extra></extra>'
+                };
+
+                const tracePE = {
+                    x: strikes,
+                    y: peIV,
+                    name: 'Put IV',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    marker: { color: '#ef4444', size: 6 },
+                    line: { color: '#ef4444', width: 2 },
+                    hovertemplate: '<b>%{x} PE</b><br>IV: %{y:.2f}%<extra></extra>'
+                };
+
+                const layout = {
+                    title: { text: `Volatility Smile - ${symbol}`, font: { color: '#fff', size: 18 } },
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8' } },
+                    xaxis: {
+                        title: { text: 'Strike Price', font: { color: '#94a3b8' } },
+                        tickfont: { color: '#94a3b8' },
+                        gridcolor: '#334155'
+                    },
+                    yaxis: {
+                        title: { text: 'Implied Volatility (%)', font: { color: '#94a3b8' } },
+                        tickfont: { color: '#94a3b8' },
+                        gridcolor: '#334155'
+                    },
+                    hovermode: 'x unified',
+                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } },
+                    shapes: [
+                        {
+                            type: 'line',
+                            x0: spotPrice, y0: 0, x1: spotPrice, y1: 1,
+                            yref: 'paper',
+                            line: { color: '#f59e0b', width: 2, dash: 'dot' }
+                        }
+                    ],
+                    annotations: [
+                        {
+                            x: spotPrice, y: 1, xref: 'x', yref: 'paper',
+                            text: `Spot: ${spotPrice}`, showarrow: false,
+                            font: { color: '#f59e0b', size: 12 }, yshift: 10
+                        }
+                    ]
+                };
+
+                Plotly.react('iv-chart', [traceCE, tracePE], layout, { responsive: true, displayModeBar: false });
+
+            }, [ivData, spotPrice, symbol]);
+
+            return (
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30">
+                    <nav className="fixed left-0 top-0 h-full w-20 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-10 gap-8 z-50">
+                        <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Dashboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        </a>
+
+                        <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Premium vs PoP Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        </a>
+
+                        <a href="/pcr" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PCR By Strike">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </a>
+
+                        <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+                        </a>
+
+                        <a href="/cumulative" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Cumulative OI Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
+                        </a>
+
+                        <a href="/strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strike Analytics">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2" /></svg>
+                        </a>
+
+                        <a href="/greeks" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Greeks Exposure">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        </a>
+
+                        <a href="/max-pain" className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform hover:scale-105" title="Max Pain & IV Smile">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        </a>
+                        <a href="/multi-strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Multi-Strike Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"></path></svg>
+                        </a>
+                    </nav>
+
+                    <main className="pl-24 pr-8 py-8 max-w-[1800px] mx-auto">
+                        {/* Header */}
+                        <div className="flex flex-col lg:flex-row gap-8 mb-8 items-start">
+                            <div className="flex-shrink-0">
+                                <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
+                                    MAX PAIN <span className="bg-emerald-500 text-white px-2 py-0.5 rounded text-xs font-black tracking-widest">LIVE</span>
+                                </h1>
+                                <p className="text-slate-500 text-xs font-bold uppercase tracking-[0.3em] mt-2">Volatility Intelligence</p>
+
+                                <div className="mt-8 flex items-center gap-3 bg-slate-900/40 p-2 rounded-xl border border-slate-800/40">
+                                    <select
+                                        className="bg-transparent border-none text-emerald-400 text-sm font-black tracking-widest focus:ring-0 cursor-pointer pr-10"
+                                        value={symbol}
+                                        onChange={(e) => setSymbol(e.target.value)}
+                                    >
+                                        {SYMBOLS.map(sym => (
+                                            <option key={sym} value={sym} className="bg-[#0b0f1a]">{sym}</option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        className="bg-transparent border-none text-emerald-400 text-sm font-black tracking-widest focus:ring-0 cursor-pointer pr-10"
+                                        value={expiry}
+                                        onChange={(e) => setExpiry(e.target.value)}
+                                    >
+                                        {expiries.map(exp => (
+                                            <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Max Pain Display */}
+                            <div className="glass px-5 py-3 rounded-2xl border-slate-800/60 shadow-lg flex items-center justify-between gap-6 min-w-[280px]">
+                                <div>
+                                    <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Max Pain Strike</p>
+                                    <div className="flex items-center gap-3">
+                                        <h2 className="text-3xl font-black text-emerald-400 tracking-tighter leading-none">
+                                            {maxPainStrike || "---"}
+                                        </h2>
+                                    </div>
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Charts */}
+                        <div className="flex flex-col gap-8">
+                            {/* Max Pain Chart */}
+                            <div className="glass p-8 rounded-[2.5rem] border-slate-800/80 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                                    <div>
+                                        <h3 className="text-2xl font-black text-white tracking-tighter uppercase">MAX PAIN ANALYSIS</h3>
+                                        <p className="text-slate-600 text-xs font-heavy uppercase tracking-widest mt-1">Total Loss by Strike</p>
+                                    </div>
+                                </div>
+
+                                <div id="pain-chart" className="w-full h-[500px] relative">
+                                    {loading && (
+                                        <div className="absolute inset-0 bg-[#030712]/40 backdrop-blur-md z-10 flex items-center justify-center rounded-3xl">
+                                            <div className="text-emerald-400 text-sm font-black tracking-widest animate-pulse">LOADING...</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Volatility Smile Chart */}
+                            <div className="glass p-8 rounded-[2.5rem] border-slate-800/80 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                                    <div>
+                                        <h3 className="text-2xl font-black text-white tracking-tighter uppercase">VOLATILITY SMILE</h3>
+                                        <p className="text-slate-600 text-xs font-heavy uppercase tracking-widest mt-1">Implied Volatility by Strike</p>
+                                    </div>
+                                </div>
+
+                                <div id="iv-chart" className="w-full h-[500px] relative">
+                                    {loading && (
+                                        <div className="absolute inset-0 bg-[#030712]/40 backdrop-blur-md z-10 flex items-center justify-center rounded-3xl">
+                                            <div className="text-emerald-400 text-sm font-black tracking-widest animate-pulse">LOADING...</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MaxPainAnalytics />);
+    </script>
+</body>
+
+</html>
