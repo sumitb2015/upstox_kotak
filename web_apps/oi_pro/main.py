@@ -7,6 +7,11 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 import json
 import asyncio
+import subprocess
+import signal
+import psutil
+from pathlib import Path
+import re
 
 # Add project root to path for lib imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -35,6 +40,156 @@ KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
 # Structure: {(symbol, expiry): pd.DataFrame}
 # Columns: [timestamp, strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi, ...]
 GREEKS_HISTORY_CACHE: Dict[tuple, pd.DataFrame] = {}
+
+# --- Strategy Management ---
+
+STRATEGIES_BASE_PATH = Path("c:/upstox_kotak/upstox_kotak/strategies")
+
+STRATEGIES_INFO = {
+    "aggressive_renko_dip": {
+        "id": "aggressive_renko_dip",
+        "name": "Aggressive Renko Dip",
+        "path": STRATEGIES_BASE_PATH / "directional" / "aggressive_renko_dip",
+        "description": "Trend-following strategy using Renko bricks and RSI filters."
+    },
+    "dynamic_straddle_skew": {
+        "id": "dynamic_straddle_skew",
+        "name": "Dynamic Straddle Skew",
+        "path": STRATEGIES_BASE_PATH / "directional" / "dynamic_straddle_skew",
+        "description": "Delta-neutral straddle adjustment strategy based on skew momentum."
+    }
+}
+
+class StrategyManager:
+    def __init__(self):
+        self.processes: Dict[str, subprocess.Popen] = {}
+        self.start_times: Dict[str, datetime] = {}
+        
+    def get_strategy_status(self, strategy_id: str) -> Dict:
+        """Checks if a strategy process is running and returns its metadata."""
+        is_running = False
+        pid = None
+        uptime = None
+        
+        proc = self.processes.get(strategy_id)
+        if proc:
+            if proc.poll() is None: # Still running
+                is_running = True
+                pid = proc.pid
+                uptime_delta = datetime.now() - self.start_times.get(strategy_id, datetime.now())
+                uptime = str(uptime_delta).split('.')[0] # HH:MM:SS
+            else:
+                # Process finished/crashed
+                del self.processes[strategy_id]
+                if strategy_id in self.start_times:
+                    del self.start_times[strategy_id]
+        
+        # Also check psutil as a backup (in case of server restart but process surviving - unlikely here but good practice)
+        if not is_running:
+            for p in psutil.process_iter(['pid', 'cmdline']):
+                try:
+                    cmdline = p.info['cmdline']
+                    if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
+                        is_running = True
+                        pid = p.info['pid']
+                        # We don't have start time in this case easily, but we know it's running
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+        # Get PnL from state file if it exists
+        pnl = 0.0
+        info = STRATEGIES_INFO.get(strategy_id)
+        if info:
+            state_file = info['path'] / "strategy_state.json"
+            if state_file.exists():
+                try:
+                    with open(state_file, 'r') as f:
+                        state = json.load(f)
+                        pnl = state.get('pnl', 0.0) or state.get('total_pnl', 0.0)
+                except:
+                    pass
+
+        return {
+            "id": strategy_id,
+            "is_running": is_running,
+            "pid": pid,
+            "uptime": uptime,
+            "pnl": round(pnl, 2)
+        }
+
+    def start_strategy(self, strategy_id: str):
+        """Starts a strategy live.py as a background process."""
+        if strategy_id in self.processes and self.processes[strategy_id].poll() is None:
+            raise HTTPException(status_code=400, detail="Strategy already running")
+            
+        info = STRATEGIES_INFO.get(strategy_id)
+        if not info:
+             raise HTTPException(status_code=404, detail="Strategy not found")
+             
+        live_file = info['path'] / "live.py"
+        if not live_file.exists():
+            raise HTTPException(status_code=404, detail="live.py not found")
+            
+        # Set PYTHONPATH to project root so imports work
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "c:/upstox_kotak/upstox_kotak"
+        
+        try:
+            # Run in a new process group so it doesn't die with main.py if needed
+            # On Windows, we use creationflags
+            proc = subprocess.Popen(
+                [sys.executable, str(live_file)],
+                cwd=str(info['path']),
+                env=env,
+                stdout=subprocess.DEVNULL, # Log files are handled by the strategy itself usually
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+            )
+            self.processes[strategy_id] = proc
+            self.start_times[strategy_id] = datetime.now()
+            return {"status": "success", "pid": proc.pid}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to start: {str(e)}")
+
+    def stop_strategy(self, strategy_id: str):
+        """Terminated a strategy process."""
+        # 1. Check internal tracking
+        proc = self.processes.get(strategy_id)
+        if proc:
+            try:
+                # Try graceful termination
+                p = psutil.Process(proc.pid)
+                for child in p.children(recursive=True):
+                    child.terminate()
+                p.terminate()
+                p.wait(timeout=3)
+            except:
+                if proc.poll() is None:
+                    proc.kill()
+            
+            del self.processes[strategy_id]
+            if strategy_id in self.start_times:
+                del self.start_times[strategy_id]
+            return {"status": "stopped"}
+        
+        # 2. Check psutil (for orphaned processes)
+        stopped = False
+        for p in psutil.process_iter(['pid', 'cmdline']):
+            try:
+                cmdline = p.info['cmdline']
+                if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
+                    p.terminate()
+                    stopped = True
+            except:
+                continue
+                
+        if stopped:
+            return {"status": "stopped"}
+            
+        raise HTTPException(status_code=400, detail="Strategy not running")
+
+strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
 
@@ -131,6 +286,86 @@ async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Strategy Management API ---
+
+@app.get("/api/strategies")
+async def list_strategies():
+    """Returns status of all tracked strategies."""
+    results = []
+    for strategy_id in STRATEGIES_INFO:
+        status = strategy_manager.get_strategy_status(strategy_id)
+        info = STRATEGIES_INFO[strategy_id]
+        results.append({
+            **status,
+            "name": info["name"],
+            "description": info["description"]
+        })
+    return {"strategies": results}
+
+@app.post("/api/strategies/start/{strategy_id}")
+async def start_strategy(strategy_id: str):
+    return strategy_manager.start_strategy(strategy_id)
+
+@app.post("/api/strategies/stop/{strategy_id}")
+async def stop_strategy(strategy_id: str):
+    return strategy_manager.stop_strategy(strategy_id)
+
+@app.get("/api/strategies/config/{strategy_id}")
+async def get_strategy_config(strategy_id: str):
+    """Parses config.py and returns the CONFIG dictionary."""
+    info = STRATEGIES_INFO.get(strategy_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+        
+    config_file = info['path'] / "config.py"
+    if not config_file.exists():
+        raise HTTPException(status_code=404, detail="config.py not found")
+        
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("config", str(config_file))
+        config_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config_module)
+        return {"config": config_module.CONFIG}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
+
+@app.post("/api/strategies/config/{strategy_id}")
+async def update_strategy_config(strategy_id: str, new_config: Dict):
+    """Updates specific keys in config.py using regex to preserve comments."""
+    info = STRATEGIES_INFO.get(strategy_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+        
+    config_file = info['path'] / "config.py"
+    if not config_file.exists():
+        raise HTTPException(status_code=404, detail="config.py not found")
+        
+    try:
+        content = config_file.read_text()
+        
+        for key, value in new_config.items():
+            if isinstance(value, str):
+                replacement_val = f"'{value}'"
+            elif isinstance(value, bool):
+                replacement_val = str(value)
+            else:
+                replacement_val = str(value)
+                
+            pattern = rf"(['\"]{key}['\"]\s*:\s*).*?(?=[,\s]*#|[,\s]*$|\s*,)"
+            match = re.search(pattern, content)
+            if match:
+                 content = re.sub(pattern, rf"\g<1>{replacement_val}", content)
+            else:
+                # If key not found in current content (maybe newly added or formatting different)
+                # We could append it but safer to only update existing
+                pass
+            
+        config_file.write_text(content)
+        return {"status": "success", "message": "Configuration updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
 
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
@@ -456,6 +691,11 @@ async def serve_max_pain_page():
         raise HTTPException(status_code=404, detail="max_pain.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/strategies", response_class=HTMLResponse)
+async def get_strategies_page():
+    with open("web_apps/oi_pro/strategies.html", "r") as f:
+        return f.read()
 
 @app.get("/multi-strike", response_class=HTMLResponse)
 async def serve_multi_strike_page():
