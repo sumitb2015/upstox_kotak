@@ -1087,8 +1087,15 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
         # Sort by Strike
         grid_data.sort(key=lambda x: x['strike'])
         
-        print(f"✅ [PCR API] Returning {len(grid_data)} rows")
-        return {"data": grid_data}
+        # Extract spot price from underlying_spot_price column if available
+        spot_price = 0.0
+        if 'underlying_spot_price' in df.columns:
+            spot_vals = df['underlying_spot_price'].dropna()
+            if not spot_vals.empty:
+                spot_price = float(spot_vals.iloc[0])
+        
+        print(f"✅ [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
+        return {"data": grid_data, "spot_price": spot_price}
         
     except Exception as e:
         import traceback
@@ -1767,6 +1774,7 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
                 "expiry": expiry,
                 "spot": spot,
                 "atm": atm,
+                "strikes_used": sorted(target_strikes),
                 "kpis": {
                     "net_chg": round(float(latest['net_chg']), 0),
                     "ce_chg": round(float(latest['ce_chg']), 0),

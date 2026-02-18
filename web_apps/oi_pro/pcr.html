@@ -40,48 +40,6 @@
             background-size: 1rem;
         }
 
-        /* Tooltip Logic */
-        .tooltip-container {
-            position: relative;
-        }
-
-        .tooltip-content {
-            visibility: hidden;
-            opacity: 0;
-            position: absolute;
-            bottom: 120%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: max-content;
-            min-width: 160px;
-            background: rgba(15, 23, 42, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(8px);
-            padding: 8px 12px;
-            border-radius: 8px;
-            z-index: 50;
-            transition: all 0.2s ease;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
-            pointer-events: none;
-        }
-
-        .tooltip-container:hover .tooltip-content {
-            visibility: visible;
-            opacity: 1;
-            bottom: 110%;
-        }
-
-        .tooltip-arrow {
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -6px;
-            border-width: 6px;
-            border-style: solid;
-            border-color: rgba(15, 23, 42, 0.95) transparent transparent transparent;
-        }
-
-        /* Grid Scrollbar */
         .custom-scroll::-webkit-scrollbar {
             width: 6px;
         }
@@ -98,6 +56,49 @@
         .custom-scroll::-webkit-scrollbar-thumb:hover {
             background: #475569;
         }
+
+        .insight-card {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .insight-card:hover {
+            border-color: rgba(255, 255, 255, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .view-btn {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #64748b;
+        }
+
+        .view-btn.active {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .view-btn:hover:not(.active) {
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            display: inline-block;
+        }
     </style>
 </head>
 
@@ -110,69 +111,57 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo, useCallback } = React;
 
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
+
+        // Format large numbers
+        const fmt = (num) => {
+            if (!num && num !== 0) return "0";
+            if (num >= 10000000) return (num / 10000000).toFixed(2) + 'Cr';
+            if (num >= 100000) return (num / 100000).toFixed(2) + 'L';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+            return num.toString();
+        };
+
+        const formatDate = (dateStr) => {
+            if (!dateStr) return "---";
+            const date = new Date(dateStr);
+            if (isNaN(date)) return dateStr;
+            return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
 
         function PCRAnalytics() {
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
             const [data, setData] = useState([]);
+            const [spotPrice, setSpotPrice] = useState(0);
             const [loading, setLoading] = useState(false);
-
-            // Format Date Helper
-            const formatDate = (dateStr) => {
-                if (!dateStr) return "---";
-                const date = new Date(dateStr);
-                if (isNaN(date)) return dateStr;
-                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            };
+            const [lastUpdated, setLastUpdated] = useState(null);
+            const [viewMode, setViewMode] = useState("combined"); // combined | oi | pcr
+            const [strikeRange, setStrikeRange] = useState(20); // number of strikes around ATM
 
             // Fetch Expiries
             useEffect(() => {
                 fetch(`/api/expiries?symbol=${symbol}`)
                     .then(res => res.json())
-                    .then(data => {
-                        if (data.expiries && data.expiries.length > 0) {
-                            setExpiries(data.expiries);
-                            setExpiry(data.expiries[0]);
+                    .then(d => {
+                        if (d.expiries && d.expiries.length > 0) {
+                            setExpiries(d.expiries);
+                            setExpiry(d.expiries[0]);
                         }
                     });
             }, [symbol]);
 
-            const [lastUpdated, setLastUpdated] = useState(null);
-
-            // Auto-Refresh Logic (60s)
-            useEffect(() => {
-                const interval = setInterval(() => {
-                    if (expiry) {
-                        setLoading(true);
-                        fetch(`/api/pcr-data?symbol=${symbol}&expiry=${expiry}`)
-                            .then(res => res.json())
-                            .then(res => {
-                                setData(res.data || []);
-                                setLastUpdated(new Date());
-                                setLoading(false);
-                            })
-                            .catch(err => {
-                                console.error(err);
-                                setLoading(false);
-                            });
-                    }
-                }, 60000); // 60 seconds
-
-                return () => clearInterval(interval);
-            }, [symbol, expiry]);
-
-            // Initial Fetch
-            useEffect(() => {
+            const fetchData = useCallback(() => {
                 if (!expiry) return;
                 setLoading(true);
                 fetch(`/api/pcr-data?symbol=${symbol}&expiry=${expiry}`)
                     .then(res => res.json())
                     .then(res => {
                         setData(res.data || []);
+                        setSpotPrice(res.spot_price || 0);
                         setLastUpdated(new Date());
                         setLoading(false);
                     })
@@ -182,220 +171,412 @@
                     });
             }, [symbol, expiry]);
 
-            const [minStrike, setMinStrike] = useState("");
-            const [maxStrike, setMaxStrike] = useState("");
-            const [allStrikes, setAllStrikes] = useState([]);
+            // Initial + dependency fetch
+            useEffect(() => { fetchData(); }, [fetchData]);
 
-            // Process Data & Extract Strikes
+            // Auto-refresh every 60s
             useEffect(() => {
-                if (data.length > 0) {
-                    const strikes = data.map(d => d.strike).sort((a, b) => a - b);
-                    setAllStrikes(strikes);
+                const interval = setInterval(fetchData, 60000);
+                return () => clearInterval(interval);
+            }, [fetchData]);
 
-                    // Set default range if not set (e.g., full range or ATM +/- 10)
-                    if (!minStrike) setMinStrike(strikes[0]);
-                    if (!maxStrike) setMaxStrike(strikes[strikes.length - 1]);
+            // Compute ATM strike
+            const atmStrike = useMemo(() => {
+                if (!data.length) return null;
+                if (spotPrice > 0) {
+                    return data.reduce((prev, curr) =>
+                        Math.abs(curr.strike - spotPrice) < Math.abs(prev.strike - spotPrice) ? curr : prev
+                    ).strike;
                 }
-            }, [data]);
+                // Fallback: find strike with highest total OI
+                return data.reduce((prev, curr) =>
+                    (curr.ce_oi + curr.pe_oi) > (prev.ce_oi + prev.pe_oi) ? curr : prev
+                ).strike;
+            }, [data, spotPrice]);
 
-            // Filter Data based on Range
-            const filteredData = data.filter(d => {
-                if (!minStrike || !maxStrike) return true;
-                return d.strike >= Number(minStrike) && d.strike <= Number(maxStrike);
-            });
+            // Filter data around ATM
+            const filteredData = useMemo(() => {
+                if (!data.length || !atmStrike) return data;
+                const sorted = [...data].sort((a, b) => a.strike - b.strike);
+                const atmIdx = sorted.findIndex(d => d.strike === atmStrike);
+                if (atmIdx === -1) return sorted;
+                const half = Math.floor(strikeRange / 2);
+                const start = Math.max(0, atmIdx - half);
+                const end = Math.min(sorted.length, atmIdx + half + 1);
+                return sorted.slice(start, end);
+            }, [data, atmStrike, strikeRange]);
 
-            // Render Bar Chart
+            // Insight computations
+            const insights = useMemo(() => {
+                if (!filteredData.length) return null;
+
+                // Key support: highest Put OI below ATM
+                const belowATM = filteredData.filter(d => d.strike <= (atmStrike || 0));
+                const aboveATM = filteredData.filter(d => d.strike > (atmStrike || 0));
+
+                const topSupports = [...belowATM].sort((a, b) => b.pe_oi - a.pe_oi).slice(0, 2);
+                const topResistances = [...aboveATM].sort((a, b) => b.ce_oi - a.ce_oi).slice(0, 2);
+
+                const atmData = filteredData.find(d => d.strike === atmStrike);
+                const atmPCR = atmData ? atmData.pcr : null;
+
+                // Overall bias: ratio of total put OI below ATM vs total call OI above ATM
+                const totalPutOI = belowATM.reduce((s, d) => s + d.pe_oi, 0);
+                const totalCallOI = aboveATM.reduce((s, d) => s + d.ce_oi, 0);
+                const overallPCR = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
+
+                let overallBias = "Neutral";
+                let overallColor = "#94a3b8";
+                if (overallPCR > 1.3) { overallBias = "Strongly Bullish"; overallColor = "#10b981"; }
+                else if (overallPCR > 1.0) { overallBias = "Bullish"; overallColor = "#34d399"; }
+                else if (overallPCR < 0.7) { overallBias = "Strongly Bearish"; overallColor = "#f43f5e"; }
+                else if (overallPCR < 1.0) { overallBias = "Bearish"; overallColor = "#fb7185"; }
+
+                return { topSupports, topResistances, atmPCR, overallBias, overallColor, overallPCR };
+            }, [filteredData, atmStrike]);
+
+            // Render Plotly chart
             useEffect(() => {
-                if (filteredData.length === 0) return;
+                if (!filteredData.length) return;
 
-                const trace = {
-                    x: filteredData.map(d => d.strike),
-                    y: filteredData.map(d => d.pcr),
-                    type: 'bar',
-                    marker: {
-                        color: filteredData.map(d => d.pcr >= 1 ? '#10b981' : '#f43f5e') // Green/Red
-                    },
-                    text: filteredData.map(d => d.pcr.toFixed(2)),
-                    textposition: 'auto',
-                    hoverinfo: 'x+y+text',
-                };
+                const strikes = filteredData.map(d => d.strike);
+                const putOI = filteredData.map(d => d.pe_oi);
+                const callOI = filteredData.map(d => d.ce_oi);
+                const pcr = filteredData.map(d => Math.min(d.pcr, 8)); // cap for display
+
+                // Color logic: below ATM → put OI bright, call OI faded; above ATM → call OI bright, put OI faded
+                const putColors = filteredData.map(d =>
+                    d.strike <= (atmStrike || 0)
+                        ? 'rgba(16,185,129,0.85)'   // bright green below spot
+                        : 'rgba(16,185,129,0.2)'    // faded above spot
+                );
+                const callColors = filteredData.map(d =>
+                    d.strike > (atmStrike || 0)
+                        ? 'rgba(244,63,94,0.85)'    // bright red above spot
+                        : 'rgba(244,63,94,0.2)'     // faded below spot
+                );
+
+                const traces = [];
+
+                if (viewMode === 'combined' || viewMode === 'oi') {
+                    traces.push({
+                        name: 'Put OI (support)',
+                        x: strikes,
+                        y: putOI,
+                        type: 'bar',
+                        marker: { color: putColors, line: { width: 0 } },
+                        hovertemplate: '<b>Strike %{x}</b><br>Put OI: %{customdata}<extra></extra>',
+                        customdata: putOI.map(fmt),
+                        yaxis: 'y',
+                    });
+                    traces.push({
+                        name: 'Call OI (resistance)',
+                        x: strikes,
+                        y: callOI,
+                        type: 'bar',
+                        marker: { color: callColors, line: { width: 0 } },
+                        hovertemplate: '<b>Strike %{x}</b><br>Call OI: %{customdata}<extra></extra>',
+                        customdata: callOI.map(fmt),
+                        yaxis: 'y',
+                    });
+                }
+
+                if (viewMode === 'combined' || viewMode === 'pcr') {
+                    traces.push({
+                        name: 'PCR Line (right axis)',
+                        x: strikes,
+                        y: pcr,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        line: { color: '#38bdf8', width: 2.5, shape: 'spline' },
+                        marker: { color: filteredData.map(d => d.pcr >= 1 ? '#10b981' : '#f43f5e'), size: 7, line: { color: '#030712', width: 1.5 } },
+                        hovertemplate: '<b>Strike %{x}</b><br>PCR: %{y:.2f}<extra></extra>',
+                        yaxis: 'y2',
+                    });
+                }
+
+
+
+                // PCR = 1 reference line
+                if (viewMode === 'combined' || viewMode === 'pcr') {
+                    traces.push({
+                        name: 'PCR = 1 (neutral)',
+                        x: [strikes[0], strikes[strikes.length - 1]],
+                        y: [1, 1],
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: 'rgba(255,255,255,0.15)', width: 1.5, dash: 'dot' },
+                        yaxis: 'y2',
+                        showlegend: false,
+                        hoverinfo: 'skip',
+                    });
+                }
+
+                const maxOI = Math.max(...putOI, ...callOI);
+                const yRange = [0, maxOI * 1.25];
 
                 const layout = {
-                    title: { text: 'PCR vs Strike Distribution', font: { color: '#fff' } },
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
+                    barmode: 'group',
+                    bargap: 0.2,
+                    bargroupgap: 0.05,
+                    margin: { t: 20, b: 50, l: 70, r: 70 },
+                    hovermode: 'x unified',
+                    hoverlabel: {
+                        bgcolor: '#0f172a',
+                        bordercolor: '#334155',
+                        font: { color: '#e2e8f0', family: 'Inter', size: 12 }
+                    },
+                    legend: {
+                        orientation: 'h',
+                        x: 0, y: 1.06,
+                        font: { color: '#94a3b8', size: 11 },
+                        bgcolor: 'rgba(0,0,0,0)',
+                    },
                     xaxis: {
-                        title: { text: 'Strike Price', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
+                        tickfont: { color: '#64748b', size: 11 },
+                        gridcolor: 'rgba(51,65,85,0.4)',
+                        zeroline: false,
+                        tickformat: ',d',
+                        showgrid: true,
                     },
                     yaxis: {
-                        title: { text: 'PCR Value (Log Scale)', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155',
-                        zerolinecolor: '#fff',
-                        type: 'log',
-                        autorange: true
+                        title: { text: 'Open Interest', font: { color: '#64748b', size: 11 } },
+                        tickfont: { color: '#64748b', size: 10 },
+                        gridcolor: 'rgba(51,65,85,0.3)',
+                        zeroline: true,
+                        zerolinecolor: 'rgba(255,255,255,0.1)',
+                        range: yRange,
+                        tickformat: '.2s',
+                        visible: viewMode !== 'pcr',
                     },
-                    margin: { t: 40, b: 40, l: 50, r: 20 },
-                    hovermode: 'closest',
-                    dragmode: 'zoom'
+                    yaxis2: {
+                        title: { text: 'PCR', font: { color: '#38bdf8', size: 11 } },
+                        tickfont: { color: '#38bdf8', size: 10 },
+                        overlaying: 'y',
+                        side: 'right',
+                        gridcolor: 'rgba(0,0,0,0)',
+                        zeroline: false,
+                        range: [0, 8],
+                        visible: viewMode !== 'oi',
+                    },
+                    shapes: spotPrice > 0 ? [{
+                        type: 'line',
+                        x0: spotPrice, x1: spotPrice,
+                        y0: 0, y1: 1,
+                        yref: 'paper',
+                        line: { color: '#f59e0b', width: 2, dash: 'dash' },
+                    }] : [],
+                    annotations: spotPrice > 0 ? [{
+                        x: spotPrice,
+                        y: 1,
+                        yref: 'paper',
+                        text: `SPOT<br>${spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 0 })}`,
+                        showarrow: false,
+                        font: { color: '#f59e0b', size: 10, family: 'Inter' },
+                        bgcolor: 'rgba(245,158,11,0.15)',
+                        bordercolor: '#f59e0b',
+                        borderwidth: 1,
+                        borderpad: 4,
+                        xanchor: 'center',
+                    }] : [],
                 };
 
-                Plotly.newPlot('pcr-chart', [trace], layout, { responsive: true, displayModeBar: false });
+                Plotly.react('pcr-chart', traces, layout, {
+                    responsive: true,
+                    displayModeBar: false,
+                    scrollZoom: true,
+                });
 
-            }, [filteredData]);
+            }, [filteredData, viewMode, spotPrice, atmStrike]);
 
-            // Number Formatter
-            const formatNumber = (num) => {
-                if (!num) return "0";
-                if (num >= 10000000) return (num / 10000000).toFixed(2) + 'Cr';
-                if (num >= 100000) return (num / 100000).toFixed(2) + 'L';
-                if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
-                return num.toString();
-            };
+            const atmPCRSentiment = insights?.atmPCR
+                ? insights.atmPCR >= 1.5 ? "Strongly bullish sentiment"
+                    : insights.atmPCR >= 1.0 ? "Slightly bullish sentiment"
+                        : insights.atmPCR >= 0.7 ? "Slightly bearish sentiment"
+                            : "Strongly bearish sentiment"
+                : "—";
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30">
-                    {/* Unified Sidebar Navigation */}
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased">
+                    {/* Sidebar */}
                     <nav className="fixed left-0 top-0 h-full w-20 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-10 gap-8 z-50">
-                        <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Dashboard">
+                        <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="Dashboard">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                         </a>
-
-                        <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PoP Analysis">
+                        <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="PoP Analysis">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                         </a>
-
                         <a href="/pcr" className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform hover:scale-105" title="PCR By Strike">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
                         </a>
-
-                        <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
+                        <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="ATM Straddle Analysis">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
                         </a>
-
-                        <a href="/option-chain" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Option Chain">
+                        <a href="/option-chain" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="Option Chain">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                         </a>
-
-                        <a href="/cumulative" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Cumulative OI Analysis">
+                        <a href="/cumulative" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="Cumulative OI Analysis">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
                         </a>
-                        <a href="/strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strike Analytics">
+                        <a href="/strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="Strike Analytics">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2" /></svg>
                         </a>
-                        <a href="/greeks" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Greeks Exposure">
+                        <a href="/greeks" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="Greeks Exposure">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
                         </a>
-                        <a href="/strategies" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strategy Command Center">
+                        <a href="/strategies" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105" title="Strategy Command Center">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
                         </a>
                     </nav>
 
-                    <main className="pl-24 pr-8 py-8 max-w-[1600px] mx-auto">
+                    <main className="pl-24 pr-6 py-6 max-w-[1700px] mx-auto">
                         {/* Header */}
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                             <div>
-                                <h1 className="text-3xl font-black text-white tracking-tight">PCR by Strike</h1>
-                                <p className="text-slate-500 font-medium flex items-center gap-2">
-                                    Contrarian Sentiment Analysis
+                                <h1 className="text-2xl font-black text-white tracking-tight">PCR by Strike</h1>
+                                <p className="text-slate-500 text-sm font-medium flex items-center gap-2 mt-0.5">
+                                    <span className="text-slate-400">{symbol}</span>
+                                    <span className="text-slate-700">·</span>
+                                    <span>Expiry: <span className="text-slate-300">{formatDate(expiry)}</span></span>
+                                    {spotPrice > 0 && <>
+                                        <span className="text-slate-700">·</span>
+                                        <span>Spot: <span className="text-amber-400 font-bold">{spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span></span>
+                                    </>}
                                     {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
-                                            Updated: {lastUpdated.toLocaleTimeString()}
+                                        <span className="text-xs bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full border border-slate-700/50">
+                                            {lastUpdated.toLocaleTimeString()}
                                         </span>
                                     )}
                                 </p>
                             </div>
 
-                            <div className="flex gap-4 items-center">
-                                {/* Strike Range Filters */}
-                                <div className="flex items-center gap-2 bg-[#0b0f1a] p-1 rounded-xl border border-slate-800/50">
-                                    <select
-                                        value={minStrike}
-                                        onChange={e => setMinStrike(e.target.value)}
-                                        className="bg-transparent text-slate-300 text-sm font-bold outline-none px-2 py-1 appearance-none cursor-pointer hover:text-white"
-                                        title="Min Strike"
-                                    >
-                                        {allStrikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
-                                    </select>
-                                    <span className="text-slate-600">-</span>
-                                    <select
-                                        value={maxStrike}
-                                        onChange={e => setMaxStrike(e.target.value)}
-                                        className="bg-transparent text-slate-300 text-sm font-bold outline-none px-2 py-1 appearance-none cursor-pointer hover:text-white"
-                                        title="Max Strike"
-                                    >
-                                        {allStrikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
-                                    </select>
+                            <div className="flex items-center gap-3 flex-wrap">
+                                {/* View Mode Toggle */}
+                                <div className="flex items-center gap-1 bg-slate-900/80 border border-white/5 rounded-lg p-1">
+                                    {[
+                                        { id: 'combined', label: 'Combined' },
+                                        { id: 'oi', label: 'OI View' },
+                                        { id: 'pcr', label: 'PCR Only' },
+                                    ].map(v => (
+                                        <button key={v.id} className={`view-btn ${viewMode === v.id ? 'active' : ''}`} onClick={() => setViewMode(v.id)}>
+                                            {v.label}
+                                        </button>
+                                    ))}
                                 </div>
 
-                                <select
-                                    value={symbol}
-                                    onChange={e => setSymbol(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
-                                >
+                                {/* Strike Range */}
+                                <div className="flex items-center gap-1 bg-slate-900/80 border border-white/5 rounded-lg p-1">
+                                    {[10, 20, 30, 'All'].map(r => (
+                                        <button key={r} className={`view-btn ${strikeRange === r ? 'active' : ''}`} onClick={() => setStrikeRange(r === 'All' ? 9999 : r)}>
+                                            {r}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Symbol */}
+                                <select value={symbol} onChange={e => setSymbol(e.target.value)}
+                                    className="glass px-3 py-1.5 rounded-lg text-white text-sm font-bold outline-none pr-8">
                                     {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                 </select>
 
-                                <select
-                                    value={expiry}
-                                    onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
-                                >
+                                {/* Expiry */}
+                                <select value={expiry} onChange={e => setExpiry(e.target.value)}
+                                    className="glass px-3 py-1.5 rounded-lg text-white text-sm font-bold outline-none pr-8">
                                     {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
                                 </select>
+
+                                {/* Refresh */}
+                                <button onClick={fetchData} disabled={loading}
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-white/5 active:scale-95 disabled:opacity-50">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loading ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
+                                </button>
                             </div>
                         </div>
 
-                        {/* Chart Container */}
-                        <div className="glass p-4 rounded-2xl mb-8 relative">
-                            {loading && !data.length && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 rounded-2xl">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
-                                </div>
-                            )}
-                            <div id="pcr-chart" className="w-full h-[600px]"></div>
+                        {/* Legend */}
+                        <div className="flex items-center gap-5 mb-3 text-xs text-slate-400 flex-wrap">
+                            <span className="flex items-center gap-1.5"><span className="legend-dot" style={{ background: 'rgba(16,185,129,0.85)' }}></span> Put OI (support)</span>
+                            <span className="flex items-center gap-1.5"><span className="legend-dot" style={{ background: 'rgba(244,63,94,0.85)' }}></span> Call OI (resistance)</span>
+                            <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 inline-block" style={{ background: '#38bdf8' }}></span> PCR Line (right axis)</span>
+                            <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 inline-block border-t-2 border-dashed border-amber-400"></span> Spot Price</span>
                         </div>
 
-                        {/* Grid Area */}
-                        {loading && (
-                            <div className="w-full h-96 flex items-center justify-center">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+                        {/* Chart */}
+                        <div className="glass rounded-2xl p-4 mb-5 relative">
+                            {loading && !data.length && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm z-10 rounded-2xl">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500"></div>
+                                </div>
+                            )}
+                            <div id="pcr-chart" className="w-full" style={{ height: '500px' }}></div>
+                        </div>
+
+                        {/* Insight Cards */}
+                        {insights && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                {/* Key Support */}
+                                <div className="insight-card">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Key Support (High Put OI)</div>
+                                    <div className="text-emerald-400 font-black text-lg leading-tight">
+                                        {insights.topSupports.map(s => s.strike.toLocaleString('en-IN')).join(' / ') || '—'}
+                                    </div>
+                                    <div className="text-slate-500 text-xs mt-1">Heavy put writing = strong floor</div>
+                                </div>
+
+                                {/* Key Resistance */}
+                                <div className="insight-card">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Key Resistance (High Call OI)</div>
+                                    <div className="text-rose-400 font-black text-lg leading-tight">
+                                        {insights.topResistances.map(s => s.strike.toLocaleString('en-IN')).join(' / ') || '—'}
+                                    </div>
+                                    <div className="text-slate-500 text-xs mt-1">Heavy call writing = ceiling</div>
+                                </div>
+
+                                {/* PCR at Spot */}
+                                <div className="insight-card">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">
+                                        PCR at Spot ({spotPrice > 0 ? spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 0 }) : atmStrike})
+                                    </div>
+                                    <div className={`font-black text-2xl ${insights.atmPCR >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {insights.atmPCR?.toFixed(2) || '—'}
+                                    </div>
+                                    <div className="text-slate-500 text-xs mt-1">{atmPCRSentiment}</div>
+                                </div>
+
+                                {/* Overall Bias */}
+                                <div className="insight-card">
+                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Overall Bias</div>
+                                    <div className="font-black text-lg" style={{ color: insights.overallColor }}>{insights.overallBias}</div>
+                                    <div className="text-slate-500 text-xs mt-1">
+                                        {insights.overallPCR >= 1
+                                            ? 'Put-heavy OTM below = strong support'
+                                            : 'Call-heavy OTM above = strong resistance'}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
+                        {/* Strike Grid */}
                         {!loading && filteredData.length > 0 && (
-                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                            <div className="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
                                 {filteredData.map((item) => (
-                                    <div key={item.strike} className={`tooltip-container glass hover:border-slate-500 p-4 rounded-xl flex flex-col items-center justify-center gap-2 transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-500/10 ${item.pcr >= 1 ? 'border-b-4 border-b-emerald-500' : 'border-b-4 border-b-rose-500'}`}>
-
-                                        {/* Strike */}
-                                        <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">Strike</span>
-                                        <span className="text-white text-lg font-black">{item.strike}</span>
-
-                                        {/* PCR Value */}
-                                        <div className={`text-2xl font-black ${item.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    <div key={item.strike}
+                                        className={`glass hover:border-slate-500 p-3 rounded-xl flex flex-col items-center gap-1 transition-all hover:-translate-y-0.5 cursor-default
+                                            ${item.strike === atmStrike ? 'border border-amber-500/40 bg-amber-500/5' : ''}
+                                            ${item.pcr >= 1 ? 'border-b-2 border-b-emerald-500/60' : 'border-b-2 border-b-rose-500/60'}`}
+                                    >
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${item.strike === atmStrike ? 'text-amber-400' : 'text-slate-500'}`}>
+                                            {item.strike === atmStrike ? '★ ATM' : 'Strike'}
+                                        </span>
+                                        <span className="text-white text-sm font-black">{item.strike.toLocaleString('en-IN')}</span>
+                                        <div className={`text-base font-black ${item.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             {item.pcr.toFixed(2)}
                                         </div>
-
-                                        {/* Sentiment Label */}
-                                        <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest ${item.pcr >= 1 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                                            {item.sentiment}
-                                        </div>
-
-                                        {/* Tooltip */}
-                                        <div className="tooltip-content z-50">
-                                            <div className="font-bold text-slate-200 mb-1 border-b border-slate-700 pb-1 text-sm">{item.desc}</div>
-                                            <div className="flex justify-between gap-4 text-xs">
-                                                <span className="text-emerald-400">Put OI:</span>
-                                                <span className="font-mono text-white">{formatNumber(item.pe_oi)}</span>
-                                            </div>
-                                            <div className="flex justify-between gap-4 text-xs">
-                                                <span className="text-rose-400">Call OI:</span>
-                                                <span className="font-mono text-white">{formatNumber(item.ce_oi)}</span>
-                                            </div>
-                                            <div className="tooltip-arrow"></div>
+                                        <div className="w-full flex justify-between text-[9px] text-slate-600 mt-0.5">
+                                            <span className="text-emerald-600">P:{fmt(item.pe_oi)}</span>
+                                            <span className="text-rose-600">C:{fmt(item.ce_oi)}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -403,7 +584,7 @@
                         )}
 
                         {!loading && data.length === 0 && (
-                            <div className="w-full h-96 flex items-center justify-center text-slate-500">
+                            <div className="w-full h-64 flex items-center justify-center text-slate-500">
                                 No data available for this expiry.
                             </div>
                         )}

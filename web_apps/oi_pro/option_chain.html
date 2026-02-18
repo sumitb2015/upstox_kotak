@@ -121,21 +121,6 @@
                 }
             }, [selectedExpiry, symbol, refreshInterval]);
 
-            const [headerHeight, setHeaderHeight] = useState(0);
-            const headerRef = React.useRef(null);
-
-            // Measure Header Height
-            useEffect(() => {
-                if (headerRef.current) {
-                    setHeaderHeight(headerRef.current.offsetHeight);
-                    console.log("Header Height:", headerRef.current.offsetHeight);
-                }
-                const handleResize = () => {
-                    if (headerRef.current) setHeaderHeight(headerRef.current.offsetHeight);
-                };
-                window.addEventListener('resize', handleResize);
-                return () => window.removeEventListener('resize', handleResize);
-            }, []);
 
             // Process Data: Group, Sort, Identify ATM, Filter by Range
             const { visibleData, atmStrike } = useMemo(() => {
@@ -254,34 +239,34 @@
                         </a>
                     </nav>
 
-                    <div className="flex-1 pl-20 overflow-x-hidden">
-                        {/* Header */}
-                        <div ref={headerRef} className="sticky top-0 z-[60] bg-[#030712] border-b border-white/5 px-6 py-4 shadow-xl">
-                            <div className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-[1400px] mx-auto">
-                                <div className="flex items-center gap-4">
-                                    <h1 className="text-xl font-black tracking-tighter bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                    <div className="flex-1 pl-20 flex flex-col overflow-hidden" style={{ height: '100vh' }}>
+                        {/* Header - fixed height compact bar */}
+                        <div className="flex-shrink-0 z-[60] bg-[#030712] border-b border-white/5 px-4 py-2 shadow-xl">
+                            <div className="flex flex-row justify-between items-center gap-2 max-w-[1600px] mx-auto">
+                                <div className="flex items-center gap-3">
+                                    <h1 className="text-lg font-black tracking-tighter bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
                                         OPTION CHAIN
                                     </h1>
-                                    <div className="h-6 w-px bg-white/10 mx-2"></div>
-                                    <div className="flex bg-slate-900/50 p-1 rounded-lg border border-white/5">
+                                    <div className="h-5 w-px bg-white/10 mx-1"></div>
+                                    <div className="flex bg-slate-900/50 p-0.5 rounded-lg border border-white/5">
                                         {["NIFTY", "BANKNIFTY", "FINNIFTY"].map(s => (
                                             <button
                                                 key={s}
                                                 onClick={() => setSymbol(s)}
-                                                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${symbol === s ? 'bg-slate-800 text-white shadow-lg shadow-black/50' : 'text-slate-500 hover:text-slate-300'}`}
+                                                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${symbol === s ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
                                             >
                                                 {s}
                                             </button>
                                         ))}
                                     </div>
-                                    <div className="h-6 w-px bg-white/10 mx-2"></div>
+                                    <div className="h-5 w-px bg-white/10 mx-1"></div>
                                     {/* Range Selector */}
-                                    <div className="flex bg-slate-900/50 p-1 rounded-lg border border-white/5">
+                                    <div className="flex bg-slate-900/50 p-0.5 rounded-lg border border-white/5">
                                         {[10, 20, 30, "Full"].map(r => (
                                             <button
                                                 key={r}
                                                 onClick={() => setStrikeRange(r)}
-                                                className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${strikeRange === r ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-500 hover:text-slate-300'}`}
+                                                className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${strikeRange === r ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-500 hover:text-slate-300'}`}
                                             >
                                                 {r}
                                             </button>
@@ -289,21 +274,21 @@
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-6">
-                                    <div className="flex flex-col items-end">
-                                        <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Spot Price</span>
-                                        <span className="text-2xl font-black font-mono tracking-tight text-white">
+                                <div className="flex items-center gap-4">
+                                    <div className="flex flex-col items-end leading-tight">
+                                        <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Spot Price</span>
+                                        <span className="text-xl font-black font-mono tracking-tight text-white">
                                             {spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
-                                    <div className="h-8 w-px bg-white/10"></div>
+                                    <div className="h-6 w-px bg-white/10"></div>
 
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Expiry</label>
+                                    <div className="flex flex-col gap-0.5">
+                                        <label className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Expiry</label>
                                         <select
                                             value={selectedExpiry}
                                             onChange={(e) => setSelectedExpiry(e.target.value)}
-                                            className="bg-slate-900 border border-white/10 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-emerald-500 text-white"
+                                            className="bg-slate-900 border border-white/10 text-xs rounded-md px-2 py-0.5 focus:outline-none focus:border-emerald-500 text-white"
                                         >
                                             {expiryList.map(exp => (
                                                 <option key={exp} value={exp}>{formatDate(exp)}</option>
@@ -311,12 +296,12 @@
                                         </select>
                                     </div>
 
-                                    <div className="flex flex-col gap-1">
-                                        <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Refresh</label>
+                                    <div className="flex flex-col gap-0.5">
+                                        <label className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Refresh</label>
                                         <select
                                             value={refreshInterval}
                                             onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                                            className="bg-slate-900 border border-white/10 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-emerald-500 text-white w-24"
+                                            className="bg-slate-900 border border-white/10 text-xs rounded-md px-2 py-0.5 focus:outline-none focus:border-emerald-500 text-white w-20"
                                         >
                                             <option value={0}>Manual</option>
                                             <option value={1000}>1s</option>
@@ -331,44 +316,44 @@
                                     <button
                                         onClick={fetchData}
                                         disabled={loading}
-                                        className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-white/5 active:scale-95 disabled:opacity-50"
+                                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-md transition-all border border-white/5 active:scale-95 disabled:opacity-50"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loading ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Table Container */}
-                        <div className="px-4 max-w-[1700px] mx-auto overflow-x-auto">
+                        {/* Table Container - scrolls independently */}
+                        <div className="flex-1 overflow-auto px-4 custom-scrollbar">
                             <div className="rounded-2xl border border-white/5 bg-[#0f172a] shadow-2xl overflow-hidden glass">
                                 <table className="w-full text-center border-collapse">
                                     <thead className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
                                         <tr className="bg-[#0f172a] shadow-lg z-40">
                                             {/* CALLS HEADER */}
-                                            <th style={{ top: `${headerHeight}px` }} colSpan="7" className="py-3 border-b border-white/5 bg-[#0f172a] text-emerald-400 tracking-widest sticky z-40">CALLS (CE)</th>
-                                            <th style={{ top: `${headerHeight}px` }} rowSpan="2" className="py-3 px-4 border-b border-white/5 bg-[#0f172a] text-white sticky-col z-50 shadow-xl border-x border-slate-800 sticky">STRIKE</th>
+                                            <th style={{ top: 0 }} colSpan="7" className="py-2 border-b border-white/5 bg-[#0f172a] text-emerald-400 tracking-widest sticky z-40">CALLS (CE)</th>
+                                            <th style={{ top: 0 }} rowSpan="2" className="py-2 px-4 border-b border-white/5 bg-[#0f172a] text-white sticky-col z-50 shadow-xl border-x border-slate-800 sticky">STRIKE</th>
                                             {/* PUTS HEADER */}
-                                            <th style={{ top: `${headerHeight}px` }} colSpan="7" className="py-3 border-b border-white/5 bg-[#0f172a] text-rose-400 tracking-widest sticky z-40">PUTS (PE)</th>
+                                            <th style={{ top: 0 }} colSpan="7" className="py-2 border-b border-white/5 bg-[#0f172a] text-rose-400 tracking-widest sticky z-40">PUTS (PE)</th>
                                         </tr>
                                         <tr className="bg-[#0f172a] shadow-md z-30">
                                             {/* CE Columns */}
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">Trend</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">OI</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">OI %</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">Chg OI</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">IV</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">LTP %</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30">LTP</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">Trend</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">OI</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">OI %</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">Chg OI</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">IV</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">LTP %</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30">LTP</th>
 
                                             {/* PE Columns */}
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">LTP</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">LTP %</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">IV</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">Chg OI</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">OI %</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">OI</th>
-                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">Trend</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">LTP</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">LTP %</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">IV</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">Chg OI</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">OI %</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">OI</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">Trend</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-xs font-medium divide-y divide-white/5">

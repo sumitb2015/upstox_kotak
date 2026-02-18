@@ -63,6 +63,8 @@
             const [loading, setLoading] = useState(false);
             const [kpis, setKpis] = useState({});
             const [metadata, setMetadata] = useState({});
+            const [strikesUsed, setStrikesUsed] = useState([]);
+            const [atmStrike, setAtmStrike] = useState(null);
 
             // Format Date Helper
             const formatDate = (dateStr) => {
@@ -101,6 +103,8 @@
                         setData(result.data);
                         setKpis(result.metadata.kpis);
                         setMetadata(result.metadata);
+                        setStrikesUsed(result.metadata.strikes_used || []);
+                        setAtmStrike(result.metadata.atm || null);
                     }
                 } catch (err) {
                     console.error("Cumulative OI fetch failed", err);
@@ -351,6 +355,36 @@
                                 <div className="mt-1 text-[8px] text-emerald-500/50 font-bold uppercase tracking-widest">Support Basis</div>
                             </div>
                         </div>
+
+                        {/* Strike Pills */}
+                        {strikesUsed.length > 0 && (
+                            <div className="mb-5 glass rounded-2xl px-4 py-3 flex flex-wrap items-center gap-2">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 mr-1">Strikes Included:</span>
+                                {strikesUsed.map(strike => {
+                                    const isAtm = strike === atmStrike;
+                                    const isBelow = strike < atmStrike;
+                                    const isAbove = strike > atmStrike;
+                                    let pillClass = "px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all ";
+                                    if (isAtm) {
+                                        pillClass += "bg-amber-500/15 border-amber-500/40 text-amber-400";
+                                    } else if (isBelow) {
+                                        pillClass += "bg-emerald-500/10 border-emerald-500/20 text-emerald-400/80";
+                                    } else {
+                                        pillClass += "bg-rose-500/10 border-rose-500/20 text-rose-400/80";
+                                    }
+                                    return (
+                                        <span key={strike} className={pillClass}>
+                                            {isAtm && <span className="mr-1 text-amber-300">★</span>}
+                                            {strike.toLocaleString('en-IN')}
+                                        </span>
+                                    );
+                                })}
+                                <span className="ml-auto text-[9px] text-slate-600 font-bold">
+                                    ATM: <span className="text-amber-400">{atmStrike?.toLocaleString('en-IN')}</span>
+                                    {metadata.spot && <> · Spot: <span className="text-slate-400">{metadata.spot?.toLocaleString('en-IN', { minimumFractionDigits: 1 })}</span></>}
+                                </span>
+                            </div>
+                        )}
 
                         {/* Charts Section */}
                         <div className="space-y-6">
