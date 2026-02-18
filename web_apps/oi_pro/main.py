@@ -1396,6 +1396,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                 "target_strike": target_strike,
                 "ce_key": ce_key,
                 "pe_key": pe_key,
+                "index_key": key,
                 "all_strikes": all_strikes,
                 "spot": spot,
                 "kpis": {
