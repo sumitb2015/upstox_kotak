@@ -103,10 +103,56 @@
             // Maintain refs for WebSocket closure
             useEffect(() => {
                 selectedLegsRef.current = selectedLegs;
-                // Reset VWAP when legs change to avoid stale scaling
-                totalSumRef.current = 0;
-                countRef.current = 0;
+
+                // If legs exist, fetch history. If empty, clear chart.
+                if (selectedLegs.length > 0) {
+                    fetchHistoricalData(selectedLegs);
+                } else {
+                    setChartData([]);
+                    totalSumRef.current = 0;
+                    countRef.current = 0;
+                }
             }, [selectedLegs]);
+
+            const fetchHistoricalData = async (legs) => {
+                setLoading(true);
+                try {
+                    const payload = legs.map(l => ({
+                        instrument_key: l.instrumentKey,
+                        direction: l.direction
+                    }));
+
+                    const res = await fetch('/api/multi-strike-history', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await res.json();
+
+                    if (result.status === "success" && result.data.length > 0) {
+                        setChartData(result.data);
+
+                        // Sync VWAP state so next tick continues smoothly
+                        const lastPoint = result.data[result.data.length - 1];
+                        countRef.current = result.data.length;
+                        totalSumRef.current = lastPoint.vwap * result.data.length;
+
+                        // Also update current combined premium display if we have data
+                        setTotalPremium(lastPoint.premium);
+                        setVwapValue(lastPoint.vwap);
+                    } else {
+                        // No history (maybe market just opened or error), start fresh
+                        setChartData([]);
+                        totalSumRef.current = 0;
+                        countRef.current = 0;
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch history", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
 
             useEffect(() => {
                 pricesRef.current = prices;
@@ -255,28 +301,21 @@
                             return newPrices;
                         });
 
-                        // Calculate combined premium using the most recent data
+                        // Calculate combined premium — raw sum of prices (matches broker chart)
+                        // Direction (BUY/SELL) affects PnL but NOT the chart display
                         const legs = selectedLegsRef.current;
                         let combined = 0;
-
-                        // Use ref for calculation to avoid stale state in closure
                         const currentPrices = pricesRef.current;
-
                         legs.forEach(leg => {
                             const price = currentPrices[leg.instrumentKey] || leg.price || 0;
-                            const multiplier = leg.direction === 'BUY' ? 1 : -1;
-                            combined += price * multiplier;
+                            combined += price;  // raw sum, no direction multiplier
                         });
 
                         setTotalPremium(combined);
 
-                        // Calculate VWAP (Running Average)
-                        totalSumRef.current += combined;
-                        countRef.current += 1;
-                        const vwap = totalSumRef.current / countRef.current;
-                        setVwapValue(vwap);
-
-                        updateChart(combined, vwap, msg.timestamp || Date.now());
+                        // VWAP: do NOT accumulate on every tick (causes drift).
+                        // updateChart handles VWAP per-minute. Just pass current combined.
+                        updateChart(combined);
 
                     } catch (e) {
                         console.error("WS Message Error", e);
@@ -292,22 +331,33 @@
                 };
             }, [selectedLegs.map(l => l.instrumentKey).join(',')]);
 
-            const updateChart = (price, vwap, timestamp) => {
+            const updateChart = (price) => {
                 setChartData(prevData => {
                     const newData = [...prevData];
-                    const time = new Date(timestamp);
-                    const formattedTime = time.getHours().toString().padStart(2, '0') + ":" +
-                        time.getMinutes().toString().padStart(2, '0') + ":" +
-                        time.getSeconds().toString().padStart(2, '0');
+                    const now = Date.now();
+                    const currentMinute = new Date(now).getMinutes();
 
-                    newData.push({
-                        timestamp: formattedTime,
-                        premium: price,
-                        vwap: vwap
-                    });
+                    if (newData.length > 0) {
+                        const lastPoint = newData[newData.length - 1];
+                        const lastMinute = new Date(lastPoint.timestamp).getMinutes();
 
-                    // Keep last 100 points for performance
-                    if (newData.length > 100) newData.shift();
+                        if (currentMinute === lastMinute) {
+                            // Same minute — update premium only, VWAP stays stable
+                            lastPoint.premium = price;
+                            // Update VWAP display from last point (stable)
+                            setVwapValue(lastPoint.vwap);
+                            return newData;
+                        }
+                    }
+
+                    // New minute — compute new VWAP from running sum of minute prices
+                    totalSumRef.current += price;
+                    countRef.current += 1;
+                    const newVwap = totalSumRef.current / countRef.current;
+                    setVwapValue(newVwap);
+
+                    newData.push({ timestamp: now, premium: price, vwap: newVwap });
+                    if (newData.length > 200) newData.shift();
                     return newData;
                 });
             };
@@ -326,19 +376,19 @@
                 const premiumTrace = {
                     x: times,
                     y: premiums,
-                    name: 'Premium',
+                    name: 'Combined Premium', // Changed from 'Premium'
                     type: 'scatter',
                     mode: 'lines',
-                    line: { color: '#10b981', width: 3 }
+                    line: { color: '#fbbf24', width: 3 } // Amber
                 };
 
                 const vwapTrace = {
                     x: times,
                     y: vwap,
-                    name: 'VWAP',
+                    name: 'Straddle VWAP', // Changed from 'VWAP'
                     type: 'scatter',
                     mode: 'lines',
-                    line: { color: '#fbbf24', width: 2, dash: 'dot' }
+                    line: { color: '#ef4444', width: 2, dash: 'dot' } // Red, dashed
                 };
 
                 const layout = {
@@ -346,21 +396,21 @@
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
                     legend: { font: { color: '#94a3b8', size: 12 }, orientation: 'h', y: -0.2 },
-                    margin: { t: 20, b: 40, l: 60, r: 20 },
+                    margin: { t: 20, b: 60, l: 60, r: 20 },
                     font: { family: 'Inter', color: '#64748b' },
                     xaxis: {
                         gridcolor: '#1e293b',
                         zerolinecolor: '#334155',
-                        tickfont: { color: '#94a3b8', size: 10 },
-                        type: 'date',
-                        tickformat: '%H:%M:%S'
+                        tickfont: { color: '#94a3b8', size: 10 }
+                        // No type:'date' — Plotly auto-detects ISO strings and formats correctly
                     },
                     yaxis: {
-                        title: 'Premium (₹)',
+                        title: 'Total Premium (₹)', // Changed from 'Premium (₹)'
                         gridcolor: '#1e293b',
                         zerolinecolor: '#334155',
                         tickfont: { color: '#94a3b8' },
-                        autorange: true
+                        autorange: true,
+                        rangemode: 'normal'
                     },
                     hovermode: 'x unified',
                     hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
@@ -384,6 +434,11 @@
                         <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
                         </a>
+
+                        <a href="/option-chain" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Option Chain">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                        </a>
+
                         <a href="/cumulative" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Cumulative OI Analysis">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
                         </a>

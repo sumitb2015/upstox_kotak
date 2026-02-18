@@ -1,8 +1,10 @@
 import sys
 import os
+import time
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 import uvicorn
 import json
@@ -17,6 +19,7 @@ import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr, calculate_max_pain
+from lib.api.market_data import get_full_option_chain, fetch_historical_data
 from lib.utils.instrument_utils import get_option_instrument_key
 from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
@@ -36,10 +39,16 @@ SYMBOL_MAP = {
 # Reverse map for broadcasting
 KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
 
+# Lookup for fetching LTP by symbol (Dynamic)
+TRADING_SYMBOL_LOOKUP = {}
+
 # --- Global Cache for Greeks History ---
 # Structure: {(symbol, expiry): pd.DataFrame}
 # Columns: [timestamp, strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi, ...]
 GREEKS_HISTORY_CACHE: Dict[tuple, pd.DataFrame] = {}
+
+# --- Global Cache for Previous Closes (Indices) ---
+PREV_CLOSES: Dict[str, float] = {}
 
 # --- Strategy Management ---
 
@@ -64,58 +73,108 @@ class StrategyManager:
     def __init__(self):
         self.processes: Dict[str, subprocess.Popen] = {}
         self.start_times: Dict[str, datetime] = {}
+        self.log_files: Dict[str, object] = {}
         
+    def _check_is_running(self, strategy_id: str) -> bool:
+        """Helper to check if strategy is running (memory or system check)."""
+        # 1. Internal memory check
+        proc = self.processes.get(strategy_id)
+        if proc and proc.poll() is None:
+            return True
+            
+        # 2. System check (psutil) - Recovery for restarts
+        for p in psutil.process_iter(['pid', 'cmdline']):
+            try:
+                cmdline = p.info['cmdline']
+                if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
+                    # Recover process handle if missing
+                    if strategy_id not in self.processes:
+                        # We can't easily recover subprocess.Popen object but we know it's running
+                        # We could reconstruct a Popen wrapper if needed, but for now just returning True
+                        pass
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return False
+
     def get_strategy_status(self, strategy_id: str) -> Dict:
         """Checks if a strategy process is running and returns its metadata."""
-        is_running = False
+        is_running = self._check_is_running(strategy_id)
         pid = None
         uptime = None
         
+        # Try to get PID/Uptime if running
         proc = self.processes.get(strategy_id)
-        if proc:
-            if proc.poll() is None: # Still running
-                is_running = True
-                pid = proc.pid
-                uptime_delta = datetime.now() - self.start_times.get(strategy_id, datetime.now())
-                uptime = str(uptime_delta).split('.')[0] # HH:MM:SS
-            else:
-                # Process finished/crashed
-                del self.processes[strategy_id]
-                if strategy_id in self.start_times:
-                    del self.start_times[strategy_id]
-        
-        # Also check psutil as a backup (in case of server restart but process surviving - unlikely here but good practice)
-        if not is_running:
-            for p in psutil.process_iter(['pid', 'cmdline']):
+        if proc and proc.poll() is None:
+            pid = proc.pid
+            uptime_delta = datetime.now() - self.start_times.get(strategy_id, datetime.now())
+            uptime = str(uptime_delta).split('.')[0] # HH:MM:SS
+        elif is_running:
+            # Running but handle lost, find PID via psutil again for display
+             for p in psutil.process_iter(['pid', 'cmdline']):
                 try:
                     cmdline = p.info['cmdline']
                     if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
-                        is_running = True
                         pid = p.info['pid']
-                        # We don't have start time in this case easily, but we know it's running
+                        # Recover start time from process info
+                        try:
+                            create_time = datetime.fromtimestamp(p.create_time())
+                            self.start_times[strategy_id] = create_time
+                            uptime_delta = datetime.now() - create_time
+                            uptime = str(uptime_delta).split('.')[0]
+                        except:
+                            pass
                         break
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
-        # Get PnL from state file if it exists
-        pnl = 0.0
-        info = STRATEGIES_INFO.get(strategy_id)
-        if info:
-            state_file = info['path'] / "strategy_state.json"
-            if state_file.exists():
-                try:
-                    with open(state_file, 'r') as f:
-                        state = json.load(f)
-                        pnl = state.get('pnl', 0.0) or state.get('total_pnl', 0.0)
                 except:
                     pass
+
+        # Get PnL from state file if it exists AND strategy is running
+        pnl = 0.0
+        state_details = {}
+        
+        if is_running:
+            info = STRATEGIES_INFO.get(strategy_id)
+            if info:
+                state_file = info['path'] / "strategy_state.json"
+                if state_file.exists():
+                    try:
+                        with open(state_file, 'r') as f:
+                            state = json.load(f)
+                            pnl = state.get('pnl', 0.0) or state.get('total_pnl', 0.0)
+                            
+                            # Extract additional details
+                            state_details['entry_state'] = state.get('entry_state', 'UNKNOWN')
+                            state_details['total_qty'] = state.get('total_qty', 0)
+                            
+                            # Enhance positions with LTP if available
+                            raw_positions = state.get('active_positions', {})
+                            enhanced_positions = {}
+                            
+                            for sym, qty in raw_positions.items():
+                                ltp = None
+                                # 1. Try to get key from lookup
+                                key = TRADING_SYMBOL_LOOKUP.get(sym)
+                                
+                                # 2. If streamer available, get price
+                                if key and streamer:
+                                    data = streamer.get_latest_data(key)
+                                    if data:
+                                        ltp = data.get('ltp')
+                                        
+                                # 3. Fallback: Check if streamer has data by symbol (expensive iteration, skipping for now)
+                                enhanced_positions[sym] = {"qty": qty, "ltp": ltp}
+
+                            state_details['positions'] = enhanced_positions
+                    except:
+                        pass
 
         return {
             "id": strategy_id,
             "is_running": is_running,
             "pid": pid,
             "uptime": uptime,
-            "pnl": round(pnl, 2)
+            "pnl": round(pnl, 2),
+            "details": state_details
         }
 
     def start_strategy(self, strategy_id: str):
@@ -136,14 +195,18 @@ class StrategyManager:
         env["PYTHONPATH"] = "c:/upstox_kotak/upstox_kotak"
         
         try:
+            # Create/Open log file (overwrite for fresh logs on new run)
+            log_path = info['path'] / "strategy.log"
+            self.log_files[strategy_id] = open(log_path, "w")
+
             # Run in a new process group so it doesn't die with main.py if needed
             # On Windows, we use creationflags
             proc = subprocess.Popen(
-                [sys.executable, str(live_file)],
+                [sys.executable, "-u", str(live_file)],
                 cwd=str(info['path']),
                 env=env,
-                stdout=subprocess.DEVNULL, # Log files are handled by the strategy itself usually
-                stderr=subprocess.DEVNULL,
+                stdout=self.log_files[strategy_id], 
+                stderr=subprocess.STDOUT, # Redirect stderr to stdout
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
             )
             self.processes[strategy_id] = proc
@@ -153,24 +216,55 @@ class StrategyManager:
             raise HTTPException(status_code=500, detail=f"Failed to start: {str(e)}")
 
     def stop_strategy(self, strategy_id: str):
-        """Terminated a strategy process."""
+        """Terminated a strategy process. Tries graceful stop via file signal first."""
         # 1. Check internal tracking
         proc = self.processes.get(strategy_id)
+        info = STRATEGIES_INFO.get(strategy_id)
+        
         if proc:
-            try:
-                # Try graceful termination
-                p = psutil.Process(proc.pid)
-                for child in p.children(recursive=True):
-                    child.terminate()
-                p.terminate()
-                p.wait(timeout=3)
-            except:
-                if proc.poll() is None:
-                    proc.kill()
+            # A. Graceful Stop Signal (.STOP file)
+            if info:
+                stop_signal_file = info['path'] / ".STOP"
+                try:
+                    stop_signal_file.touch()
+                    # Wait for strategy to pick it up and exit (max 5s)
+                    for _ in range(50):
+                        if proc.poll() is not None:
+                            break
+                        time.sleep(0.1)
+                except Exception as e:
+                    print(f"Error sending stop signal: {e}")
+
+            # B. Force Terminate if still running
+            if proc.poll() is None:
+                try:
+                    p = psutil.Process(proc.pid)
+                    for child in p.children(recursive=True):
+                        child.terminate()
+                    p.terminate()
+                    p.wait(timeout=3)
+                except:
+                    if proc.poll() is None:
+                        proc.kill()
             
+            # C. Cleanup
             del self.processes[strategy_id]
             if strategy_id in self.start_times:
                 del self.start_times[strategy_id]
+            
+            # Close log file handle if open
+            if strategy_id in self.log_files:
+                try:
+                    self.log_files[strategy_id].close()
+                except:
+                    pass
+                del self.log_files[strategy_id]
+                
+            # Remove signal file if it still exists
+            if info and (info['path'] / ".STOP").exists():
+                try: (info['path'] / ".STOP").unlink()
+                except: pass
+
             return {"status": "stopped"}
         
         # 2. Check psutil (for orphaned processes)
@@ -188,6 +282,33 @@ class StrategyManager:
             return {"status": "stopped"}
             
         raise HTTPException(status_code=400, detail="Strategy not running")
+
+    def get_strategy_logs(self, strategy_id: str, lines: int = 100) -> Dict:
+        """Reads the last N lines from the strategy log file."""
+        # Check if running first - if not, return empty/blank logs as requested
+        # Use the robust check that handles restarts
+        if not self._check_is_running(strategy_id):
+            return {"logs": []}
+
+        info = STRATEGIES_INFO.get(strategy_id)
+        if not info:
+             raise HTTPException(status_code=404, detail="Strategy not found")
+        
+        log_file = info['path'] / "strategy.log"
+        if not log_file.exists():
+            return {"logs": ["No logs available yet."]}
+            
+        try:
+            # Simple implementation for tailing last N lines
+            # For very large files, this might be inefficient but sufficient for now
+            with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+                # Read all lines and take last N
+                # Improved: using deque for memory efficiency if file is huge? 
+                # Or just simple list slicing for now as logs rotate or are small
+                content = f.readlines()
+                return {"logs": content[-lines:]}
+        except Exception as e:
+            return {"logs": [f"Error reading logs: {str(e)}"]}
 
 strategy_manager = StrategyManager()
 
@@ -310,6 +431,10 @@ async def start_strategy(strategy_id: str):
 @app.post("/api/strategies/stop/{strategy_id}")
 async def stop_strategy(strategy_id: str):
     return strategy_manager.stop_strategy(strategy_id)
+
+@app.get("/api/strategies/logs/{strategy_id}")
+async def get_strategy_logs(strategy_id: str):
+    return strategy_manager.get_strategy_logs(strategy_id)
 
 @app.get("/api/strategies/config/{strategy_id}")
 async def get_strategy_config(strategy_id: str):
@@ -450,6 +575,11 @@ class ConnectionManager:
             
             # Try to calculate change if 'ohlc' or 'close' is present
             close = message.get('close') or message.get('ohlc', {}).get('close')
+            
+            # Fallback to pre-fetched close if live feed misses it
+            if not close or close == 0:
+                close = PREV_CLOSES.get(symbol, 0.0)
+
             if close:
                  ltp = dashboard_msg['prices'][symbol]['ltp']
                  if ltp and close > 0:
@@ -479,7 +609,7 @@ async def startup_event():
     print("🚀 Starting Upstox WebSocket Bridge...")
     try:
         # Initialize streamer with access token
-        token = get_access_token()
+        token = auth_get_token()
         streamer = UpstoxStreamer(token)
         
         # Define callback that bridges Thread -> Async
@@ -490,7 +620,46 @@ async def startup_event():
         # Connect streamer
         indices_keys = list(SYMBOL_MAP.values())
         print(f"📡 Subscribing to Dashboard Indices: {indices_keys}")
-        
+
+        # --- Pre-fetch Previous Closes for Indices ---
+        print("⏳ Pre-fetching previous closes for indices...")
+        for sym, key in SYMBOL_MAP.items():
+            try:
+                # Fetch last 5 days daily candles
+                end_date = datetime.now().strftime("%Y-%m-%d")
+                start_date = (datetime.now() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+                
+                # We need to run this in threadpool as it's blocking
+                hist_df = await run_in_threadpool(fetch_historical_data, token, key, "day", 1, start_date, end_date)
+                
+                if not hist_df.empty:
+                    # Get the last row. 
+                    # If today is a trading day and market is open/closed, the last candle MIGHT be today.
+                    # We want the PREVIOUS day's close.
+                    # Upstox Historical API usually includes today's candle if query covers it.
+                    
+                    # Logic: If last candle date is today, take the one before it. 
+                    # If last candle date is before today, take it.
+                    last_row = hist_df.iloc[-1]
+                    last_date = last_row['timestamp'].date()
+                    today_date = datetime.now().date()
+                    
+                    if last_date == today_date and len(hist_df) > 1:
+                        prev_close = hist_df.iloc[-2]['close']
+                    else:
+                        prev_close = last_row['close']
+                        
+                    PREV_CLOSES[sym] = prev_close
+                    print(f"   ✅ {sym}: Prev Close = {prev_close}")
+                else:
+                    print(f"   ⚠️ {sym}: No historical data found")
+            except Exception as e:
+                print(f"   ❌ {sym}: Failed to fetch history: {e}")
+
+        # --- Prefetch Option Master for LTP Lookup ---
+        asyncio.create_task(prefetch_option_master())
+
+        # Start Streamer
         streamer.connect_market_data(
             instrument_keys=indices_keys, 
             mode="ltpc", 
@@ -500,6 +669,44 @@ async def startup_event():
         
     except Exception as e:
         print(f"❌ Failed to initialize Upstox Streamer: {e}")
+
+async def prefetch_option_master():
+    """Fetches option chains for all indices to populate TRADING_SYMBOL_LOOKUP."""
+    print("⏳ [Dashboard] Prefetching Option Master for LTP Lookup...")
+    try:
+        token = auth_get_token() # Using auth_get_token alias from imports
+        
+        for symbol, index_key in SYMBOL_MAP.items():
+            try:
+                # 1. Get Expiries
+                expiries = await run_in_threadpool(get_expiries, token, index_key)
+                if not expiries:
+                    continue
+                
+                # Fetch only current and next expiry to save time/memory, strategies usually trade these
+                target_expiries = expiries[:2] 
+                
+                count = 0
+                for expiry in target_expiries:
+                    df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
+                    if df is not None and not df.empty:
+                        for _, row in df.iterrows():
+                            # Map full trading symbol
+                            if 'trading_symbol' in row:
+                                TRADING_SYMBOL_LOOKUP[row['trading_symbol']] = row['instrument_key']
+                                count += 1
+                                
+                            # Map descriptive symbol if possible (e.g. "CE 25950")
+                            # Note: This is ambiguous across indices/expiries, so use with caution or prefix
+                            # Assuming strategy uses full symbol or we can match parts later
+                            pass
+                print(f"   Mapped {count} options for {symbol}")
+                
+            except Exception as e:
+                print(f"   Error processing {symbol}: {e}")
+                
+    except Exception as e:
+        print(f"❌ Error in option master prefetch: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -547,14 +754,6 @@ async def websocket_market_watch(websocket: WebSocket):
         print(f"Market Watch WS Error: {e}")
         manager.disconnect(websocket)
 
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    global streamer
-    if streamer:
-        print("🛑 Disconnecting Upstox Streamer...")
-        streamer.disconnect_all()
-
 @app.websocket("/ws/straddle")
 async def websocket_straddle(websocket: WebSocket):
     """
@@ -567,10 +766,12 @@ async def websocket_straddle(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             if data.get("action") == "subscribe":
-                keys = data.get("keys", [])
+                # Normalize keys to use pipe separator to match streamer updates
+                keys = [k.replace(':', '|') for k in data.get("keys", [])]
                 if keys:
+                    print(f"📥 [Straddle WS] Received subscribe request for: {keys}")
                     await manager.subscribe(websocket, keys)
-                    print(f"📡 Client subscribed to: {keys}")
+                    print(f"📡 [Straddle WS] Client subscribed. Active Subs: {list(manager.subscriptions.keys())}")
                     
                     # Send immediate latest data if available
                     if streamer:
@@ -962,59 +1163,12 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# Symbol Mapping for 6 Indices
-SYMBOL_MAP = {
-    "NIFTY": "NSE_INDEX|Nifty 50",
-    "BANKNIFTY": "NSE_INDEX|Nifty Bank",
-    "FINNIFTY": "NSE_INDEX|Nifty Fin Service",
-    "NIFTYIT": "NSE_INDEX|Nifty IT",
-    "MIDCPNIFTY": "NSE_INDEX|NIFTY MIDCAP 100",
-    "SENSEX": "BSE_INDEX|SENSEX"
-}
-
-@app.websocket("/ws/market-watch")
-async def market_watch_endpoint(websocket: WebSocket):
-    global streamer
-    await websocket.accept()
-    
-    if streamer is None:
-        token = get_access_token()
-        streamer = UpstoxStreamer(token)
-        streamer.connect_market_data(
-            instrument_keys=list(SYMBOL_MAP.values()),
-            mode="ltpc"
-        )
-
-    try:
-        while True:
-            await asyncio.sleep(0.5)
-            prices = {}
-            if streamer:
-                for sym, key in SYMBOL_MAP.items():
-                    latest = streamer.get_latest_data(key)
-                    if latest and 'ltp' in latest:
-                        ltp = latest['ltp']
-                        # Try to get previous close from 'cp' (close price) or 'close'
-                        prev_close = latest.get('cp') or latest.get('close') or ltp
-                        
-                        chg = 0.0
-                        if prev_close > 0:
-                            chg = ((ltp - prev_close) / prev_close) * 100
-                            
-                        prices[sym] = {
-                            "ltp": ltp,
-                            "chg": chg
-                        }
-            
-            if prices:
-                await websocket.send_json({"type": "market_update", "prices": prices})
-    except (WebSocketDisconnect, asyncio.CancelledError):
-        pass
+# NOTE: SYMBOL_MAP is defined at the top of the file (line ~29). This duplicate has been removed.
 
 @app.websocket("/ws/price/{symbol}")
 async def websocket_endpoint(websocket: WebSocket, symbol: str):
     global streamer
-    await manager.connect(websocket, symbol.upper())
+    await manager.connect(websocket)
     
     if streamer is None:
         token = get_access_token()
@@ -1033,7 +1187,7 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
                 if latest and 'ltp' in latest:
                     await websocket.send_json({"type": "price", "ltp": latest['ltp']})
     except (WebSocketDisconnect, asyncio.CancelledError):
-        manager.disconnect(websocket, symbol.upper())
+        manager.disconnect(websocket)
 
 @app.get("/api/expiries")
 async def fetch_expiries(symbol: str = "NIFTY"):
@@ -1067,7 +1221,7 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None, count: i
             raise HTTPException(status_code=404, detail="No expiries found")
         expiry = expiries[0]
 
-    df = get_option_chain_dataframe(token, key, expiry)
+    df = await run_in_threadpool(get_option_chain_dataframe, token, key, expiry)
     if df is None or df.empty:
         raise HTTPException(status_code=404, detail="Data not found")
 
@@ -1252,25 +1406,16 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/strike", response_class=HTMLResponse)
-async def serve_strike_analytics_page():
-    """
-    Serves the Strike-wise CE vs PE Comparison page.
-    """
-    html_path = os.path.join(os.path.dirname(__file__), "strike_analytics.html")
-    if not os.path.exists(html_path):
-        raise HTTPException(status_code=404, detail="strike_analytics.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+# NOTE: /strike and /greeks routes are already defined above. These duplicates have been removed.
 
-@app.get("/greeks", response_class=HTMLResponse)
-async def serve_greeks_page():
+@app.get("/option-chain", response_class=HTMLResponse)
+async def serve_option_chain_page():
     """
-    Serves the Greeks Exposure Analysis page.
+    Serves the Option Chain page.
     """
-    html_path = os.path.join(os.path.dirname(__file__), "greeks.html")
+    html_path = os.path.join(os.path.dirname(__file__), "option_chain.html")
     if not os.path.exists(html_path):
-        raise HTTPException(status_code=404, detail="greeks.html not found")
+        raise HTTPException(status_code=404, detail="option_chain.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
@@ -1358,6 +1503,106 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Request Model for Multi-Strike History
+class LegRequest(BaseModel):
+    instrument_key: str
+    direction: str  # "BUY" or "SELL"
+
+@app.post("/api/multi-strike-history")
+async def get_multi_strike_history(legs: List[LegRequest]):
+    """
+    Fetches historical 1-minute data for multiple legs, aligns them on timestamp,
+    and calculates the Combined Premium and Running VWAP.
+    """
+    if not legs:
+        return {"status": "success", "data": []}
+
+    token = get_access_token()
+    
+    # 1. Fetch Data for all legs (Throttled)
+    _sem = asyncio.Semaphore(3)
+
+    async def fetch_candle(leg):
+        async with _sem:
+            try:
+                # Fetch only last 1 day (current day intraday)
+                result = await run_in_threadpool(get_intraday_data_v3, token, leg.instrument_key, "minute", 1)
+                await asyncio.sleep(0.1) # Debounce
+                return {"leg": leg, "data": result}
+            except Exception as e:
+                print(f"Error fetching {leg.instrument_key}: {e}")
+                return {"leg": leg, "data": None}
+
+    tasks = [fetch_candle(leg) for leg in legs]
+    results = await asyncio.gather(*tasks)
+
+    # 2. Process Data — raw price sum (no direction multiplier, matches broker chart display)
+    price_dfs = []
+    vol_dfs = []
+    for res in results:
+        data = res['data']
+        leg = res['leg']
+        if data:
+            df = pd.DataFrame(data)[['timestamp', 'close', 'volume']]
+            # Convert to IST naive timestamps (strip +05:30 offset)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], utc=False)
+            if df['timestamp'].dt.tz is not None:
+                df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
+            col = f'price_{leg.instrument_key}'
+            vcol = f'vol_{leg.instrument_key}'
+            df[col] = df['close']   # raw price, no direction sign
+            df[vcol] = df['volume']
+            df.set_index('timestamp', inplace=True)
+            price_dfs.append(df[[col]])
+            vol_dfs.append(df[[vcol]])
+
+    if not price_dfs:
+        return {"status": "error", "message": "No data found for any legs", "data": []}
+
+    # 3. Align and Sum
+    price_combined = pd.concat(price_dfs, axis=1, join='outer').sort_index()
+    vol_combined = pd.concat(vol_dfs, axis=1, join='outer').sort_index()
+
+    # Filter: Today's date + Market hours (09:15 - 15:30) in IST (tz-naive)
+    today = datetime.now().strftime('%Y-%m-%d')
+    price_combined = price_combined[price_combined.index.strftime('%Y-%m-%d') == today]
+    price_combined = price_combined.between_time('09:15', '15:30')
+    vol_combined = vol_combined[vol_combined.index.strftime('%Y-%m-%d') == today]
+    vol_combined = vol_combined.between_time('09:15', '15:30')
+
+    if price_combined.empty:
+        return {"status": "success", "data": []}
+
+    # Forward fill prices, fill volume NaN with 0
+    price_combined = price_combined.ffill().fillna(0)
+    vol_combined = vol_combined.fillna(0)
+
+    # Combined Premium = sum of all leg prices (raw, matches broker)
+    combined_df = pd.DataFrame(index=price_combined.index)
+    combined_df['premium'] = price_combined.sum(axis=1)
+
+    # Volume-Weighted VWAP: sum(price * total_volume) / sum(total_volume)
+    total_vol = vol_combined.sum(axis=1)
+    combined_df['pv'] = combined_df['premium'] * total_vol
+    combined_df['cum_pv'] = combined_df['pv'].cumsum()
+    combined_df['cum_vol'] = total_vol.cumsum()
+    # Avoid division by zero at start; fall back to simple running average
+    combined_df['vwap'] = combined_df.apply(
+        lambda r: r['cum_pv'] / r['cum_vol'] if r['cum_vol'] > 0 else r['premium'], axis=1
+    )
+
+    # Format timestamps as IST strings
+    combined_df.reset_index(inplace=True)
+    combined_df['timestamp'] = combined_df['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+
+    chart_data = combined_df[['timestamp', 'premium', 'vwap']].to_dict(orient='records')
+
+    return {
+        "status": "success",
+        "data": chart_data
+    }
+
 @app.get("/api/cumulative-oi")
 async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_range: int = 4):
     """
@@ -1400,16 +1645,23 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
         if df_subset.empty:
             raise HTTPException(status_code=404, detail="No strikes found in range")
             
-        # 2. Fetch Intraday Data for all legs in parallel
+        # 2. Fetch Intraday Data for all legs — throttled to avoid SSL connection flooding
+        # Upstox API cannot handle 18+ simultaneous HTTPS connections; limit to 3 concurrent.
+        _sem = asyncio.Semaphore(3)
+
         async def fetch_candle(instr_key):
-            return await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
+            async with _sem:
+                result = await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
+                # Small delay between releases to avoid burst re-triggering
+                await asyncio.sleep(0.2)
+                return result
 
         tasks = []
         for _, row in df_subset.iterrows():
             tasks.append(fetch_candle(row['ce_key']))
             tasks.append(fetch_candle(row['pe_key']))
             
-        # Also fetch index index data for the LTP line
+        # Also fetch index data for the LTP line
         tasks.append(fetch_candle(key))
         
         results = await asyncio.gather(*tasks)
@@ -1527,6 +1779,57 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             },
             "data": chart_data
         }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/option-chain/{symbol}")
+async def get_full_chain(symbol: str, expiry: str):
+    """
+    Get Complete Option Chain with Build Up & Top OI.
+    """
+    try:
+        token = await run_in_threadpool(auth_get_token)
+        underlying_key = SYMBOL_MAP.get(symbol.upper())
+        if not underlying_key:
+             raise HTTPException(status_code=400, detail="Invalid Symbol")
+
+        # Fetch Data
+        df = await run_in_threadpool(get_full_option_chain, token, underlying_key, expiry)
+        
+        if df.empty:
+             return {"chain": [], "spot": 0}
+
+        spot = df['underlying_spot'].iloc[0] if not df.empty else 0
+
+        # --- Top 3 OI Logic ---
+        # Sort by OI desc
+        top_ce = df[df['type'] == 'call'].nlargest(3, 'oi')['strike_price'].tolist()
+        top_pe = df[df['type'] == 'put'].nlargest(3, 'oi')['strike_price'].tolist()
+        
+        # Add flags to dataframe
+        def check_top_oi(row):
+            if row['type'] == 'call' and row['strike_price'] in top_ce:
+                rank = top_ce.index(row['strike_price']) + 1 # 1, 2, 3
+                return rank
+            if row['type'] == 'put' and row['strike_price'] in top_pe:
+                rank = top_pe.index(row['strike_price']) + 1
+                return rank
+            return 0
+
+        df['oi_rank'] = df.apply(check_top_oi, axis=1)
+
+        # Convert to list of dicts for JSON
+        chain_data = df.to_dict(orient='records')
+        
+        return {
+            "chain": chain_data,
+            "spot": spot,
+            "top_ce": top_ce,
+            "top_pe": top_pe
+        }
+
     except Exception as e:
         import traceback
         traceback.print_exc()

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option Chain | OI Pro</title>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(71, 85, 105, 0.8);
+            border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 1);
+        }
+
+        .sticky-col {
+            position: sticky;
+            z-index: 10;
+        }
+
+        /* Sticky Header */
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #0f172a;
+            /* Slate 900 */
+        }
+    </style>
+</head>
+
+<body class="bg-[#030712] text-slate-300">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        function OptionChain() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiryList, setExpiryList] = useState([]);
+            const [selectedExpiry, setSelectedExpiry] = useState("");
+            const [chainData, setChainData] = useState([]);
+            const [spotPrice, setSpotPrice] = useState(0);
+            const [loading, setLoading] = useState(false);
+            const [lastUpdated, setLastUpdated] = useState(null);
+            const [strikeRange, setStrikeRange] = useState(20);
+            const [refreshInterval, setRefreshInterval] = useState(5000); // Default 5s
+
+            // Fetch Expiries
+            useEffect(() => {
+                const fetchExpiries = async () => {
+                    try {
+                        const res = await fetch(`/api/expiries?symbol=${symbol}`);
+                        const data = await res.json();
+                        setExpiryList(data.expiries || []);
+                        if (data.expiries && data.expiries.length > 0) {
+                            setSelectedExpiry(data.expiries[0]);
+                        }
+                    } catch (err) {
+                        console.error("Failed to fetch expiries", err);
+                    }
+                };
+                fetchExpiries();
+            }, [symbol]);
+
+            // Fetch Option Chain
+            const fetchData = async () => {
+                if (!selectedExpiry) return;
+                setLoading(true);
+                try {
+                    const res = await fetch(`/api/option-chain/${symbol}?expiry=${selectedExpiry}`);
+                    const data = await res.json();
+                    setChainData(data.chain || []);
+                    setSpotPrice(data.spot || 0);
+                    setLastUpdated(new Date());
+                } catch (err) {
+                    console.error("Failed to fetch chain", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+                if (refreshInterval > 0) {
+                    const interval = setInterval(fetchData, refreshInterval);
+                    return () => clearInterval(interval);
+                }
+            }, [selectedExpiry, symbol, refreshInterval]);
+
+            const [headerHeight, setHeaderHeight] = useState(0);
+            const headerRef = React.useRef(null);
+
+            // Measure Header Height
+            useEffect(() => {
+                if (headerRef.current) {
+                    setHeaderHeight(headerRef.current.offsetHeight);
+                    console.log("Header Height:", headerRef.current.offsetHeight);
+                }
+                const handleResize = () => {
+                    if (headerRef.current) setHeaderHeight(headerRef.current.offsetHeight);
+                };
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            // Process Data: Group, Sort, Identify ATM, Filter by Range
+            const { visibleData, atmStrike } = useMemo(() => {
+                if (!chainData.length) return { visibleData: [], atmStrike: null };
+
+                // 1. Group by strike
+                const strikes = {};
+                chainData.forEach(item => {
+                    if (!strikes[item.strike_price]) {
+                        strikes[item.strike_price] = { strike: item.strike_price };
+                    }
+                    if (item.type === 'call') strikes[item.strike_price].CE = item;
+                    if (item.type === 'put') strikes[item.strike_price].PE = item;
+                });
+
+                // 2. Sort
+                const sorted = Object.values(strikes).sort((a, b) => a.strike === b.strike ? 0 : a.strike - b.strike);
+
+                if (sorted.length === 0) return { visibleData: [], atmStrike: null };
+
+                // 3. Find ATM (closest to spot)
+                // Use a simple reduce to find closest strike
+                const atmNode = sorted.reduce((prev, curr) => {
+                    return (Math.abs(curr.strike - spotPrice) < Math.abs(prev.strike - spotPrice) ? curr : prev);
+                });
+                const atmStrike = atmNode.strike;
+                const atmIndex = sorted.findIndex(item => item.strike === atmStrike);
+
+                // 4. Filter by Range
+                let data = sorted;
+                if (strikeRange !== 'Full') {
+                    const range = parseInt(strikeRange);
+                    const start = Math.max(0, atmIndex - range);
+                    const end = Math.min(sorted.length, atmIndex + range + 1);
+                    data = sorted.slice(start, end);
+                }
+
+                return { visibleData: data, atmStrike };
+            }, [chainData, spotPrice, strikeRange]);
+
+
+            // Date Formatter
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "";
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric'
+                });
+            };
+
+            // Highlight Helpers
+            const getOIRankColor = (rank) => {
+                if (rank === 1) return "text-amber-400 font-black";
+                if (rank === 2) return "text-slate-200 font-bold";
+                if (rank === 3) return "text-orange-400 font-bold";
+                return "";
+            };
+
+            const getOIRankBg = (rank) => {
+                if (rank === 1) return "bg-amber-500/20 border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]";
+                if (rank === 2) return "bg-slate-400/20 border border-slate-400/50";
+                if (rank === 3) return "bg-orange-700/20 border border-orange-700/50";
+                return "";
+            };
+
+            const getBuildupBadge = (buildup) => {
+                let color = "bg-slate-800 text-slate-500 border border-slate-700/50";
+                if (buildup === "Long Buildup") color = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                if (buildup === "Short Buildup") color = "bg-rose-500/10 text-rose-400 border border-rose-500/20";
+                if (buildup === "Short Covering") color = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
+                if (buildup === "Long Unwinding") color = "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20";
+
+                let text = "-";
+                if (buildup === "Long Buildup") text = "L.Build";
+                if (buildup === "Short Buildup") text = "S.Build";
+                if (buildup === "Short Covering") text = "S.Cov";
+                if (buildup === "Long Unwinding") text = "L.Unwind";
+
+                return (
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold ${color}`}>
+                        {text}
+                    </span>
+                );
+            };
+
+            return (
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30 flex">
+
+                    {/* Navigation Sidebar (Existing) */}
+                    <nav className="fixed left-0 top-0 h-full w-20 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-10 gap-8 z-50">
+                        <a href="/" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Dashboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        </a>
+                        <a href="/pop" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Premium vs PoP Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        </a>
+                        <a href="/pcr" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PCR By Strike">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </a>
+                        <a href="/straddle" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+                        </a>
+                        <a href="/option-chain" className="w-10 h-10 bg-emerald-500/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)] rounded-xl flex items-center justify-center transition-all scale-110 ring-1 ring-emerald-500/50" title="Option Chain">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                        </a>
+                        <a href="/cumulative" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Cumulative OI Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
+                        </a>
+                        <a href="/multi-strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Multi-Strike Analysis">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline><polyline points="7.5 19.79 7.5 14.6 3 12"></polyline><polyline points="21 12 16.5 14.6 16.5 19.79"></polyline><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        </a>
+                        <a href="/strike" className="w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strike vs Strike">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </a>
+                    </nav>
+
+                    <div className="flex-1 pl-20 overflow-x-hidden">
+                        {/* Header */}
+                        <div ref={headerRef} className="sticky top-0 z-[60] bg-[#030712] border-b border-white/5 px-6 py-4 shadow-xl">
+                            <div className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-[1400px] mx-auto">
+                                <div className="flex items-center gap-4">
+                                    <h1 className="text-xl font-black tracking-tighter bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                                        OPTION CHAIN
+                                    </h1>
+                                    <div className="h-6 w-px bg-white/10 mx-2"></div>
+                                    <div className="flex bg-slate-900/50 p-1 rounded-lg border border-white/5">
+                                        {["NIFTY", "BANKNIFTY", "FINNIFTY"].map(s => (
+                                            <button
+                                                key={s}
+                                                onClick={() => setSymbol(s)}
+                                                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${symbol === s ? 'bg-slate-800 text-white shadow-lg shadow-black/50' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="h-6 w-px bg-white/10 mx-2"></div>
+                                    {/* Range Selector */}
+                                    <div className="flex bg-slate-900/50 p-1 rounded-lg border border-white/5">
+                                        {[10, 20, 30, "Full"].map(r => (
+                                            <button
+                                                key={r}
+                                                onClick={() => setStrikeRange(r)}
+                                                className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all ${strikeRange === r ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-500 hover:text-slate-300'}`}
+                                            >
+                                                {r}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-6">
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Spot Price</span>
+                                        <span className="text-2xl font-black font-mono tracking-tight text-white">
+                                            {spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="h-8 w-px bg-white/10"></div>
+
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Expiry</label>
+                                        <select
+                                            value={selectedExpiry}
+                                            onChange={(e) => setSelectedExpiry(e.target.value)}
+                                            className="bg-slate-900 border border-white/10 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-emerald-500 text-white"
+                                        >
+                                            {expiryList.map(exp => (
+                                                <option key={exp} value={exp}>{formatDate(exp)}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Refresh</label>
+                                        <select
+                                            value={refreshInterval}
+                                            onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                                            className="bg-slate-900 border border-white/10 text-sm rounded-lg px-3 py-1 focus:outline-none focus:border-emerald-500 text-white w-24"
+                                        >
+                                            <option value={0}>Manual</option>
+                                            <option value={1000}>1s</option>
+                                            <option value={3000}>3s</option>
+                                            <option value={5000}>5s</option>
+                                            <option value={10000}>10s</option>
+                                            <option value={30000}>30s</option>
+                                            <option value={60000}>60s</option>
+                                        </select>
+                                    </div>
+
+                                    <button
+                                        onClick={fetchData}
+                                        disabled={loading}
+                                        className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-white/5 active:scale-95 disabled:opacity-50"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Table Container */}
+                        <div className="px-4 max-w-[1700px] mx-auto overflow-x-auto">
+                            <div className="rounded-2xl border border-white/5 bg-[#0f172a] shadow-2xl overflow-hidden glass">
+                                <table className="w-full text-center border-collapse">
+                                    <thead className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                                        <tr className="bg-[#0f172a] shadow-lg z-40">
+                                            {/* CALLS HEADER */}
+                                            <th style={{ top: `${headerHeight}px` }} colSpan="7" className="py-3 border-b border-white/5 bg-[#0f172a] text-emerald-400 tracking-widest sticky z-40">CALLS (CE)</th>
+                                            <th style={{ top: `${headerHeight}px` }} rowSpan="2" className="py-3 px-4 border-b border-white/5 bg-[#0f172a] text-white sticky-col z-50 shadow-xl border-x border-slate-800 sticky">STRIKE</th>
+                                            {/* PUTS HEADER */}
+                                            <th style={{ top: `${headerHeight}px` }} colSpan="7" className="py-3 border-b border-white/5 bg-[#0f172a] text-rose-400 tracking-widest sticky z-40">PUTS (PE)</th>
+                                        </tr>
+                                        <tr className="bg-[#0f172a] shadow-md z-30">
+                                            {/* CE Columns */}
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">Trend</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">OI</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">OI %</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">Chg OI</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">IV</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-r border-white/5">LTP %</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30">LTP</th>
+
+                                            {/* PE Columns */}
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">LTP</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">LTP %</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">IV</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">Chg OI</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">OI %</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">OI</th>
+                                            <th style={{ top: `${headerHeight + 45}px` }} className="py-3 px-1 border-b border-white/5 text-slate-500 bg-[#0f172a] sticky z-30 border-l border-white/5">Trend</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="text-xs font-medium divide-y divide-white/5">
+                                        {visibleData.map((row, i) => {
+                                            const ce = row.CE || {};
+                                            const pe = row.PE || {};
+                                            const isATM = row.strike === atmStrike;
+
+                                            // Colors
+                                            const ceBg = isATM ? "bg-amber-500/10" : row.strike < spotPrice ? "bg-emerald-500/[0.04]" : "";
+                                            const peBg = isATM ? "bg-amber-500/10" : row.strike > spotPrice ? "bg-rose-500/[0.04]" : "";
+                                            const rowClass = isATM ? "bg-amber-500/5 ring-1 ring-amber-500/20 z-10 relative" : "hover:bg-white/[0.03]";
+
+                                            // Helper for % Change
+                                            const getPctChange = (current, prev) => {
+                                                if (!current || !prev) return 0;
+                                                return ((current - prev) / prev) * 100;
+                                            };
+
+                                            const ceOIPct = getPctChange(ce.oi, ce.prev_oi);
+                                            const cePricePct = getPctChange(ce.ltp, ce.prev_ltp); // Assuming prev_ltp is available
+                                            const peOIPct = getPctChange(pe.oi, pe.prev_oi);
+                                            const pePricePct = getPctChange(pe.ltp, pe.prev_ltp);
+
+                                            const getPctColor = (val) => {
+                                                if (val > 0) return "text-emerald-400";
+                                                if (val < 0) return "text-rose-400";
+                                                return "text-slate-500";
+                                            };
+
+                                            return (
+                                                <tr key={row.strike} className={`transition-colors group ${rowClass}`}>
+
+                                                    {/* === CE DATA === */}
+
+                                                    {/* Trend */}
+                                                    <td className={`py-2 px-1 ${ceBg}`}>
+                                                        {getBuildupBadge(ce.buildup)}
+                                                    </td>
+
+                                                    {/* OI */}
+                                                    <td className={`py-2 px-1 ${ceBg} ${getOIRankBg(ce.oi_rank)}`}>
+                                                        <div className={`flex items-center justify-end gap-1`}>
+                                                            <span className={getOIRankColor(ce.oi_rank)}>
+                                                                {ce.oi ? (ce.oi / 100000).toFixed(2) + 'L' : "-"}
+                                                            </span>
+                                                            {ce.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${ce.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-slate-400'}`}></span>}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* OI % */}
+                                                    <td className={`py-2 px-1 ${ceBg} ${getPctColor(ceOIPct)} text-[10px]`}>
+                                                        {ceOIPct ? `${ceOIPct > 0 ? '+' : ''}${ceOIPct.toFixed(1)}%` : "-"}
+                                                    </td>
+
+                                                    {/* Chg OI */}
+                                                    <td className={`py-2 px-1 ${ceBg} ${ce.prev_oi && ce.oi > ce.prev_oi ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                        {ce.oi && ce.prev_oi ? ((ce.oi - ce.prev_oi) / 100000).toFixed(2) + 'L' : "-"}
+                                                    </td>
+
+                                                    {/* IV */}
+                                                    <td className={`py-2 px-1 ${ceBg} text-amber-500/60 font-mono text-[10px]`}>
+                                                        {ce.iv ? ce.iv.toFixed(1) : "-"}
+                                                    </td>
+
+                                                    {/* LTP % */}
+                                                    <td className={`py-2 px-1 ${ceBg} ${getPctColor(cePricePct)} text-[10px]`}>
+                                                        {cePricePct ? `${cePricePct > 0 ? '+' : ''}${cePricePct.toFixed(1)}%` : "-"}
+                                                    </td>
+
+                                                    {/* LTP */}
+                                                    <td className={`py-2 px-1 ${ceBg} font-mono font-bold text-white text-right pr-4`}>
+                                                        {ce.ltp ? ce.ltp.toFixed(2) : "-"}
+                                                    </td>
+
+
+                                                    {/* === STRIKE === */}
+                                                    <td className={`py-3 px-4 font-black text-sm tracking-tighter border-x border-white/5 sticky-col z-10 shadow-2xl ${isATM ? 'bg-amber-950/30 text-amber-500 ring-2 ring-amber-500/50' : 'bg-[#0f172a]'}`}>
+                                                        <div className={`flex justify-center`}>
+                                                            <span className={`px-2 py-0.5 rounded text-white font-bold`}>
+                                                                {row.strike}
+                                                            </span>
+                                                        </div>
+                                                        {isATM && <div className="text-[9px] text-amber-500/80 uppercase tracking-widest mt-1">ATM</div>}
+                                                    </td>
+
+
+                                                    {/* === PE DATA === */}
+
+                                                    {/* LTP */}
+                                                    <td className={`py-2 px-1 ${peBg} font-mono font-bold text-white text-left pl-4`}>
+                                                        {pe.ltp ? pe.ltp.toFixed(2) : "-"}
+                                                    </td>
+
+                                                    {/* LTP % */}
+                                                    <td className={`py-2 px-1 ${peBg} ${getPctColor(pePricePct)} text-[10px]`}>
+                                                        {pePricePct ? `${pePricePct > 0 ? '+' : ''}${pePricePct.toFixed(1)}%` : "-"}
+                                                    </td>
+
+                                                    {/* IV */}
+                                                    <td className={`py-2 px-1 ${peBg} text-amber-500/60 font-mono text-[10px]`}>
+                                                        {pe.iv ? pe.iv.toFixed(1) : "-"}
+                                                    </td>
+
+                                                    {/* Chg OI */}
+                                                    <td className={`py-2 px-1 ${peBg} ${pe.prev_oi && pe.oi > pe.prev_oi ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                        {pe.oi && pe.prev_oi ? ((pe.oi - pe.prev_oi) / 100000).toFixed(2) + 'L' : "-"}
+                                                    </td>
+
+                                                    {/* OI % */}
+                                                    <td className={`py-2 px-1 ${peBg} ${getPctColor(peOIPct)} text-[10px]`}>
+                                                        {peOIPct ? `${peOIPct > 0 ? '+' : ''}${peOIPct.toFixed(1)}%` : "-"}
+                                                    </td>
+
+                                                    {/* OI */}
+                                                    <td className={`py-2 px-1 ${peBg} ${getOIRankBg(pe.oi_rank)}`}>
+                                                        <div className={`flex items-center justify-start gap-1`}>
+                                                            {pe.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${pe.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-slate-400'}`}></span>}
+                                                            <span className={getOIRankColor(pe.oi_rank)}>
+                                                                {pe.oi ? (pe.oi / 100000).toFixed(2) + 'L' : "-"}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Trend */}
+                                                    <td className={`py-2 px-1 ${peBg}`}>
+                                                        {getBuildupBadge(pe.buildup)}
+                                                    </td>
+
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                                {visibleData.length === 0 && !loading && (
+                                    <div className="p-12 text-center text-slate-500 italic">
+                                        No data available for selected expiry.
+                                    </div>
+                                )}
+                                {loading && visibleData.length === 0 && (
+                                    <div className="p-12 text-center text-emerald-500 animate-pulse">
+                                        Loading Option Chain...
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<OptionChain />);
+    </script>
+</body>
+
+</html>
