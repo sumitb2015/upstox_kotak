@@ -8,6 +8,18 @@ from datetime import datetime
 from typing import List, Dict, Optional, Union
 import io
 import gzip
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+# --- Global Cache for Previous Last Open Interest ---
+# Key: instrument_key, Value: prev_oi (float)
+PREV_OI_CACHE: Dict[str, float] = {}
+_prefetch_executor = ThreadPoolExecutor(max_workers=2)  # Global executor (Reduced to 2 for stability)
+_prefetch_lock = threading.Lock()
+# Set to track keys currently being fetched to prevent duplicate tasks
+FETCH_IN_PROGRESS = set()
+FETCH_PROGRESS_LOCK = threading.Lock()
+
 
 def _get_api_client(access_token):
     configuration = upstox_client.Configuration()
@@ -214,9 +226,128 @@ def get_option_chain_atm(
     return _process_option_chain_data(api_data, spot_price, min_strike, max_strike)
 
 
+def _prefetch_prev_oi_background(access_token, keys):
+    """
+    Background worker to fetch historical OI for keys missing in cache.
+    """
+    missing_keys = [k for k in keys if k not in PREV_OI_CACHE]
+    if not missing_keys:
+        return
+
+    # print(f"⏳ Prefetching historical OI for {len(missing_keys)} contracts...")
+    
+    # Calculate dates (last 5 days to be safe)
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+
+    def fetch_single(key):
+        try:
+            # We want DAY candles
+            hist_df = fetch_historical_data(access_token, key, "day", 1, start_date, end_date)
+            if not hist_df.empty:
+                # Logic: same as indices prev close
+                # If last candle is today, we want the one before it
+                last_row = hist_df.iloc[-1]
+                last_date = pd.to_datetime(last_row['timestamp']).date()
+                today_date = datetime.now().date()
+                
+                prev_oi_val = 0
+                if last_date == today_date:
+                    if len(hist_df) > 1:
+                        prev_oi_val = hist_df.iloc[-2]['oi']
+                    else:
+                        # Only today's candle exists (new contract?), assume 0 prev OI or take today's open OI?
+                        # Taking today's open OI is safer than 0 if available, but hist_df has 'open', 'high'... 'oi' is usually closing OI.
+                        # If truly new, prev_oi is 0.
+                        prev_oi_val = 0 
+                else:
+                    prev_oi_val = last_row['oi']
+                
+                with _prefetch_lock:
+                    PREV_OI_CACHE[key] = float(prev_oi_val)
+                    
+        except Exception as e:
+            # print(f"Failed to fetch history for {key}: {e}")
+            pass
+        finally:
+            with FETCH_PROGRESS_LOCK:
+                if key in FETCH_IN_PROGRESS:
+                    FETCH_IN_PROGRESS.remove(key)
+
+    # Submit tasks to executor
+    with FETCH_PROGRESS_LOCK:
+        for key in missing_keys:
+            if key not in FETCH_IN_PROGRESS:
+                FETCH_IN_PROGRESS.add(key)
+                _prefetch_executor.submit(fetch_single, key)
+
+
+def get_full_option_chain(access_token, underlying_key, expiry):
+    """
+    Fetch the COMPLETE option chain (all strikes) and calculate Build Up & Top OI.
+    Includes logic to prefetch historical OI for accurate % change.
+    """
+    # Fetch data
+    api_data, spot_price = _fetch_option_chain_data(access_token, underlying_key, expiry)
+    if api_data is None:
+        return pd.DataFrame()
+
+    # Process all data (No strike filter)
+    df = _process_option_chain_data(api_data, spot_price, 0, float('inf'))
+    
+    if df.empty:
+        return df
+
+    # --- 1. Trigger Background Prefetch for missing previous OI ---
+    # Extract all instrument keys (CE and PE)
+    all_keys = []
+    if 'instrument_key' in df.columns:
+        all_keys = df['instrument_key'].tolist()
+    
+    # Fire and forget mechanism
+    # We verify if we have keys to fetch. If so, start a daemon thread to submit to executor
+    # This prevents blocking the main thread even for submitting tasks
+    threading.Thread(target=_prefetch_prev_oi_background, args=(access_token, all_keys), daemon=True).start()
+
+    # --- 2. Enrich with Cached Previous OI ---
+    # If we have cached values, override the API's prev_oi (which might be 0 or broken)
+    
+    def get_cached_prev_oi(row):
+        key = row['instrument_key']
+        # If Key in Cache, use it. Else use API's prev_oi
+        if key in PREV_OI_CACHE:
+             return PREV_OI_CACHE[key]
+        return row['prev_oi']
+
+    if 'instrument_key' in df.columns:
+        # Vectorized map is faster than apply if possible, but dict lookup needs map/apply
+        # Use map logic
+        df['prev_oi'] = df.apply(get_cached_prev_oi, axis=1)
+
+    # --- Calculate Build Up ---
+    # Long Buildup: Price > Prev, OI > Prev
+    # Short Buildup: Price < Prev, OI > Prev
+    # Short Covering: Price > Prev, OI < Prev
+    # Long Unwinding: Price < Prev, OI < Prev
+    
+    def get_buildup(row):
+        price_up = row['ltp'] > row['prev_ltp']
+        oi_up = row['oi'] > row['prev_oi']
+        
+        if price_up and oi_up: return "Long Buildup"
+        if not price_up and oi_up: return "Short Buildup"
+        if price_up and not oi_up: return "Short Covering"
+        if not price_up and not oi_up: return "Long Unwinding"
+        return "Neutral"
+
+    df['buildup'] = df.apply(get_buildup, axis=1)
+
+    return df
+
+
 def fetch_historical_data(access_token, symbol, interval_type, interval, start_date, end_date):
     """Fetch historical candle data using SDK HistoryApi"""
-    print(f"Fetching historical data for {symbol} from {start_date} to {end_date}")
+    # print(f"Fetching historical data for {symbol} from {start_date} to {end_date}")
     
     api_instance = upstox_client.HistoryApi(_get_api_client(access_token))
     
@@ -242,6 +373,9 @@ def fetch_historical_data(access_token, symbol, interval_type, interval, start_d
              # Ensure singular 'minute' if it was passed as 'minutes'
              unit = interval_type.rstrip('s')
              formatted_interval = f"{interval}{unit}" # e.g. '1minute'
+        
+        # FIX: Ensure we suppress print for background prefetching to avoid console spam
+        # Or just keep it. 
         
         api_response = api_instance.get_historical_candle_data1(
             instrument_key=symbol, 
@@ -269,7 +403,7 @@ def fetch_historical_data(access_token, symbol, interval_type, interval, start_d
         df["symbol"] = symbol
         df = df.sort_values("timestamp").reset_index(drop=True)
         
-        print(f"Successfully fetched {len(df)} candles for {symbol}")
+        # print(f"Successfully fetched {len(df)} candles for {symbol}")
         return df
         
     except ApiException as e:

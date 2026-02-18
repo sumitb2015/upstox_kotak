@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+import time
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import urllib.parse as urlparse
@@ -163,31 +164,49 @@ def get_intraday_data_v3(access_token: str, instrument_key: str, interval_unit: 
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            print(f"❌ Intraday V3 API Error ({response.status_code}): {response.text}")
-            return None
-            
-        data = response.json()
-        if data.get('status') == 'success':
-            candles = data.get('data', {}).get('candles', [])
-            formatted_data = []
-            for candle in candles:
-                formatted_data.append({
-                    'timestamp': candle[0],
-                    'open': candle[1],
-                    'high': candle[2],
-                    'low': candle[3],
-                    'close': candle[4],
-                    'volume': candle[5],
-                    'oi': candle[6] if len(candle) > 6 else 0
-                })
-            # Sort ascending
-            formatted_data.sort(key=lambda x: x['timestamp'])
-            return formatted_data
-        else:
-            print(f"❌ Intraday V3 API Response: {data}")
-            return None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=headers, timeout=15)
+                if response.status_code == 429:
+                    # Rate limited — wait and retry
+                    retry_after = int(response.headers.get('Retry-After', 2))
+                    print(f"⚠️ [UPSTOX] Rate limited on {instrument_key}. Waiting {retry_after}s...")
+                    time.sleep(retry_after)
+                    continue
+                if response.status_code != 200:
+                    print(f"❌ Intraday V3 API Error ({response.status_code}): {response.text}")
+                    return None
+                    
+                data = response.json()
+                if data.get('status') == 'success':
+                    candles = data.get('data', {}).get('candles', [])
+                    formatted_data = []
+                    for candle in candles:
+                        formatted_data.append({
+                            'timestamp': candle[0],
+                            'open': candle[1],
+                            'high': candle[2],
+                            'low': candle[3],
+                            'close': candle[4],
+                            'volume': candle[5],
+                            'oi': candle[6] if len(candle) > 6 else 0
+                        })
+                    # Sort ascending
+                    formatted_data.sort(key=lambda x: x['timestamp'])
+                    return formatted_data
+                else:
+                    print(f"❌ Intraday V3 API Response: {data}")
+                    return None
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as conn_err:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                if attempt < max_retries - 1:
+                    print(f"⚠️ [UPSTOX] Connection error on {instrument_key} (attempt {attempt+1}/{max_retries}). Retrying in {wait}s... [{conn_err}]")
+                    time.sleep(wait)
+                else:
+                    print(f"❌ [UPSTOX] Max retries exceeded for {instrument_key}: {conn_err}")
+                    return None
+        return None
     except Exception as e:
         print(f"❌ Exception in get_intraday_data_v3: {e}")
         return None

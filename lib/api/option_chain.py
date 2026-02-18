@@ -109,12 +109,13 @@ def get_option_chain_dataframe(access_token: str, instrument_key: str, expiry_da
             'spot_price': strike_data.get('underlying_spot_price'),
             'pcr': strike_data.get('pcr'),
             'expiry': strike_data.get('expiry'),
-            'underlying_key': strike_data.get('underlying_key'),
+            'underlying_key': strike_data.get('underlying_key').replace(':', '|') if strike_data.get('underlying_key') else None,
         }
         
         # Extract Call Option data
         call_opt = strike_data.get('call_options', {})
-        row['ce_key'] = call_opt.get('instrument_key')
+        ce_k = call_opt.get('instrument_key')
+        row['ce_key'] = ce_k.replace(':', '|') if ce_k else None
         
         call_market = call_opt.get('market_data', {})
         row['ce_ltp'] = call_market.get('ltp')
@@ -137,7 +138,8 @@ def get_option_chain_dataframe(access_token: str, instrument_key: str, expiry_da
         
         # Extract Put Option data
         put_opt = strike_data.get('put_options', {})
-        row['pe_key'] = put_opt.get('instrument_key')
+        pe_k = put_opt.get('instrument_key')
+        row['pe_key'] = pe_k.replace(':', '|') if pe_k else None
         
         put_market = put_opt.get('market_data', {})
         row['pe_ltp'] = put_market.get('ltp')

@@ -118,6 +118,14 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             logger.error(f"❌ Configuration Error: {e}")
             return False
 
+        # Cleanup stale stop signal
+        if os.path.exists(".STOP"):
+            try:
+                os.remove(".STOP")
+                self.log("🧹 Removed stale .STOP signal file.")
+            except: 
+                pass
+
         self.log_box("AGGRESSIVE RENKO DIP - LIVE", [
             f"Config: Nifty Brick {self.config.get('nifty_brick_size')}",
             f"Expiry: {self.config.get('expiry_type')}",
@@ -876,6 +884,25 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                                 self.execute_exit(p_type, "Kill Switch Activated", current_dt)
                         
                         self.entry_state = "STOPPED_BY_PORTFOLIO_MANAGER"
+                    break
+
+                # 0b. Local Graceful Stop Signal (.STOP)
+                if os.path.exists(".STOP"):
+                    self.log("🛑 Local Stop Signal Detected (.STOP). Stopping Strategy.")
+                    
+                    # EXECUTING GRACEFUL EXIT
+                    with self.lock:
+                        if self.active_positions:
+                            self.log("🚪 [CORE] Local Stop Triggered. Exiting all positions...")
+                            pos_types = list(self.active_positions.keys())
+                            for p_type in pos_types:
+                                self.execute_exit(p_type, "User Stop Signal", datetime.now())
+                        
+                        self.entry_state = "STOPPED_BY_USER"
+                    
+                    # Remove signal file
+                    try: os.remove(".STOP") 
+                    except: pass
                     break
 
                 current_dt = datetime.now()

@@ -124,6 +124,15 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
     def initialize(self):
         self.log("📋 Validating configuration...")
         validate_config()
+        
+        # Cleanup stale stop signal
+        if os.path.exists(".STOP"):
+            try:
+                os.remove(".STOP")
+                self.log("🧹 Removed stale .STOP signal file.")
+            except: 
+                pass
+
         self.log("📊 [UPSTOX] Loading market data...")
         self.nse_data = download_nse_market_data()
         self.expiry = get_expiry_for_strategy(self.access_token, self.config['expiry_type'], self.config['underlying'])
@@ -349,17 +358,30 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 self.pe_leg.update_price(ltp)
 
     def check_global_stop(self):
-        """Check for global kill switch file."""
+        """Check for global kill switch file OR local stop signal."""
+        # 1. Global Kill Switch
         if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
             self.log("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
             self.exit_all() 
             self.running = False
             return True
+            
+        # 2. Local Graceful Stop Signal (Standardized)
+        if os.path.exists(".STOP"):
+            self.log("🛑 Local Stop Signal Detected (.STOP). Exiting positions and stopping.")
+            self.exit_all()
+            self.running = False
+            # Try to remove signal file to confirm receipt (optional, main.py will clean usually)
+            try: os.remove(".STOP") 
+            except: pass
+            return True
+            
         return False
 
     def run(self):
         self.running = True
         self.log("▶️ Live Monitoring Started")
+        self.save_state() # Initial state save
         
         while True:
             # 0. Global Kill Switch Check
@@ -512,6 +534,33 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             pe_pnl = (self.pe_leg.entry_price - pe_ltp) * self.pe_leg.lots * lot_size
             total_unrealized = ce_pnl + pe_pnl
             self.current_net_pnl = self.realized_pnl + total_unrealized
+            self.save_state()
+
+    def save_state(self):
+        """Saves current strategy state to JSON for UI monitoring."""
+        import json
+        
+        state = {
+            "timestamp": datetime.now().isoformat(),
+            "entry_state": "ENTERED" if self.base_entered else "WAITING",
+            "pnl": self.current_net_pnl,
+            "total_qty": 0,
+            "active_positions": {}
+        }
+        
+        if self.ce_leg:
+            state["total_qty"] += self.ce_leg.lots * self.lot_size
+            state["active_positions"][f"{self.ce_leg.option_type} {self.ce_leg.strike}"] = self.ce_leg.lots * self.lot_size
+            
+        if self.pe_leg:
+            state["total_qty"] += self.pe_leg.lots * self.lot_size
+            state["active_positions"][f"{self.pe_leg.option_type} {self.pe_leg.strike}"] = self.pe_leg.lots * self.lot_size
+            
+        try:
+            with open("strategy_state.json", "w") as f:
+                json.dump(state, f, indent=4)
+        except Exception as e:
+            pass # Silent fail to not disrupt trading
 
     def display_status(self):
         with self.lock:
