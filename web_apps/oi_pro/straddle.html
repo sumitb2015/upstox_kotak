@@ -64,6 +64,7 @@
             const [metadata, setMetadata] = useState({});
             const [strike, setStrike] = useState("");
             const [allStrikes, setAllStrikes] = useState([]);
+            const [spotPrice, setSpotPrice] = useState(0);
 
             const chartRef = useRef(null);
             const wsRef = useRef(null);
@@ -108,6 +109,7 @@
                         setMetadata(result.metadata);
                         setAllStrikes(result.metadata.all_strikes || []);
                         if (!strike) setStrike(result.metadata.target_strike);
+                        setSpotPrice(result.metadata.spot || 0);
                     }
                 } catch (err) {
                     console.error("Straddle fetch failed", err);
@@ -132,7 +134,7 @@
                     console.log("Connected to Straddle WS");
                     ws.send(JSON.stringify({
                         action: "subscribe",
-                        keys: [metadata.ce_key, metadata.pe_key]
+                        keys: [metadata.ce_key, metadata.pe_key, metadata.index_key]
                     }));
                 };
 
@@ -141,6 +143,7 @@
                         const msg = JSON.parse(event.data);
                         if (msg.instrument_key === metadata.ce_key) pricesRef.current.ce = msg.ltp;
                         if (msg.instrument_key === metadata.pe_key) pricesRef.current.pe = msg.ltp;
+                        if (msg.instrument_key === metadata.index_key) setSpotPrice(msg.ltp || msg.last_price);
 
                         // Only update if both legs have data (or at least valid LTPs from somewhere)
                         if (pricesRef.current.ce > 0 && pricesRef.current.pe > 0) {
@@ -340,6 +343,13 @@
                                     >
                                         {allStrikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                     </select>
+                                </div>
+
+                                <div className="glass px-6 py-2 rounded-xl border-slate-800/60 flex flex-col justify-center min-w-[140px]">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">LIVE SPOT</span>
+                                    <span className="text-emerald-400 text-lg font-black tracking-tight">
+                                        {spotPrice ? spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "---"}
+                                    </span>
                                 </div>
                             </div>
                         </header>
