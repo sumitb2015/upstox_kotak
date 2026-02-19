@@ -25,6 +25,7 @@ from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
 from lib.core.authentication import get_access_token as auth_get_token
 from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepare_snapshot
+from lib.utils.greeks_storage import greeks_storage
 import pandas as pd
 from datetime import datetime
 
@@ -753,6 +754,12 @@ async def poll_major_greeks():
                     GREEKS_HISTORY_CACHE[cache_key] = GREEKS_HISTORY_CACHE[cache_key][
                         GREEKS_HISTORY_CACHE[cache_key]['timestamp'].dt.date == today
                     ]
+                    
+                    # Persistent storage (CSV)
+                    try:
+                        greeks_storage.save_snapshot(symbol, expiry, snapshot_df)
+                    except Exception as storage_err:
+                        print(f"❌ [Greeks Poller] Storage error: {storage_err}")
             
             await asyncio.sleep(60) # 1 minute interval
         except Exception as e:
@@ -945,6 +952,32 @@ async def serve_greeks_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
+@app.get("/strike-greeks", response_class=HTMLResponse)
+async def serve_strike_greeks_page():
+    """
+    Serves the Strike Greeks Analysis page (Historical plots).
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "strike_greeks.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="strike_greeks.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+from fastapi.responses import Response
+
+@app.get("/sidebar.js")
+async def serve_sidebar_js():
+    """
+    Serves the shared sidebar navigation component (JS).
+    All dashboard HTML pages load this to render a consistent nav.
+    """
+    js_path = os.path.join(os.path.dirname(__file__), "sidebar.js")
+    if not os.path.exists(js_path):
+        raise HTTPException(status_code=404, detail="sidebar.js not found")
+    with open(js_path, "r", encoding="utf-8") as f:
+        return Response(content=f.read(), media_type="application/javascript")
+
+
 @app.get("/gex", response_class=HTMLResponse)
 async def serve_gex_page():
     """
@@ -1073,6 +1106,12 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         else:
             # Append new snapshot
             GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+        
+        # Persistent storage (CSV)
+        try:
+            greeks_storage.save_snapshot(symbol, expiry, snapshot_df)
+        except Exception as storage_err:
+            print(f"❌ [Greeks API] Storage error: {storage_err}")
                 
         print(f"✅ [Greeks API] Cache updated. Total rows for {symbol}: {len(GREEKS_HISTORY_CACHE[cache_key])}")
         
@@ -1146,6 +1185,40 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f"Error fetching GEX history: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/strike-greeks-history")
+async def get_strike_greeks_history(symbol: str = Query(..., description="Symbol like NIFTY"), 
+                                   expiry: str = Query(..., description="Expiry Date"),
+                                   strike: float = Query(..., description="Strike Price")):
+    """
+    Returns time-series data for a specific strike's Greeks from persistent storage.
+    """
+    try:
+        # Normalize expiry string (if coming from frontend with T)
+        expiry = str(expiry).replace('T', ' ')
+        
+        # Load from CSV storage
+        df = greeks_storage.get_strike_history(symbol, expiry, strike)
+        
+        if df.empty:
+            return {"status": "success", "data": []}
+            
+        # Select and format columns for frontend
+        df = df.replace([float('inf'), float('-inf')], 0).fillna(0)
+        
+        # Convert timestamp to string if it's not already
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+        data = df.to_dict(orient="records")
+        return {
+            "status": "success",
+            "metadata": {"symbol": symbol, "expiry": expiry, "strike": strike},
+            "data": data
+        }
+    except Exception as e:
+        print(f"Error fetching strike greeks history: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/pcr-data")

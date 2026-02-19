@@ -40,6 +40,7 @@ To maintain observability, all strategies MUST use the following tag prefixes in
 | **Market Data** | Merged Data Pattern (History + Live) | `[.agent/skills/market_data_strategies/SKILL.md](file:///c:/algo/upstox/.agent/skills/market_data_strategies/SKILL.md)` |
 | **Margin Analysis** | Pre-trade funds validation & safety | `[.agent/skills/margin_analysis/SKILL.md](file:///c:/algo/upstox/.agent/skills/margin_analysis/SKILL.md)` |
 | **Branch-Based Development** | Prevents direct commits to main, ensures clean history | `[.agent/skills/branch_development/SKILL.md](file:///c:/upstox_kotak/upstox_kotak/.agent/skills/branch_development/SKILL.md)` |
+| **Greeks Tracking** | Persistent storage & Historical Strike-wise Greeks | `[.agent/skills/greeks_tracking/SKILL.md](file:///c:/algo/upstox/.agent/skills/greeks_tracking/SKILL.md)` |
 
 ## 🛠️ API Rules
 - **Expiry Selection**: Use `get_expiry_for_strategy` ONLY with `expiry_type` literals: `"current_week"`, `"next_week"`, or `"monthly"`. **"weekly" is NOT supported.**

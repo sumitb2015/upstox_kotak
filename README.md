@@ -14,6 +14,7 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Option & Future Strategies**: tailored logic for NIFTY, BANKNIFTY, and FINNIFTY instruments.
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
 - **OI Pro Analytics Dashboard**: Interactive web-based dashboard for real-time Open Interest (OI), PCR, and Greeks analysis.
+  - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
 
 ## 📂 Project Structure
 

@@ -9,28 +9,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #030712; color: #f8fafc; margin: 0; overflow: hidden; }
-        .glass { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        .glass-strong { background: rgba(17, 24, 39, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.12); }
-        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 1rem; }
-
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 3px;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #1e293b;
-            border-radius: 10px;
-        }
-
-        .custom-scrollbar {
-            scrollbar-width: thin;
-            scrollbar-color: #1e293b transparent;
-        }
+        .glass { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
+        .glass-strong { background: rgba(17, 24, 39, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); }
+        input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+        select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.4rem center; background-size: 0.9rem; }
+        .custom-scrollbar::-webkit-scrollbar { width: 2px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+        @keyframes flash { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        .price-flash { animation: flash 0.4s ease; }
     </style>
 </head>
 <body>
@@ -41,358 +28,428 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
 
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function MultiOptionAnalytics() {
-            const [symbol, setSymbol] = useState("NIFTY");
-            const [expiries, setExpiries] = useState([]);
-            const [availableStrikes, setAvailableStrikes] = useState([]); 
-            const [legs, setLegs] = useState([]);
+            const [symbol, setSymbol]       = useState("NIFTY");
+            const [expiries, setExpiries]   = useState([]);
+            const [strikesByExpiry, setStrikesByExpiry] = useState({});
+            const [legs, setLegs]           = useState([]);
+            const [livePrices, setLivePrices] = useState({}); // legId -> ltp
+            const [flashIds, setFlashIds]   = useState({});    // legId -> true for flash animation
             const [chartData, setChartData] = useState([]);
-            const [totalPremium, setTotalPremium] = useState(0);
-            const [loading, setLoading] = useState(false);
+            const [netPremium, setNetPremium] = useState(null);
+            const [loading, setLoading]     = useState(false);
+            const [wsConnected, setWsConnected] = useState(false);
+            const [error, setError]         = useState(null);
             const [isFullscreen, setIsFullscreen] = useState(false);
 
-            const chartRef = useRef(null);
-            const wsRef = useRef(null);
-            const legPricesRef = useRef({});
+            const chartRef        = useRef(null);
+            const wsRef           = useRef(null);
+            const legsRef         = useRef(legs);   // always-current legs in WS handler
+            const livePricesRef   = useRef({});     // mutable: legId -> ltp (avoids stale state in WS)
+            const requiredKeysRef = useRef(new Set()); // set of legIds that must have ticks before chart updates
 
-            const formatDate = (dateStr) => {
-                if (!dateStr) return "---";
-                const date = new Date(dateStr);
-                if (isNaN(date)) return dateStr;
-                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            useEffect(() => { legsRef.current = legs; }, [legs]);
+
+            const formatDate = (s) => {
+                if (!s) return "---";
+                const d = new Date(s);
+                return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
             };
 
+            // ---------- Expiry fetch ----------
             useEffect(() => {
+                setLegs([]); setStrikesByExpiry({}); setChartData([]); setNetPremium(null);
                 fetch(`/api/expiries?symbol=${symbol}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.expiries && data.expiries.length > 0) {
-                            setExpiries(data.expiries);
-                            if (legs.length === 0) {
-                                addLeg(data.expiries[0]);
-                            }
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.expiries?.length) {
+                            setExpiries(d.expiries);
+                            addLeg(d.expiries[0]);
                         }
                     });
             }, [symbol]);
 
-            const fetchChainForLeg = async (expiry) => {
+            // ---------- Strike fetch (per-expiry cache) ----------
+            const fetchStrikesForExpiry = useCallback(async (expiry) => {
+                if (!expiry) return;
+                setStrikesByExpiry(prev => {
+                    if (prev[expiry]) return prev; // cached
+                    return prev;
+                });
+                // Always check if already cached before fetching
+                setStrikesByExpiry(prev => {
+                    if (prev[expiry]) return prev;
+                    // Mark as loading with null sentinel
+                    return { ...prev, [expiry]: null };
+                });
                 try {
-                    const res = await fetch(`/api/option-chain/${symbol}?expiry=${expiry}`);
+                    const res = await fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=100`);
                     const result = await res.json();
-                    if (result.status === "success") {
-                        return result.chain; 
+                    if (result.status === "success" && result.data) {
+                        const strikes = result.data.map(d => d.strike_price).filter(Boolean).sort((a,b) => a-b);
+                        setStrikesByExpiry(prev => ({ ...prev, [expiry]: strikes }));
                     }
-                } catch (e) {
-                    console.error("Chain fetch error", e);
+                } catch(e) {
+                    console.error("Strike fetch error", e);
+                    setStrikesByExpiry(prev => ({ ...prev, [expiry]: [] }));
                 }
-                return [];
-            };
+            }, [symbol]);
 
+            // Pre-fetch for first expiry
+            useEffect(() => {
+                if (expiries.length > 0) fetchStrikesForExpiry(expiries[0]);
+            }, [expiries]);
+
+            // ---------- Leg management ----------
             const addLeg = (defaultExpiry) => {
-                const newLeg = {
-                    id: Date.now(),
-                    action: "sell",
-                    lot: 1,
-                    expiry: defaultExpiry || expiries[0],
-                    type: "CE",
-                    strike: "",
-                    price: 0,
-                    key: null
-                };
-                setLegs(prev => [...prev, newLeg]);
+                const expiry = defaultExpiry || expiries[0] || "";
+                const id = Date.now();
+                setLegs(prev => [...prev, { id, action:"sell", lot:1, expiry, type:"CE", strike:"", instrumentKey:null }]);
+                if (expiry) fetchStrikesForExpiry(expiry);
             };
 
             const removeLeg = (id) => {
-                setLegs(prev => {
-                    const newLegs = prev.filter(l => l.id !== id);
-                    updateSubscription(newLegs);
-                    return newLegs;
-                });
-                delete legPricesRef.current[id];
+                setLegs(prev => prev.filter(l => l.id !== id));
+                setLivePrices(prev => { const n={...prev}; delete n[id]; return n; });
             };
 
-            const updateLeg = async (id, field, value) => {
-                setLegs(prev => {
-                    const updated = prev.map(l => {
-                        if (l.id === id) {
-                            return { ...l, [field]: value };
-                        }
-                        return l;
-                    });
-                    
-                    const leg = updated.find(l => l.id === id);
-                    if ((field === 'strike' || field === 'type' || field === 'expiry') && leg.strike && leg.expiry) {
-                        resolveKey(leg).then(key => {
-                             if(key) {
-                                 setLegs(curr => {
-                                     const wKey = curr.map(l2 => l2.id === id ? { ...l2, key: key } : l2);
-                                     updateSubscription(wKey);
-                                     return wKey;
-                                 });
-                             }
-                        });
-                    } else {
-                        updateSubscription(updated);
+            const updateLeg = (id, field, value) => {
+                setLegs(prev => prev.map(leg => {
+                    if (leg.id !== id) return leg;
+                    const updated = { ...leg, [field]: value };
+                    if (field === 'expiry') {
+                        updated.strike = "";
+                        updated.instrumentKey = null;
+                        fetchStrikesForExpiry(value);
                     }
-                    
                     return updated;
-                });
+                }));
             };
 
-            const resolveKey = async (leg) => {
-                const chain = await fetchChainForLeg(leg.expiry);
-                const row = chain.find(r => r.strike_price == leg.strike);
-                if (row) {
-                    return leg.type === 'CE' ? row.ce_key : row.pe_key;
-                }
-                return null;
-            };
+            // ---------- Resolve instrument keys ----------
+            const resolveKeys = useCallback(async (currentLegs) => {
+                return Promise.all(currentLegs.map(async leg => {
+                    if (!leg.strike || !leg.expiry) return { ...leg, instrumentKey: null };
+                    try {
+                        const res = await fetch(`/api/option-chain?symbol=${symbol}&expiry=${leg.expiry}&count=100`);
+                        const result = await res.json();
+                        if (result.status === "success" && result.data) {
+                            const row = result.data.find(r => String(r.strike_price) === String(leg.strike));
+                            if (row) return { ...leg, instrumentKey: leg.type === 'CE' ? row.ce_key : row.pe_key };
+                        }
+                    } catch(e) {}
+                    return { ...leg, instrumentKey: null };
+                }));
+            }, [symbol]);
 
-            const updateSubscription = (currentLegs) => {
-                const keys = currentLegs.map(l => l.key).filter(k => k);
-                if (wsRef.current && wsRef.current.readyState === 1 && keys.length > 0) {
-                    wsRef.current.send(JSON.stringify({
-                        action: "subscribe",
-                        keys: keys
-                    }));
-                }
-            };
+            // ---------- WebSocket for live prices + chart ----------
+            const connectWS = useCallback((resolvedLegs) => {
+                // Close old connection
+                if (wsRef.current && wsRef.current.readyState <= 1) wsRef.current.close();
 
-            useEffect(() => {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/ws/straddle`;
-                
-                const ws = new WebSocket(wsUrl);
+                const activeLegs = resolvedLegs.filter(l => l.instrumentKey);
+                if (activeLegs.length === 0) return;
+
+                // Build key -> legId map
+                const keyMap = {};
+                activeLegs.forEach(l => { keyMap[l.instrumentKey] = l.id; });
+
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(`${protocol}//${location.host}/ws/straddle`);
                 wsRef.current = ws;
 
                 ws.onopen = () => {
-                    updateSubscription(legs);
+                    setWsConnected(true);
+                    ws.send(JSON.stringify({ action: "subscribe", keys: activeLegs.map(l => l.instrumentKey) }));
                 };
 
                 ws.onmessage = (event) => {
                     try {
                         const msg = JSON.parse(event.data);
-                        let updated = false;
-                        legs.forEach(leg => {
-                            if (leg.key === msg.instrument_key) {
-                                legPricesRef.current[leg.id] = msg.ltp;
-                                updated = true;
-                            }
+                        const instrKey = msg.instrument_key || msg.key;
+                        const ltp = msg.ltp;
+                        if (!instrKey || ltp == null) return;
+
+                        const currentLegs = legsRef.current;
+                        const matchingLegs = currentLegs.filter(l => l.instrumentKey === instrKey);
+                        if (matchingLegs.length === 0) return;
+
+                        // ---- Update mutable ref immediately (no stale state) ----
+                        matchingLegs.forEach(l => { livePricesRef.current[l.id] = ltp; });
+
+                        // ---- Update React state for display ----
+                        setLivePrices(prev => {
+                            const updated = { ...prev };
+                            matchingLegs.forEach(l => { updated[l.id] = ltp; });
+                            return updated;
                         });
 
-                        if (updated) {
-                            let total = 0;
-                            legs.forEach(leg => {
-                                const price = legPricesRef.current[leg.id] || 0;
-                                const direction = leg.action === 'buy' ? 1 : -1;
-                                total += price * direction * leg.lot;
+                        // Flash effect
+                        setFlashIds(prev => {
+                            const f = { ...prev };
+                            matchingLegs.forEach(l => { f[l.id] = true; });
+                            return f;
+                        });
+                        setTimeout(() => {
+                            setFlashIds(prev => {
+                                const f = { ...prev };
+                                matchingLegs.forEach(l => { delete f[l.id]; });
+                                return f;
                             });
-                            
-                            setTotalPremium(total);
-                            updateChart(total, msg.timestamp || Date.now());
-                        }
-                    } catch (e) {
-                         console.error(e);
-                    }
+                        }, 400);
+
+                        // ---- Guard: only compute net & update chart when ALL legs have ticked ----
+                        const required = requiredKeysRef.current;
+                        const allReady = [...required].every(id => livePricesRef.current[id] != null);
+                        if (!allReady) return;
+
+                        // Compute net premium: raw sum of leg prices (matches backend which ignores direction)
+                        let net = 0;
+                        currentLegs.forEach(leg => {
+                            net += livePricesRef.current[leg.id] || 0;
+                        });
+                        setNetPremium(net);
+
+                        // Append to chart (collapse same-second points)
+                        const now = new Date().toISOString();
+                        setChartData(prev => {
+                            const buf = [...prev];
+                            const last = buf[buf.length - 1];
+                            if (last && now.slice(0,19) === last.timestamp.slice(0,19)) {
+                                buf[buf.length - 1] = { ...last, premium: net };
+                            } else {
+                                buf.push({ timestamp: now, premium: net, vwap: net });
+                                if (buf.length > 1500) buf.shift();
+                            }
+                            return buf;
+                        });
+
+                    } catch(e) { console.error(e); }
                 };
 
-                return () => ws.close();
-            }, [legs.length]);
+                ws.onclose = () => setWsConnected(false);
+                ws.onerror = () => setWsConnected(false);
+            }, []);
 
-            useEffect(() => {
-                if(expiries.length > 0) {
-                    fetchChainForLeg(expiries[0]).then(data => {
-                        const s = data.map(d => d.strike_price);
-                        setAvailableStrikes(s);
-                    });
-                }
-            }, [expiries]);
+            // Disconnect WS on unmount
+            useEffect(() => () => wsRef.current?.close(), []);
 
-            const updateChart = (price, timestamp) => {
-                setChartData(prev => {
-                    const newData = [...prev];
-                    const lastPoint = newData[newData.length - 1];
-                    const currentMinute = new Date(timestamp).getMinutes();
-                    
-                    if (lastPoint && new Date(lastPoint.timestamp).getMinutes() === currentMinute) {
-                        lastPoint.value = price;
-                    } else {
-                        newData.push({
-                            timestamp: timestamp,
-                            value: price
-                        });
+            // ---------- Load Chart: fetch history + connect WS ----------
+            const handleApply = async () => {
+                setLoading(true);
+                setError(null);
+                setChartData([]);
+                setLivePrices({});
+                setNetPremium(null);
+
+                try {
+                    const withKeys = await resolveKeys(legs);
+                    setLegs(withKeys);
+
+                    const activeLegs = withKeys.filter(l => l.instrumentKey);
+                    if (activeLegs.length === 0) {
+                        setError("Could not resolve instrument keys. Check strikes.");
+                        setLoading(false);
+                        return;
                     }
-                    if (newData.length > 500) newData.shift();
-                    return newData;
-                });
+
+                    // Load historical chart
+                    const payload = activeLegs.map(l => ({ instrument_key: l.instrumentKey, direction: l.action.toUpperCase() }));
+                    const res = await fetch('/api/multi-strike-history', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await res.json();
+                    if (result.status === "success" && result.data?.length > 0) {
+                        setChartData(result.data);
+                        const last = result.data[result.data.length - 1];
+                        setNetPremium(last.premium);
+                    }
+
+                    // Register which leg IDs must have prices before chart updates
+                    livePricesRef.current = {};
+                    requiredKeysRef.current = new Set(withKeys.filter(l => l.instrumentKey).map(l => l.id));
+
+                    // Connect WebSocket for live ticks
+                    connectWS(withKeys);
+
+                } catch(e) {
+                    setError("Error: " + e.message);
+                } finally {
+                    setLoading(false);
+                }
             };
 
+            // ---------- Render chart ----------
             useEffect(() => {
-                if (chartData.length > 0 && chartRef.current) {
-                    const trace = {
-                        x: chartData.map(d => d.timestamp),
-                        y: chartData.map(d => d.value),
-                        type: 'scatter',
-                        mode: 'lines',
-                        line: { color: '#fbbf24', width: 2 },
-                        fill: 'tozeroy',
-                        fillcolor: 'rgba(251, 191, 36, 0.1)'
-                    };
+                if (!chartRef.current) return;
+                if (chartData.length === 0) { Plotly.purge(chartRef.current); return; }
 
-                    const layout = {
-                        paper_bgcolor: 'rgba(0,0,0,0)',
-                        plot_bgcolor: 'rgba(0,0,0,0)',
-                        margin: { t: 20, r: 20, l: 40, b: 40 },
-                        font: { family: 'Inter', color: '#94a3b8' },
-                        xaxis: { gridcolor: '#334155' },
-                        yaxis: { gridcolor: '#334155', title: 'Net Premium' },
-                        hovermode: 'x unified'
-                    };
-
-                    Plotly.react(chartRef.current, [trace], layout, { responsive: true, displayModeBar: false });
-                }
+                const trace = {
+                    x: chartData.map(d => d.timestamp),
+                    y: chartData.map(d => d.premium),
+                    name: 'Net Premium',
+                    type: 'scatter', mode: 'lines',
+                    line: { color: '#fbbf24', width: 2 },
+                    fill: 'tozeroy', fillcolor: 'rgba(251,191,36,0.06)'
+                };
+                const vwap = {
+                    x: chartData.map(d => d.timestamp),
+                    y: chartData.map(d => d.vwap),
+                    name: 'VWAP',
+                    type: 'scatter', mode: 'lines',
+                    line: { color: '#818cf8', width: 1.5, dash: 'dot' }
+                };
+                Plotly.react(chartRef.current, [trace, vwap], {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor:  'rgba(0,0,0,0)',
+                    margin: { t:20, r:20, l:50, b:40 },
+                    font: { family:'Inter', color:'#94a3b8' },
+                    xaxis: { gridcolor:'#1e293b' },
+                    yaxis: { gridcolor:'#1e293b', autorange:true },
+                    legend: { x:0, y:1, font:{ size:11 } },
+                    hovermode: 'x unified'
+                }, { responsive:true, displayModeBar:false });
             }, [chartData, isFullscreen]);
+
+            const hasAllStrikes = legs.length > 0 && legs.every(l => l.strike);
 
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
-                    <nav className="fixed left-0 top-0 h-full w-16 bg-[#0b0f1a] border-r border-slate-800/40 flex flex-col items-center py-6 gap-5 z-50 transition-all overflow-y-auto custom-scrollbar">
-                        <a href="/" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Dashboard">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                        </a>
-                        <a href="/pop" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Premium vs PoP Analysis">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-                        </a>
-                        <a href="/pcr" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="PCR By Strike">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                        </a>
-                        <a href="/straddle" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="ATM Straddle Analysis">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
-                        </a>
-                        <a href="/option-chain" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Option Chain">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                        </a>
-                        <a href="/cumulative" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Cumulative OI Analysis">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path></svg>
-                        </a>
-                        <a href="/gex" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Net GEX Regime">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                        </a>
-                        <a href="/multi-strike" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Multi-Strike Analysis">
-                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><line x1="13" y1="17" x2="13" y2="8"></line><line x1="18" y1="17" x2="18" y2="12"></line><line x1="8" y1="17" x2="8" y2="12"></line><path d="M18 3h3v3M9 3h3v3M3 3h3v3"></path></svg>
-                        </a>
-                        <a href="/multi" className="flex-shrink-0 w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform hover:scale-105" title="Multi-Option Chart">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path></svg>
-                        </a>
-                        <a href="/strike" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strike Analytics">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2m0 0h2" /></svg>
-                        </a>
-                        <a href="/strategies" className="flex-shrink-0 w-10 h-10 bg-slate-800/50 hover:bg-emerald-500/20 rounded-xl flex items-center justify-center text-slate-400 hover:text-emerald-400 transition-all hover:scale-105 group" title="Strategy Command Center">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-                        </a>
-                    </nav>
+                    <div id="sidebar-root"></div>
 
-                    <main className="flex-1 pl-16 flex flex-row h-screen overflow-hidden p-6 gap-6">
-                        <div className="w-[450px] flex flex-col gap-6">
-                             <header className="flex items-center justify-between">
-                                <h1 className="text-2xl font-black text-white uppercase tracking-tight">Multi <span className="text-emerald-500">Chart</span></h1>
-                                <select 
-                                    value={symbol} 
-                                    onChange={(e) => setSymbol(e.target.value)}
-                                    className="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1 text-sm font-bold text-emerald-400 outline-none"
-                                >
+                    <main className="flex-1 pl-20 flex flex-row h-screen overflow-hidden p-4 gap-4">
+
+                        {/* ===== Left Panel (narrow) ===== */}
+                        <div className="w-[340px] flex flex-col gap-3 flex-shrink-0">
+
+                            {/* Header */}
+                            <header className="flex items-center justify-between">
+                                <h1 className="text-xl font-black text-white uppercase tracking-tight">
+                                    Multi <span className="text-emerald-500">Chart</span>
+                                    {wsConnected && <span className="ml-2 inline-block w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>}
+                                </h1>
+                                <select value={symbol} onChange={e => setSymbol(e.target.value)}
+                                    className="bg-slate-800/50 border border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-emerald-400 outline-none">
                                     {SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </header>
 
-                            <div className="glass p-4 rounded-2xl border-slate-800/60 flex-1 overflow-y-auto custom-scrollbar">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Legs</h3>
-                                    <button onClick={() => addLeg(expiries[0])} className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-lg hover:bg-emerald-500/20 font-bold">+ Add Leg</button>
+                            {/* Legs */}
+                            <div className="glass p-3 rounded-2xl border-slate-800/60 flex-1 overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Legs</h3>
+                                    <button onClick={() => addLeg(expiries[0])}
+                                        className="text-[11px] bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-md hover:bg-emerald-500/20 font-bold">
+                                        + Add Leg
+                                    </button>
                                 </div>
-                                
-                                <div className="space-y-3">
-                                    {legs.map(leg => (
-                                        <div key={leg.id} className="glass-strong p-3 rounded-xl border-slate-700/50 flex flex-col gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <button 
-                                                    onClick={() => updateLeg(leg.id, 'action', leg.action === 'buy' ? 'sell' : 'buy')}
-                                                    className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${leg.action === 'buy' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}
-                                                >
-                                                    {leg.action === 'buy' ? 'B' : 'S'}
-                                                </button>
-                                                
-                                                <div className="flex items-center bg-slate-800/50 rounded-lg px-2 border border-slate-700 w-16">
-                                                    <input 
-                                                        type="number" 
-                                                        value={leg.lot} 
-                                                        onChange={(e) => updateLeg(leg.id, 'lot', parseInt(e.target.value))}
-                                                        className="w-full bg-transparent border-none text-center text-sm font-bold text-white focus:ring-0 outline-none h-8" 
-                                                    />
+
+                                {legs.length === 0 && (
+                                    <p className="text-center text-slate-600 text-xs py-6">No legs yet. Click "+ Add Leg".</p>
+                                )}
+
+                                <div className="space-y-2">
+                                    {legs.map(leg => {
+                                        const strikes = strikesByExpiry[leg.expiry];
+                                        const loadingS = strikes === null;
+                                        const ltp = livePrices[leg.id];
+                                        const isFlashing = flashIds[leg.id];
+                                        return (
+                                            <div key={leg.id} className="glass-strong p-2.5 rounded-xl border-slate-700/50">
+                                                {/* Row 1: BUY/SELL | Lots | Expiry | ✕ */}
+                                                <div className="flex items-center gap-1.5 mb-2">
+                                                    <button onClick={() => updateLeg(leg.id, 'action', leg.action === 'buy' ? 'sell' : 'buy')}
+                                                        className={`px-2 py-1 rounded text-[10px] font-black ${leg.action === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                                                        {leg.action === 'buy' ? 'BUY' : 'SELL'}
+                                                    </button>
+                                                    <input type="number" value={leg.lot} min={1}
+                                                        onChange={e => updateLeg(leg.id, 'lot', parseInt(e.target.value)||1)}
+                                                        className="w-10 bg-slate-800 border border-slate-700 rounded text-center text-xs font-bold text-white outline-none py-1"/>
+                                                    <select value={leg.expiry} onChange={e => updateLeg(leg.id, 'expiry', e.target.value)}
+                                                        className="bg-slate-800 border border-slate-700 rounded px-1 py-1 text-[10px] text-slate-300 outline-none flex-1">
+                                                        {expiries.map(e => <option key={e} value={e}>{formatDate(e)}</option>)}
+                                                    </select>
+                                                    <button onClick={() => removeLeg(leg.id)} className="text-slate-600 hover:text-rose-400 ml-auto">
+                                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                                    </button>
                                                 </div>
 
-                                                <select 
-                                                    value={leg.expiry} 
-                                                    onChange={(e) => updateLeg(leg.id, 'expiry', e.target.value)}
-                                                    className="bg-slate-800/50 border border-slate-700 rounded-lg px-2 h-8 text-xs font-medium text-slate-300 outline-none w-24"
-                                                >
-                                                    {expiries.map(e => <option key={e} value={e}>{formatDate(e)}</option>)}
-                                                </select>
+                                                {/* Row 2: CE/PE | Strike | LTP */}
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="flex bg-slate-800 rounded p-0.5 border border-slate-700">
+                                                        <button onClick={() => updateLeg(leg.id, 'type', 'CE')}
+                                                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${leg.type==='CE' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>CE</button>
+                                                        <button onClick={() => updateLeg(leg.id, 'type', 'PE')}
+                                                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${leg.type==='PE' ? 'bg-rose-500 text-white' : 'text-slate-500'}`}>PE</button>
+                                                    </div>
+                                                    <select value={leg.strike} onChange={e => updateLeg(leg.id, 'strike', e.target.value)}
+                                                        disabled={loadingS || !strikes?.length}
+                                                        className="bg-slate-800 border border-slate-700 rounded px-1 py-1 text-xs font-black text-white outline-none flex-1">
+                                                        <option value="">{loadingS ? "Loading…" : !strikes?.length ? "No strikes" : "Strike"}</option>
+                                                        {(strikes||[]).map(s => <option key={s} value={s}>{s}</option>)}
+                                                    </select>
 
-                                                <button onClick={() => removeLeg(leg.id)} className="ml-auto text-slate-600 hover:text-rose-400">
-                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                                </button>
+                                                    {/* Live LTP badge */}
+                                                    <div className={`min-w-[52px] text-right font-mono text-xs font-black px-1.5 py-1 rounded ${ltp != null ? (leg.action==='buy' ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-600'} ${isFlashing ? 'price-flash' : ''}`}>
+                                                        {ltp != null ? ltp.toFixed(2) : '---'}
+                                                    </div>
+                                                </div>
                                             </div>
-
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex bg-slate-800/50 rounded-lg p-0.5 border border-slate-700">
-                                                    <button onClick={() => updateLeg(leg.id, 'type', 'CE')} className={`px-2 py-1 rounded text-xs font-bold ${leg.type === 'CE' ? 'bg-emerald-500 text-white' : 'text-slate-500'}`}>CE</button>
-                                                    <button onClick={() => updateLeg(leg.id, 'type', 'PE')} className={`px-2 py-1 rounded text-xs font-bold ${leg.type === 'PE' ? 'bg-rose-500 text-white' : 'text-slate-500'}`}>PE</button>
-                                                </div>
-
-                                                <select 
-                                                    value={leg.strike} 
-                                                    onChange={(e) => updateLeg(leg.id, 'strike', e.target.value)}
-                                                    className="bg-slate-800/50 border border-slate-700 rounded-lg px-2 h-8 text-sm font-black text-white outline-none flex-1"
-                                                >
-                                                    <option value="">Strike</option>
-                                                    {availableStrikes.map(s => <option key={s} value={s}>{s}</option>)}
-                                                </select>
-
-                                                <div className="w-16 text-right font-mono font-bold text-emerald-400 text-sm">
-                                                    {legPricesRef.current[leg.id] ? legPricesRef.current[leg.id].toFixed(2) : '---'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
+
+                            {/* Apply button */}
+                            <button onClick={handleApply} disabled={loading || !hasAllStrikes}
+                                className={`w-full py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${hasAllStrikes && !loading ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(16,185,129,0.25)]' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}>
+                                {loading ? '⏳ Loading...' : '▶ Load Chart'}
+                            </button>
                         </div>
 
-                        <div className={`flex-1 glass p-6 rounded-[2rem] border-slate-800/80 shadow-2xl flex flex-col ${isFullscreen ? 'fixed inset-0 z-[100] bg-[#030712] m-0 rounded-none' : 'relative'}`}>
-                            <div className="flex justify-between items-center mb-4">
+                        {/* ===== Right Panel - Chart ===== */}
+                        <div className={`flex-1 glass p-5 rounded-[2rem] border-slate-800/80 shadow-2xl flex flex-col ${isFullscreen ? 'fixed inset-0 z-[100] bg-[#030712] m-0 rounded-none' : 'relative'}`}>
+                            <div className="flex justify-between items-center mb-3">
                                 <div>
-                                    <h2 className="text-3xl font-black text-white tracking-tighter">Net Premium</h2>
-                                    <h3 className={`text-xl font-bold font-mono ${totalPremium >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                        {totalPremium.toFixed(2)}
-                                    </h3>
+                                    <h2 className="text-xl font-black text-white tracking-tight">Net Strategy Premium</h2>
+                                    {netPremium !== null && (
+                                        <p className={`text-2xl font-black font-mono mt-0.5 ${netPremium >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            ₹{netPremium.toFixed(2)}
+                                        </p>
+                                    )}
                                 </div>
-                                <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 bg-slate-800/50 rounded-lg hover:text-emerald-400 transition-colors">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    {wsConnected && <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">● LIVE</span>}
+                                    <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-2 bg-slate-800/50 rounded-lg hover:text-emerald-400">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                    </button>
+                                </div>
                             </div>
-                            <div ref={chartRef} className="flex-1 w-full min-h-[500px]"></div>
+
+                            {error && <div className="mb-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 text-xs">{error}</div>}
+
+                            {chartData.length === 0 && !loading && !error && (
+                                <div className="flex-1 flex items-center justify-center text-slate-700 flex-col gap-3">
+                                    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
+                                    <p className="text-xs font-medium">Configure legs and click "▶ Load Chart"</p>
+                                </div>
+                            )}
+
+                            <div ref={chartRef} className="flex-1 w-full min-h-[350px]"></div>
                         </div>
                     </main>
                 </div>
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<MultiOptionAnalytics />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<MultiOptionAnalytics />);
     </script>
+    <script src="/sidebar.js"></script>
 </body>
 </html>
