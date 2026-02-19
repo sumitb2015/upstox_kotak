@@ -10,3 +10,4 @@ description: Post Development Workflow
 6. Clean up the debug code and test files which were prepated during the implementation
 7. Always try to keep the overall folders and files clean based on the necessary files.
 8. Check in the code to Git/GitHub, ensuring `.gitignore` is respected and no secrets are committed.
+9. Check the README.md file and verify if the modifications are important and should be added to the README.md file.

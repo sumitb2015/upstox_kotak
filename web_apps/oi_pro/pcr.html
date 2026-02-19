@@ -99,6 +99,24 @@
             border-radius: 2px;
             display: inline-block;
         }
+
+        .price-flash-up {
+            animation: flash-green 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .price-flash-down {
+            animation: flash-red 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes flash-green {
+            0% { color: #10b981; transform: scale(1.02); }
+            100% { color: inherit; transform: scale(1); }
+        }
+
+        @keyframes flash-red {
+            0% { color: #ef4444; transform: scale(1.02); }
+            100% { color: inherit; transform: scale(1); }
+        }
     </style>
 </head>
 
@@ -111,7 +129,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useCallback } = React;
+        const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
@@ -131,7 +149,18 @@
             return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
         };
 
+        /**
+         * PCRAnalytics Component
+         * 
+         * Displays real-time Put-Call Ratio (PCR) analysis by strike for NIFTY, BANKNIFTY, etc.
+         * Features:
+         * - Multi-leg sentiment analysis (Bullish/Bearish)
+         * - Real-time spot price updates via WebSocket
+         * - Historical OI comparison and chart visualization
+         * - Key Support/Resistance identification
+         */
         function PCRAnalytics() {
+            // State management
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -141,6 +170,9 @@
             const [lastUpdated, setLastUpdated] = useState(null);
             const [viewMode, setViewMode] = useState("combined"); // combined | oi | pcr
             const [strikeRange, setStrikeRange] = useState(20); // number of strikes around ATM
+            const [marketPrices, setMarketPrices] = useState({});
+            const [priceFlashes, setPriceFlashes] = useState({});
+            const mwWsRef = useRef(null);
 
             // Fetch Expiries
             useEffect(() => {
@@ -153,6 +185,50 @@
                         }
                     });
             }, [symbol]);
+
+            const connectMarketWatch = useCallback(() => {
+                if (mwWsRef.current) return;
+                const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+                const wsUrl = `${protocol}//${window.location.host}/ws/market-watch`;
+                mwWsRef.current = new WebSocket(wsUrl);
+                mwWsRef.current.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === "market_update") {
+                        setMarketPrices(prev => {
+                            const newFlashes = {};
+                            Object.entries(msg.prices).forEach(([sym, priceData]) => {
+                                const newLtp = priceData.ltp;
+                                const oldLtp = prev[sym] ? (typeof prev[sym] === 'object' ? prev[sym].ltp : prev[sym]) : null;
+                                if (oldLtp && newLtp !== oldLtp) {
+                                    newFlashes[sym] = newLtp > oldLtp ? "price-flash-up" : "price-flash-down";
+                                }
+                            });
+                            if (Object.keys(newFlashes).length > 0) {
+                                setPriceFlashes(prevF => ({ ...prevF, ...newFlashes }));
+                                setTimeout(() => setPriceFlashes({}), 800);
+                            }
+                            return { ...prev, ...msg.prices };
+                        });
+                    }
+                };
+                mwWsRef.current.onclose = () => {
+                    mwWsRef.current = null;
+                    setTimeout(connectMarketWatch, 3000);
+                };
+            }, []);
+
+            useEffect(() => {
+                connectMarketWatch();
+                return () => { if (mwWsRef.current) mwWsRef.current.close(); };
+            }, [connectMarketWatch]);
+
+            // Update spot price from websocket
+            useEffect(() => {
+                if (marketPrices[symbol]) {
+                    const ltp = marketPrices[symbol].ltp || marketPrices[symbol];
+                    if (typeof ltp === 'number') setSpotPrice(ltp);
+                }
+            }, [marketPrices, symbol]);
 
             const fetchData = useCallback(() => {
                 if (!expiry) return;
@@ -184,9 +260,12 @@
             const atmStrike = useMemo(() => {
                 if (!data.length) return null;
                 if (spotPrice > 0) {
-                    return data.reduce((prev, curr) =>
+                    // Force alignment to standard strike intervals if possible, 
+                    // but for PCR analysis we find the closest existing strike in data
+                    const closest = data.reduce((prev, curr) =>
                         Math.abs(curr.strike - spotPrice) < Math.abs(prev.strike - spotPrice) ? curr : prev
-                    ).strike;
+                    );
+                    return closest.strike;
                 }
                 // Fallback: find strike with highest total OI
                 return data.reduce((prev, curr) =>
@@ -517,6 +596,46 @@
                                 </div>
                             )}
                             <div id="pcr-chart" className="w-full" style={{ height: '500px' }}></div>
+                        </div>
+
+                        {/* Live Quote Strip */}
+                        <div className="flex items-center gap-4 mb-6">
+                            <div className="glass px-6 py-4 rounded-2xl border-slate-800/60 shadow-xl flex items-center gap-8 min-w-[400px]">
+                                <div>
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{symbol} SPOT PRICE</p>
+                                    <div className="flex items-baseline gap-3">
+                                        <h2 className={`text-3xl font-black tabular-nums transition-all duration-300 ${priceFlashes[symbol] || 'text-white'}`}>
+                                            {spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </h2>
+                                        {marketPrices[symbol] && (
+                                            <span className={`text-sm font-bold ${marketPrices[symbol].chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                {marketPrices[symbol].chg > 0 ? '+' : ''}{marketPrices[symbol].chg.toFixed(2)}%
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="h-10 w-[1px] bg-slate-800/80"></div>
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Day High</span>
+                                        <span className="text-xs font-black text-slate-300 tabular-nums">{marketPrices[symbol]?.high?.toLocaleString('en-IN') || '---'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Day Low</span>
+                                        <span className="text-xs font-black text-slate-300 tabular-nums">{marketPrices[symbol]?.low?.toLocaleString('en-IN') || '---'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex-grow flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                                {Object.keys(marketPrices).filter(s => s !== symbol).map(s => (
+                                    <div key={s} className="glass px-4 py-2 rounded-xl flex items-center gap-3 min-w-fit border-slate-800/40">
+                                        <span className="text-[10px] font-black text-slate-500">{s}</span>
+                                        <span className={`text-xs font-black tabular-nums ${priceFlashes[s] || 'text-slate-300'}`}>
+                                            {marketPrices[s].ltp?.toLocaleString('en-IN')}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Insight Cards */}
