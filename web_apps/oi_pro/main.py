@@ -905,19 +905,50 @@ async def serve_max_pain_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
-@app.get("/strategies", response_class=HTMLResponse)
-async def get_strategies_page():
-    with open("web_apps/oi_pro/strategies.html", "r") as f:
-        return f.read()
-
 @app.get("/multi-strike", response_class=HTMLResponse)
 async def serve_multi_strike_page():
     """
-    Serves the Multi-Strike Analysis page.
+    Serves the consolidated Multi-Strike Analysis page (Price + OI).
     """
     html_path = os.path.join(os.path.dirname(__file__), "multi_strike.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="multi_strike.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/multi-strike-oi", response_class=HTMLResponse)
+async def serve_multi_strike_oi_page():
+    """
+    Serves the Multi-Strike Analysis page (Legacy route).
+    """
+    return await serve_multi_strike_page()
+
+@app.get("/multi-strike-price", response_class=HTMLResponse)
+async def serve_multi_strike_price_page():
+    """
+    Serves the Multi-Strike Analysis page (Legacy route).
+    """
+    return await serve_multi_strike_page()
+
+@app.get("/strategies", response_class=HTMLResponse)
+async def serve_strategies_page():
+    """
+    Serves the Strategy Command Center page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "strategies.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="strategies.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/option-chain", response_class=HTMLResponse)
+async def serve_option_chain_page():
+    """
+    Serves the Option Chain dashboard page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "option_chain.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="option_chain.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
@@ -1862,18 +1893,6 @@ async def get_full_chain(symbol: str, expiry: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/multi-strike-oi", response_class=HTMLResponse)
-async def serve_multi_strike_oi_page():
-    """
-    Serves the Multi-Strike OI Analysis page.
-    """
-    html_path = os.path.join(os.path.dirname(__file__), "multi_strike_oi.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    else:
-        raise HTTPException(status_code=404, detail="multi_strike_oi.html not found")
-
 @app.get("/api/multi-strike-oi-data")
 async def get_multi_strike_oi_data(
     symbol: str = Query(..., description="Symbol like NIFTY"),
@@ -1972,6 +1991,106 @@ async def get_multi_strike_oi_data(
         import traceback
         traceback.print_exc()
         print(f"❌ [UPSTOX] [Multi-Strike OI] Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/multi-strike-price-data")
+async def get_multi_strike_price_data(
+    symbol: str = Query(..., description="Symbol like NIFTY"),
+    expiry: str = Query(..., description="Expiry Date"),
+    strikes: str = Query(..., description="Comma-separated strikes")
+):
+    """
+    Fetches intraday Price history for multiple selected strikes (CE and PE).
+    """
+    print(f"📈 [UPSTOX] [Multi-Strike Price] Request: {symbol} | {expiry} | Strikes: {strikes}")
+    try:
+        token = get_access_token()
+        underlying_key = SYMBOL_MAP.get(symbol.upper())
+        if not underlying_key:
+            print(f"❌ [UPSTOX] [Multi-Strike Price] Invalid symbol: {symbol}")
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+            
+        strike_list = [float(s.strip()) for s in strikes.split(",") if s.strip()]
+        if not strike_list:
+            raise HTTPException(status_code=400, detail="No strikes provided")
+
+        # 1. Get Option Chain to find keys for all strikes
+        print(f"🔍 [UPSTOX] [Multi-Strike Price] Fetching chain for {symbol} {expiry}...")
+        df = await run_in_threadpool(get_option_chain_dataframe, token, underlying_key, expiry)
+        if df is None or df.empty:
+            print(f"❌ [UPSTOX] [Multi-Strike Price] No option chain found")
+            raise HTTPException(status_code=404, detail="No option chain data")
+            
+        df_subset = df[df['strike_price'].isin(strike_list)].copy()
+        if df_subset.empty:
+            print(f"❌ [UPSTOX] [Multi-Strike Price] Strikes {strike_list} not found in chain")
+            raise HTTPException(status_code=404, detail="Selected strikes not found in chain")
+            
+        # 2. Fetch Intraday data for all selected legs
+        _sem = asyncio.Semaphore(5)
+        async def fetch_candle(instr_key, strike, type):
+            async with _sem:
+                print(f"⏳ [UPSTOX] [Multi-Strike Price] Fetching {strike} {type} ({instr_key})")
+                res = await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
+                await asyncio.sleep(0.05)
+                return res
+
+        tasks = []
+        mapping = [] # List of {strike, type, key}
+        for _, row in df_subset.iterrows():
+            # CE
+            mapping.append({"strike": row['strike_price'], "type": "CE", "key": row['ce_key']})
+            tasks.append(fetch_candle(row['ce_key'], row['strike_price'], "CE"))
+            # PE
+            mapping.append({"strike": row['strike_price'], "type": "PE", "key": row['pe_key']})
+            tasks.append(fetch_candle(row['pe_key'], row['strike_price'], "PE"))
+            
+        results = await asyncio.gather(*tasks)
+        print(f"✅ [UPSTOX] [Multi-Strike Price] Gathered {len(results)} legs")
+        
+        # 3. Process and Align
+        all_dfs = []
+        for i, candles in enumerate(results):
+            m = mapping[i]
+            col_name = f"{int(m['strike'])}_{m['type']}"
+            
+            if not candles: 
+                print(f"⚠️ [UPSTOX] [Multi-Strike Price] No data for {col_name}")
+                continue
+            
+            df_leg = pd.DataFrame(candles)[['timestamp', 'close']].rename(columns={'close': col_name})
+            df_leg['timestamp'] = pd.to_datetime(df_leg['timestamp'])
+            all_dfs.append(df_leg)
+            
+        if not all_dfs:
+            print(f"⚠️ [UPSTOX] [Multi-Strike Price] All legs returned empty")
+            return {"status": "success", "data": [], "metadata": {"strikes": strike_list}}
+            
+        # Outer merge all dataframes on timestamp
+        merged = all_dfs[0]
+        for i in range(1, len(all_dfs)):
+            merged = pd.merge(merged, all_dfs[i], on='timestamp', how='outer')
+            
+        # Sort and fill gaps
+        merged = merged.sort_values('timestamp').ffill().fillna(0)
+        merged['timestamp'] = merged['timestamp'].dt.strftime('%H:%M')
+        
+        print(f"📊 [UPSTOX] [Multi-Strike Price] Success. Rows: {len(merged)}")
+        return {
+            "status": "success",
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "strikes": sorted(strike_list),
+                "columns": [c for c in merged.columns if c != 'timestamp']
+            },
+            "data": merged.to_dict(orient="records")
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ [UPSTOX] [Multi-Strike Price] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
