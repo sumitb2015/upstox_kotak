@@ -51,7 +51,7 @@ def check_existing_token():
             print("Access token file exists but is empty or invalid. Proceeding with login...")
             return False
     else:
-        print("No access token found. Proceeding with login...")
+        print("❌ No access token found. Proceeding with login...")
         return False
 
 def save_access_token(token):
@@ -69,15 +69,24 @@ def validate_token(token):
         url = "https://api-v2.upstox.com/user/profile"
         headers = {
             'Accept': 'application/json',
-            'Authorization': f'Bearer {token}'
+            'Authorization': f'Bearer {token}',
+            'Api-Version': '2.0'
         }
         response = rq.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
+            print("✅ Token validated successfully via API.")
             return True
-        print(f"Token validation failed. Status: {response.status_code}")
+        
+        print(f"⚠️ Token validation failed. Status: {response.status_code}")
+        try:
+            err_json = response.json()
+            print(f"   Response: {err_json}")
+        except:
+            print(f"   Response: {response.text[:100]}")
+            
         return False
     except Exception as e:
-        print(f"Token validation error: {e}")
+        print(f"❌ Token validation error: {e}")
         return False
 
 def get_access_token(auto_refresh=True):
@@ -96,7 +105,6 @@ def get_access_token(auto_refresh=True):
     if not token:
         token = os.getenv("UPSTOX_ACCESS_TOKEN")
         
-    # 3. Validate Token
     if token and validate_token(token):
         return token
         
@@ -106,12 +114,13 @@ def get_access_token(auto_refresh=True):
     # 4. Refresh if Invalid
     print("🔄 Token is missing or invalid. Triggering auto-refresh...")
     
-    # Remove old file if exists
-    if os.path.exists(access_token_file):
+    # Remove old file if it was explicitly tried and failed
+    if token and os.path.exists(access_token_file):
         try:
+            print(f"🧹 Removing invalid token file: {access_token_file}")
             os.remove(access_token_file)
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ Failed to remove stale token file: {e}")
             
     try:
         new_token = perform_authentication()
