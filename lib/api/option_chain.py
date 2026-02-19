@@ -117,6 +117,9 @@ def get_option_chain_dataframe(access_token: str, instrument_key: str, expiry_da
         ce_k = call_opt.get('instrument_key')
         row['ce_key'] = ce_k.replace(':', '|') if ce_k else None
         
+        # Try to get lot_size (Upstox typically includes it in the option data)
+        row['lot_size'] = call_opt.get('lot_size') or 0
+        
         call_market = call_opt.get('market_data', {})
         row['ce_ltp'] = call_market.get('ltp')
         row['ce_volume'] = call_market.get('volume')
@@ -140,6 +143,10 @@ def get_option_chain_dataframe(access_token: str, instrument_key: str, expiry_da
         put_opt = strike_data.get('put_options', {})
         pe_k = put_opt.get('instrument_key')
         row['pe_key'] = pe_k.replace(':', '|') if pe_k else None
+        
+        # If lot_size not found in call, try put
+        if not row['lot_size']:
+            row['lot_size'] = put_opt.get('lot_size') or 0
         
         put_market = put_opt.get('market_data', {})
         row['pe_ltp'] = put_market.get('ltp')

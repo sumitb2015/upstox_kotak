@@ -315,22 +315,37 @@ def get_lot_size(instrument_key, nse_data):
         int: Lot size for the instrument (default 65 for Nifty if not found)
     """
     try:
+        # Convert to upper for robust matching
+        key_upper = str(instrument_key).upper()
+
         if nse_data is None:
-            return 75  # Default Nifty lot size
+            # Check more specific names first
+            # Match BANKNIFTY or NIFTY BANK
+            if "BANK" in key_upper: return 30
+            if "FIN" in key_upper: return 40
+            if "MIDCP" in key_upper: return 50
+            if "SENSEX" in key_upper: return 20 
+            if "NIFTY" in key_upper: return 65
+            return 65  # Default fallback
         
         # Find the row matching the instrument key
         match = nse_data[nse_data['instrument_key'] == instrument_key]
         
         if match.empty:
-            return 75  # Default
+            if "BANK" in key_upper: return 30
+            if "FIN" in key_upper: return 40
+            if "MIDCP" in key_upper: return 50
+            if "SENSEX" in key_upper: return 20
+            if "NIFTY" in key_upper: return 65
+            return 65  # Default
         
         # Return lot_size from the row
-        lot_size = match.iloc[0].get('lot_size', 75)
+        lot_size = match.iloc[0].get('lot_size', 65)
         return int(lot_size)
         
     except Exception as e:
         print(f"Error getting lot size: {e}")
-        return 75  # Default fallback
+        return 65  # Default fallback
 
 
 

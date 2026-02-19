@@ -24,6 +24,7 @@ from lib.utils.instrument_utils import get_option_instrument_key
 from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
 from lib.core.authentication import get_access_token as auth_get_token
+from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepare_snapshot
 import pandas as pd
 from datetime import datetime
 
@@ -658,6 +659,9 @@ async def startup_event():
 
         # --- Prefetch Option Master for LTP Lookup ---
         asyncio.create_task(prefetch_option_master())
+        
+        # --- Start Greeks Poller (1-min interval) ---
+        asyncio.create_task(poll_major_greeks())
 
         # Start Streamer
         streamer.connect_market_data(
@@ -674,7 +678,7 @@ async def prefetch_option_master():
     """Fetches option chains for all indices to populate TRADING_SYMBOL_LOOKUP."""
     print("⏳ [Dashboard] Prefetching Option Master for LTP Lookup...")
     try:
-        token = auth_get_token() # Using auth_get_token alias from imports
+        token = auth_get_token()
         
         for symbol, index_key in SYMBOL_MAP.items():
             try:
@@ -683,7 +687,7 @@ async def prefetch_option_master():
                 if not expiries:
                     continue
                 
-                # Fetch only current and next expiry to save time/memory, strategies usually trade these
+                # Fetch only current and next expiry to save time/memory
                 target_expiries = expiries[:2] 
                 
                 count = 0
@@ -691,22 +695,69 @@ async def prefetch_option_master():
                     df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
                     if df is not None and not df.empty:
                         for _, row in df.iterrows():
-                            # Map full trading symbol
-                            if 'trading_symbol' in row:
-                                TRADING_SYMBOL_LOOKUP[row['trading_symbol']] = row['instrument_key']
-                                count += 1
-                                
-                            # Map descriptive symbol if possible (e.g. "CE 25950")
-                            # Note: This is ambiguous across indices/expiries, so use with caution or prefix
-                            # Assuming strategy uses full symbol or we can match parts later
-                            pass
+                            strike = row.get('strike_price')
+                            ce_k = row.get('ce_key')
+                            pe_k = row.get('pe_key')
+                            
+                            if strike:
+                                if ce_k:
+                                    TRADING_SYMBOL_LOOKUP[f"CE {int(strike)}"] = ce_k
+                                    count += 1
+                                if pe_k:
+                                    TRADING_SYMBOL_LOOKUP[f"PE {int(strike)}"] = pe_k
+                                    count += 1
+
                 print(f"   Mapped {count} options for {symbol}")
-                
             except Exception as e:
-                print(f"   Error processing {symbol}: {e}")
+                print(f"   ⚠️ Failed to prefetch {symbol}: {e}")
                 
     except Exception as e:
-        print(f"❌ Error in option master prefetch: {e}")
+        print(f"❌ Prefetch failed: {e}")
+
+async def poll_major_greeks():
+    """
+    Background task to poll NIFTY and BANKNIFTY Greeks every 1 minute.
+    Populates GREEKS_HISTORY_CACHE for Net GEX line charts.
+    """
+    print("🚀 [CORE] [Greeks Poller] Background task started (1-min interval)")
+    while True:
+        try:
+            token = auth_get_token()
+            for symbol in ["NIFTY", "BANKNIFTY"]:
+                index_key = SYMBOL_MAP.get(symbol)
+                if not index_key: continue
+                
+                expiries = await run_in_threadpool(get_expiries, token, index_key)
+                if not expiries: continue
+                
+                expiry = str(expiries[0]) # Target current week (normalized string)
+                print(f"📊 [Greeks Poller] Fetching {symbol} {expiry}...")
+                
+                df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
+                if df is not None and not df.empty:
+                    # Calculate and cache
+                    df = calculate_gex_for_chain(df, symbol)
+                    snapshot_df = prepare_snapshot(df)
+                    
+                    cache_key = (symbol, expiry)
+                    if cache_key not in GREEKS_HISTORY_CACHE:
+                        GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
+                    else:
+                        # Append new snapshot
+                        GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+                    
+                    print(f"   ✅ {symbol} GEX Saved. Points: {len(GREEKS_HISTORY_CACHE[cache_key])}")
+                    
+                    # Cleanup: Keep only today's data
+                    today = datetime.now().date()
+                    GREEKS_HISTORY_CACHE[cache_key] = GREEKS_HISTORY_CACHE[cache_key][
+                        GREEKS_HISTORY_CACHE[cache_key]['timestamp'].dt.date == today
+                    ]
+            
+            await asyncio.sleep(60) # 1 minute interval
+        except Exception as e:
+            print(f"❌ [Greeks Poller] Error: {e}")
+            await asyncio.sleep(30) # Wait before retry
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -894,6 +945,17 @@ async def serve_greeks_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
+@app.get("/gex", response_class=HTMLResponse)
+async def serve_gex_page():
+    """
+    Serves the Net GEX Regime Analysis page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "gex.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="gex.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
 @app.get("/max-pain", response_class=HTMLResponse)
 async def serve_max_pain_page():
     """
@@ -905,19 +967,50 @@ async def serve_max_pain_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
-@app.get("/strategies", response_class=HTMLResponse)
-async def get_strategies_page():
-    with open("web_apps/oi_pro/strategies.html", "r") as f:
-        return f.read()
-
 @app.get("/multi-strike", response_class=HTMLResponse)
 async def serve_multi_strike_page():
     """
-    Serves the Multi-Strike Analysis page.
+    Serves the consolidated Multi-Strike Analysis page (Price + OI).
     """
     html_path = os.path.join(os.path.dirname(__file__), "multi_strike.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="multi_strike.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/multi-strike-oi", response_class=HTMLResponse)
+async def serve_multi_strike_oi_page():
+    """
+    Serves the Multi-Strike Analysis page (Legacy route).
+    """
+    return await serve_multi_strike_page()
+
+@app.get("/multi-strike-price", response_class=HTMLResponse)
+async def serve_multi_strike_price_page():
+    """
+    Serves the Multi-Strike Analysis page (Legacy route).
+    """
+    return await serve_multi_strike_page()
+
+@app.get("/strategies", response_class=HTMLResponse)
+async def serve_strategies_page():
+    """
+    Serves the Strategy Command Center page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "strategies.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="strategies.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/option-chain", response_class=HTMLResponse)
+async def serve_option_chain_page():
+    """
+    Serves the Option Chain dashboard page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "option_chain.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="option_chain.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
@@ -946,35 +1039,13 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         # Get Spot Price
         spot_price = df['spot_price'].iloc[0] if not df.empty else 0
         
-        # LOT SIZES MAPPING
-        LOT_SIZES = {
-            "NIFTY": 65, # As per 2026 standards mentioned
-            "BANKNIFTY": 30,
-            "FINNIFTY": 60,
-            "MIDCPNIFTY": 50, # Assuming standard
-            "SENSEX": 10
-        }
-        lot_size = LOT_SIZES.get(symbol, 65) # Default to NIFTY lot size if unknown
-
-        # Calculate GEX (Gamma Exposure)
-        # Formula: Gamma * OI * LotSize * Spot^2 * 0.01
-        # Call GEX is Positive, Put GEX is Negative (Dealer positioning)
-        
-        if 'ce_gamma' in df.columns and 'ce_oi' in df.columns:
-            df['ce_gex'] = df['ce_gamma'] * df['ce_oi'] * lot_size * (spot_price**2) * 0.01
-        else:
-            df['ce_gex'] = 0
-            
-        if 'pe_gamma' in df.columns and 'pe_oi' in df.columns:
-            df['pe_gex'] = df['pe_gamma'] * df['pe_oi'] * lot_size * (spot_price**2) * 0.01 * -1 # Puts are negative GEX
-        else:
-            df['pe_gex'] = 0
-
-        # Calculate Total Net GEX
-        total_gex = df['ce_gex'].sum() + df['pe_gex'].sum()
+        # Use standardized helper for GEX calculation
+        df = calculate_gex_for_chain(df, symbol)
+        total_gex = get_net_gex(df)
 
         # 2. Process & Add to Cache
-        timestamp = datetime.now()
+        snapshot_df = prepare_snapshot(df)
+        timestamp = snapshot_df['timestamp'].iloc[0]
         
         # Extract relevant columns
         # We need strike, greeks, oi
@@ -1033,6 +1104,49 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/gex-history")
+async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
+    """
+    Returns time-series data for Net GEX and Spot Price.
+    Used for the Net GEX regime traffic light chart.
+    """
+    try:
+        token = auth_get_token()
+        index_key = SYMBOL_MAP.get(symbol.upper())
+        if not expiry:
+            expiries = await run_in_threadpool(get_expiries, token, index_key)
+            if not expiries: return {"status": "error", "message": "No expiries found"}
+            expiry = str(expiries[0])
+        else:
+            # Normalize: frontend sends '2026-02-24T00:00:00', poller stores '2026-02-24 00:00:00'
+            expiry = str(expiry).replace('T', ' ')
+            
+        cache_key = (symbol.upper(), expiry)
+        df_history = GREEKS_HISTORY_CACHE.get(cache_key)
+        
+        if df_history is None or df_history.empty:
+            return {"status": "success", "data": []}
+            
+        history = []
+        for ts, group in df_history.groupby('timestamp'):
+            history.append({
+                "timestamp": ts.strftime('%Y-%m-%d %H:%M:%S'),
+                "net_gex": float(group['ce_gex'].sum() + group['pe_gex'].sum()),
+                "spot": float(group['spot_price'].mean())
+            })
+            
+        history.sort(key=lambda x: x['timestamp'])
+        
+        return {
+            "status": "success",
+            "metadata": {"symbol": symbol, "expiry": expiry},
+            "data": history
+        }
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f"Error fetching GEX history: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.get("/api/pcr-data")
 async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
@@ -1862,18 +1976,6 @@ async def get_full_chain(symbol: str, expiry: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/multi-strike-oi", response_class=HTMLResponse)
-async def serve_multi_strike_oi_page():
-    """
-    Serves the Multi-Strike OI Analysis page.
-    """
-    html_path = os.path.join(os.path.dirname(__file__), "multi_strike_oi.html")
-    if os.path.exists(html_path):
-        with open(html_path, "r", encoding="utf-8") as f:
-            return f.read()
-    else:
-        raise HTTPException(status_code=404, detail="multi_strike_oi.html not found")
-
 @app.get("/api/multi-strike-oi-data")
 async def get_multi_strike_oi_data(
     symbol: str = Query(..., description="Symbol like NIFTY"),
@@ -1972,6 +2074,106 @@ async def get_multi_strike_oi_data(
         import traceback
         traceback.print_exc()
         print(f"❌ [UPSTOX] [Multi-Strike OI] Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/multi-strike-price-data")
+async def get_multi_strike_price_data(
+    symbol: str = Query(..., description="Symbol like NIFTY"),
+    expiry: str = Query(..., description="Expiry Date"),
+    strikes: str = Query(..., description="Comma-separated strikes")
+):
+    """
+    Fetches intraday Price history for multiple selected strikes (CE and PE).
+    """
+    print(f"📈 [UPSTOX] [Multi-Strike Price] Request: {symbol} | {expiry} | Strikes: {strikes}")
+    try:
+        token = get_access_token()
+        underlying_key = SYMBOL_MAP.get(symbol.upper())
+        if not underlying_key:
+            print(f"❌ [UPSTOX] [Multi-Strike Price] Invalid symbol: {symbol}")
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+            
+        strike_list = [float(s.strip()) for s in strikes.split(",") if s.strip()]
+        if not strike_list:
+            raise HTTPException(status_code=400, detail="No strikes provided")
+
+        # 1. Get Option Chain to find keys for all strikes
+        print(f"🔍 [UPSTOX] [Multi-Strike Price] Fetching chain for {symbol} {expiry}...")
+        df = await run_in_threadpool(get_option_chain_dataframe, token, underlying_key, expiry)
+        if df is None or df.empty:
+            print(f"❌ [UPSTOX] [Multi-Strike Price] No option chain found")
+            raise HTTPException(status_code=404, detail="No option chain data")
+            
+        df_subset = df[df['strike_price'].isin(strike_list)].copy()
+        if df_subset.empty:
+            print(f"❌ [UPSTOX] [Multi-Strike Price] Strikes {strike_list} not found in chain")
+            raise HTTPException(status_code=404, detail="Selected strikes not found in chain")
+            
+        # 2. Fetch Intraday data for all selected legs
+        _sem = asyncio.Semaphore(5)
+        async def fetch_candle(instr_key, strike, type):
+            async with _sem:
+                print(f"⏳ [UPSTOX] [Multi-Strike Price] Fetching {strike} {type} ({instr_key})")
+                res = await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
+                await asyncio.sleep(0.05)
+                return res
+
+        tasks = []
+        mapping = [] # List of {strike, type, key}
+        for _, row in df_subset.iterrows():
+            # CE
+            mapping.append({"strike": row['strike_price'], "type": "CE", "key": row['ce_key']})
+            tasks.append(fetch_candle(row['ce_key'], row['strike_price'], "CE"))
+            # PE
+            mapping.append({"strike": row['strike_price'], "type": "PE", "key": row['pe_key']})
+            tasks.append(fetch_candle(row['pe_key'], row['strike_price'], "PE"))
+            
+        results = await asyncio.gather(*tasks)
+        print(f"✅ [UPSTOX] [Multi-Strike Price] Gathered {len(results)} legs")
+        
+        # 3. Process and Align
+        all_dfs = []
+        for i, candles in enumerate(results):
+            m = mapping[i]
+            col_name = f"{int(m['strike'])}_{m['type']}"
+            
+            if not candles: 
+                print(f"⚠️ [UPSTOX] [Multi-Strike Price] No data for {col_name}")
+                continue
+            
+            df_leg = pd.DataFrame(candles)[['timestamp', 'close']].rename(columns={'close': col_name})
+            df_leg['timestamp'] = pd.to_datetime(df_leg['timestamp'])
+            all_dfs.append(df_leg)
+            
+        if not all_dfs:
+            print(f"⚠️ [UPSTOX] [Multi-Strike Price] All legs returned empty")
+            return {"status": "success", "data": [], "metadata": {"strikes": strike_list}}
+            
+        # Outer merge all dataframes on timestamp
+        merged = all_dfs[0]
+        for i in range(1, len(all_dfs)):
+            merged = pd.merge(merged, all_dfs[i], on='timestamp', how='outer')
+            
+        # Sort and fill gaps
+        merged = merged.sort_values('timestamp').ffill().fillna(0)
+        merged['timestamp'] = merged['timestamp'].dt.strftime('%H:%M')
+        
+        print(f"📊 [UPSTOX] [Multi-Strike Price] Success. Rows: {len(merged)}")
+        return {
+            "status": "success",
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "strikes": sorted(strike_list),
+                "columns": [c for c in merged.columns if c != 'timestamp']
+            },
+            "data": merged.to_dict(orient="records")
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ [UPSTOX] [Multi-Strike Price] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

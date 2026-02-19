@@ -6,6 +6,10 @@ description: Fetch and integrate updates from the GitHub repository.
 
 Follow these steps to safely fetch and apply updates from the GitHub remote repository.
 
+**Instructions:**
+- When syncing with the remote, always use `git pull origin main --rebase` to maintain a linear history.
+- If conflicts arise during rebase, resolve them file-by-file and use `git rebase --continue`.
+
 // turbo
 1. **Check Local Status**: Run `git status` to ensure there are no uncommitted changes that might lead to conflicts during the pull.
 2. **Fetch Remote Updates**: 
