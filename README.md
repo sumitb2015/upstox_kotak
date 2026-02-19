@@ -13,6 +13,7 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Real-Time Data**: Utilization of WebSockets for low-latency market data and order updates.
 - **Option & Future Strategies**: tailored logic for NIFTY, BANKNIFTY, and FINNIFTY instruments.
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
+- **OI Pro Analytics Dashboard**: Interactive web-based dashboard for real-time Open Interest (OI), PCR, and Greeks analysis.
 
 ## 📂 Project Structure
 
@@ -28,7 +29,8 @@ c:/algo/upstox/
 ├── kotak_api/          # Kotak Securities specific integrations
 ├── docs/               # Detailed documentation and guides
 ├── .agent/             # AI Agent rules, skills, and workflows
-└── tools/              # Utility scripts for maintenance and data
+├── tools/              # Utility scripts for maintenance and data
+└── web_apps/           # Web-based analytics dashboards (OI Pro)
 ```
 
 ## 🛠️ Setup & Usage

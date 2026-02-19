@@ -1049,11 +1049,23 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
             
         token = get_access_token()
         
-        print(f"📊 [PCR API] Fetching option chain for {instrument_key}...")
+        print(f"📊 [UPSTOX] [PCR API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
         
         if df is None or df.empty:
             return {"data": []}
+            
+        # Extract spot price from underlying_spot_price or spot_price column if available
+        # Extraction must happen BEFORE the loop to avoid UnboundLocalError
+        spot_price = 0.0
+        if 'underlying_spot_price' in df.columns:
+            spot_vals = df['underlying_spot_price'].dropna()
+            if not spot_vals.empty:
+                spot_price = float(spot_vals.iloc[0])
+        elif 'spot_price' in df.columns:
+             spot_vals = df['spot_price'].dropna()
+             if not spot_vals.empty:
+                 spot_price = float(spot_vals.iloc[0])
             
         # Process DataFrame for PCR Grid
         grid_data = []
@@ -1063,8 +1075,9 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
             ce_oi = row.get('ce_oi') or 0
             pe_oi = row.get('pe_oi') or 0
             
-            # Skip if negligible OI to avoid division by zero or noise
-            if ce_oi < 500 and pe_oi < 500:
+            # Relax filter for strikes near the spot price to ensure ATM is not missed
+            is_near_spot = spot_price > 0 and abs(strike - spot_price) <= 200
+            if ce_oi < 500 and pe_oi < 500 and not is_near_spot:
                 continue
                 
             # PCR Calculation
@@ -1099,14 +1112,7 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
         # Sort by Strike
         grid_data.sort(key=lambda x: x['strike'])
         
-        # Extract spot price from underlying_spot_price column if available
-        spot_price = 0.0
-        if 'underlying_spot_price' in df.columns:
-            spot_vals = df['underlying_spot_price'].dropna()
-            if not spot_vals.empty:
-                spot_price = float(spot_vals.iloc[0])
-        
-        print(f"✅ [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
+        print(f"✅ [CORE] [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
         return {"data": grid_data, "spot_price": spot_price}
         
     except Exception as e:
