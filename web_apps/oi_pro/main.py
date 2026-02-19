@@ -837,6 +837,18 @@ async def serve_pcr_page():
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
+@app.get("/multi", response_class=HTMLResponse)
+async def serve_multi_chart_page():
+    """
+    Serves the Multi-Option Chart page.
+    Allows users to build custom strategies with multiple legs and view combined premium charts.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "multi_chart.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="multi_chart.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
 @app.get("/straddle", response_class=HTMLResponse)
 async def serve_straddle_page():
     """

@@ -143,7 +143,6 @@
                     });
             }, [symbol, expiry]);
 
-            // Build Chart
             useEffect(() => {
                 if (data.length === 0) return;
 
@@ -203,7 +202,7 @@
                     marker: { color: '#10b981' }, // Green
                     customdata: ceFormatted,
                     text: ceGreekValues,
-                    textposition: 'none',
+                    textposition: 'none', // Hide text on bars
                     hovertemplate: greek === "GEX"
                         ? (isVertical
                             ? `<b>%{x} CE</b><br>GEX: %{customdata}<br><extra></extra>`
@@ -222,7 +221,7 @@
                     marker: { color: '#ef4444' }, // Red
                     customdata: peFormatted,
                     text: peGreekValues,
-                    textposition: 'none',
+                    textposition: 'none', // Hide text on bars
                     hovertemplate: greek === "GEX"
                         ? (isVertical
                             ? `<b>%{x} PE</b><br>GEX: %{customdata}<br><extra></extra>`
@@ -287,7 +286,7 @@
 
                 Plotly.newPlot('chart-div', [traceCE, tracePE], layout, { responsive: true, displayModeBar: false });
 
-            }, [data, greek, spotPrice, orientation, strikeRange]); // Re-render when data or greek changes
+            }, [data, greek, spotPrice, orientation, strikeRange]); // Re-render when dependencies change
 
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30">
@@ -409,6 +408,19 @@
                                 >
                                     {orientation === 'v' ? '⟳' : '⟲'}
                                 </button>
+                                
+                                {/* Range Slider */}
+                                <div className="flex flex-col items-center gap-1 w-32">
+                                    <span className="text-xs text-slate-400">Strikes: ±{strikeRange}</span>
+                                    <input 
+                                        type="range" 
+                                        min="4" 
+                                        max="50" 
+                                        value={strikeRange} 
+                                        onChange={(e) => setStrikeRange(parseInt(e.target.value))}
+                                        className="w-full h-1 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                    />
+                                </div>
                             </div>
                         </div>
 
