@@ -15,6 +15,8 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
 - **OI Pro Analytics Dashboard**: Interactive web-based dashboard for real-time Open Interest (OI), PCR, and Greeks analysis.
   - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
+  - **Greeks Exposure Analysis**: Real-time tracking of systemic Delta and Gamma exposure per strike.
+  - **Net GEX Regime Analysis**: Identification of Market Volatility Regimes (Traffic Light logic) and the Zero Gamma Flip Point.
 
 ## 📂 Project Structure
 

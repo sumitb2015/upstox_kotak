@@ -24,7 +24,7 @@ from lib.utils.instrument_utils import get_option_instrument_key
 from lib.api.streaming import UpstoxStreamer
 from lib.api.historical import get_intraday_data_v3
 from lib.core.authentication import get_access_token as auth_get_token
-from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepare_snapshot
+from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepare_snapshot, get_total_exposure, calculate_flip_point
 from lib.utils.greeks_storage import greeks_storage
 import pandas as pd
 from datetime import datetime
@@ -1075,16 +1075,15 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         # Use standardized helper for GEX calculation
         df = calculate_gex_for_chain(df, symbol)
         total_gex = get_net_gex(df)
+        total_notional_exposure = get_total_exposure(df)
+        flip_point = calculate_flip_point(df)
 
         # 2. Process & Add to Cache
         snapshot_df = prepare_snapshot(df)
         timestamp = snapshot_df['timestamp'].iloc[0]
         
         # Extract relevant columns
-        # We need strike, greeks, oi
-        # Assuming df has: strike_price, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi
-        
-        # Select columns if they exist
+        # ...
         cols_to_keep = ['strike_price', 'spot_price', 
                         'ce_delta', 'pe_delta', 'ce_gamma', 'pe_gamma', 
                         'ce_vega', 'pe_vega', 'ce_theta', 'pe_theta',
@@ -1116,9 +1115,6 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         print(f"✅ [Greeks API] Cache updated. Total rows for {symbol}: {len(GREEKS_HISTORY_CACHE[cache_key])}")
         
         # 3. Prepare Response (Return LATEST snapshot for the chart)
-        # The user wants "plot a bar chart showing the delta or gamma for each strike"
-        # We return the data from the current fetch (snapshot_df)
-        
         # Clean NaNs/Infs
         snapshot_df = snapshot_df.replace([float('inf'), float('-inf')], 0).fillna(0)
         
@@ -1134,6 +1130,8 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
                 "expiry": expiry,
                 "spot": spot,
                 "total_gex": total_gex,
+                "total_exposure": total_notional_exposure,
+                "flip_point": flip_point,
                 "timestamp": timestamp.isoformat()
             },
             "data": snapshot_df.to_dict(orient="records")
@@ -1169,10 +1167,14 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
             
         history = []
         for ts, group in df_history.groupby('timestamp'):
+            net_gex = float(group['ce_gex'].sum() + group['pe_gex'].sum())
+            spot = float(group['spot_price'].mean())
             history.append({
                 "timestamp": ts.strftime('%Y-%m-%d %H:%M:%S'),
-                "net_gex": float(group['ce_gex'].sum() + group['pe_gex'].sum()),
-                "spot": float(group['spot_price'].mean())
+                "net_gex": net_gex,
+                "spot": spot,
+                "total_exposure": get_total_exposure(group),
+                "flip_point": calculate_flip_point(group)
             })
             
         history.sort(key=lambda x: x['timestamp'])
