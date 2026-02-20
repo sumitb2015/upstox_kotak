@@ -81,5 +81,5 @@ The Intensity determines the box color:
 
 ## ⚙️ Settings Profile
 - **Scan Range**: ATM ± 8 strikes.
-- **Update Frequency**: 1 Minute.
+- **Update Frequency**: Default 1 Minute (supports dynamic 3/5/10 min resolution).
 - **Persistence**: Data recovered from CSV on restart.

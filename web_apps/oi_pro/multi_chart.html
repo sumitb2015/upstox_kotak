@@ -60,6 +60,20 @@
                 return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
             };
 
+            const getISTString = () => {
+                const d = new Date();
+                const istOffset = 5.5 * 60 * 60 * 1000;
+                const istDate = new Date(d.getTime() + (d.getTimezoneOffset() * 60000) + istOffset);
+                const pad = (n) => String(n).padStart(2, '0');
+                const y = istDate.getFullYear();
+                const mo = pad(istDate.getMonth() + 1);
+                const da = pad(istDate.getDate());
+                const h = pad(istDate.getHours());
+                const mi = pad(istDate.getMinutes());
+                const s = pad(istDate.getSeconds());
+                return `${y}-${mo}-${da}T${h}:${mi}:${s}+05:30`;
+            };
+
             // ---------- Expiry fetch ----------
             useEffect(() => {
                 setLegs([]); setStrikesByExpiry({}); setChartData([]); setNetPremium(null);
@@ -207,23 +221,31 @@
                         const allReady = [...required].every(id => livePricesRef.current[id] != null);
                         if (!allReady) return;
 
-                        // Compute net premium: raw sum of leg prices (matches backend which ignores direction)
+                        // Compute net premium
                         let net = 0;
                         currentLegs.forEach(leg => {
-                            net += livePricesRef.current[leg.id] || 0;
+                            const price = livePricesRef.current[leg.id] || 0;
+                            const mult = leg.action === 'sell' ? 1 : -1;
+                            net += price * mult * (leg.lot || 1);
                         });
                         setNetPremium(net);
 
-                        // Append to chart (collapse same-second points)
-                        const now = new Date().toISOString();
+                        // Append to chart (Aggregation: update current minute point to reduce noise)
+                        const now = getISTString();
                         setChartData(prev => {
+                            if (prev.length === 0) return prev;
                             const buf = [...prev];
                             const last = buf[buf.length - 1];
-                            if (last && now.slice(0,19) === last.timestamp.slice(0,19)) {
+                            
+                            // Check if current tick belongs to the same minute as the last point
+                            // now: YYYY-MM-DDTHH:MM:SS+05:30 (Minute is at index 11-16)
+                            if (last && now.slice(0, 16) === last.timestamp.slice(0, 16)) {
+                                // Update existing point to avoid density noise
                                 buf[buf.length - 1] = { ...last, premium: net };
                             } else {
-                                buf.push({ timestamp: now, premium: net, vwap: net });
-                                if (buf.length > 1500) buf.shift();
+                                // New minute bucket: append new point, use previous VWAP as baseline
+                                buf.push({ timestamp: now, premium: net, vwap: last ? last.vwap : net });
+                                if (buf.length > 2000) buf.shift();
                             }
                             return buf;
                         });
@@ -258,7 +280,11 @@
                     }
 
                     // Load historical chart
-                    const payload = activeLegs.map(l => ({ instrument_key: l.instrumentKey, direction: l.action.toUpperCase() }));
+                    const payload = activeLegs.map(l => ({ 
+                        instrument_key: l.instrumentKey, 
+                        direction: l.action.toUpperCase(),
+                        lot: l.lot || 1
+                    }));
                     const res = await fetch('/api/multi-strike-history', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -295,8 +321,7 @@
                     y: chartData.map(d => d.premium),
                     name: 'Net Premium',
                     type: 'scatter', mode: 'lines',
-                    line: { color: '#fbbf24', width: 2 },
-                    fill: 'tozeroy', fillcolor: 'rgba(251,191,36,0.06)'
+                    line: { color: '#fbbf24', width: 2 }
                 };
                 const vwap = {
                     x: chartData.map(d => d.timestamp),

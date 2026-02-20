@@ -1979,6 +1979,7 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
 class LegRequest(BaseModel):
     instrument_key: str
     direction: str  # "BUY" or "SELL"
+    lot: int = 1
 
 @app.post("/api/multi-strike-history")
 async def get_multi_strike_history(legs: List[LegRequest]):
@@ -2008,7 +2009,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
     tasks = [fetch_candle(leg) for leg in legs]
     results = await asyncio.gather(*tasks)
 
-    # 2. Process Data — raw price sum (no direction multiplier, matches broker chart display)
+    # 2. Process Data — credit-first premium sum (SELL=+1, BUY=-1)
     price_dfs = []
     vol_dfs = []
     for res in results:
@@ -2022,7 +2023,9 @@ async def get_multi_strike_history(legs: List[LegRequest]):
                 df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
             col = f'price_{leg.instrument_key}'
             vcol = f'vol_{leg.instrument_key}'
-            df[col] = df['close']   # raw price, no direction sign
+            # Apply direction and lot multiplier (Credit-first: SELL=+1, BUY=-1)
+            mult = 1 if leg.direction == "SELL" else -1
+            df[col] = df['close'] * mult * leg.lot
             df[vcol] = df['volume']
             df.set_index('timestamp', inplace=True)
             price_dfs.append(df[[col]])
@@ -2049,7 +2052,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
     price_combined = price_combined.ffill().fillna(0)
     vol_combined = vol_combined.fillna(0)
 
-    # Combined Premium = sum of all leg prices (raw, matches broker)
+    # Combined Premium = sum of all signed leg prices
     combined_df = pd.DataFrame(index=price_combined.index)
     combined_df['premium'] = price_combined.sum(axis=1)
 
@@ -2065,7 +2068,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
 
     # Format timestamps as IST strings
     combined_df.reset_index(inplace=True)
-    combined_df['timestamp'] = combined_df['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+    combined_df['timestamp'] = combined_df['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S+05:30')
 
     chart_data = combined_df[['timestamp', 'premium', 'vwap']].to_dict(orient='records')
 
