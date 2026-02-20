@@ -278,11 +278,11 @@
                 });
                 const activeStrike = maxStrikeIdx >= 0 ? data.strikes[maxStrikeIdx] : null;
 
-                const spotVsOpen = data.open_spot > 0
+                const spotVsPrevClose = data.open_spot > 0
                     ? ((data.spot - data.open_spot) / data.open_spot * 100).toFixed(2)
                     : "0.00";
 
-                return { netFlow, activeStrike, spotVsOpen };
+                return { netFlow, activeStrike, spotVsPrevClose };
             }, [data]);
 
             // ─── ATM Strike ───────────────────────────────────────────────────
@@ -597,9 +597,9 @@
                                         </span>
                                     </div>
                                     <div>
-                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Spot vs open: </span>
-                                        <span className={`font-black ${parseFloat(summary.spotVsOpen) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                            {parseFloat(summary.spotVsOpen) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsOpen)}%
+                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Spot vs Prev Close: </span>
+                                        <span className={`font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
                                             &nbsp;({data.spot?.toFixed(2)})
                                         </span>
                                     </div>

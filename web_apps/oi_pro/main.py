@@ -1418,13 +1418,15 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None):
         latest = intervals[-1]
         spot = latest['spot']
         open_spot = intervals[0]['spot']
+        prev_close = PREV_CLOSES.get(symbol.upper(), open_spot)
         
         return {
             "status": "success",
             "symbol": symbol,
             "expiry": expiry,
             "spot": float(spot),
-            "open_spot": float(open_spot),
+            "open_spot": float(prev_close), # Map prev_close to open_spot for minimal frontend path change, or add new field
+            "prev_close": float(prev_close),
             "strikes": all_strikes,
             "timestamps": timestamps,
             "changes": changes_matrix,
