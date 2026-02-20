@@ -11,6 +11,9 @@ venv/
 env/
 ENV/
 
+# Persistence Data
+data/
+
 # Logs and Reports
 *.log
 logs/
