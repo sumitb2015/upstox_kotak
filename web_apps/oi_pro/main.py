@@ -1354,9 +1354,10 @@ async def serve_heatmap_page():
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
 @app.get("/api/delta-heatmap")
-async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None):
+async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolution: int = 1):
     """
     Returns the cached Net Delta heatmap snapshots.
+    Supports sampling via the 'resolution' parameter (e.g. resolution=3 returns every 3rd snapshot).
     """
     try:
         index_key = SYMBOL_MAP.get(symbol.upper())
@@ -1373,6 +1374,11 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None):
 
         cache_key = (symbol.upper(), expiry)
         intervals = DELTA_HEATMAP_CACHE.get(cache_key, [])
+
+        # Apply sampling based on resolution
+        if resolution > 1:
+            # We take the latest snapshot and then every Nth snapshot BEFORE it to ensure we stay current
+            intervals = intervals[::-resolution][::-1]
 
         if not intervals:
             return {"status": "success", "is_demo": True, "message": "First poll in progress. Loading demo...", "timestamps": [], "strikes": []}
