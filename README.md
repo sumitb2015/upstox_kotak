@@ -14,6 +14,8 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Option & Future Strategies**: tailored logic for NIFTY, BANKNIFTY, and FINNIFTY instruments.
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
 - **OI Pro Analytics Dashboard**: Interactive web-based dashboard for real-time Open Interest (OI), PCR, and Greeks analysis.
+  - **Multi-Option Chart**: Build custom multi-leg option strategies and view net premium charts updating in real-time via WebSockets.
+  - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts and custom strike selection.
   - **Exposure Change Heatmap**: High-resolution heatmap tracking Net Delta shifts ("Velocity") every 60 seconds.
   - **Persistence Engine**: Automatic daily CSV snapshots of all index Greeks, allowing for full state recovery on script restart.
   - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
