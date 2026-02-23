@@ -526,7 +526,9 @@ class ConnectionManager:
 
     async def subscribe(self, websocket: WebSocket, instrument_keys: List[str]):
         """Subscribe a websocket to specific instrument keys"""
-        for key in instrument_keys:
+        normalized_keys = [k.replace(':', '|') for k in instrument_keys]
+        print(f"📡 [WS] Subscribing socket to: {normalized_keys}")
+        for key in normalized_keys:
             if key not in self.subscriptions:
                 self.subscriptions[key] = []
             if websocket not in self.subscriptions[key]:
@@ -535,9 +537,9 @@ class ConnectionManager:
         # Trigger subscription on Upstox Streamer
         if streamer and streamer.market_streamer:
             try:
-                streamer.subscribe_market_data(instrument_keys)
+                streamer.subscribe_market_data(normalized_keys)
             except Exception as e:
-                print(f"Error subscribing to keys {instrument_keys}: {e}")
+                print(f"❌ [WS] Error subscribing to keys {normalized_keys}: {e}")
 
     async def broadcast(self, message: dict):
         """
@@ -546,6 +548,8 @@ class ConnectionManager:
         This method must be called from an async loop.
         """
         instrument_key = message.get('instrument_key')
+        if instrument_key:
+            instrument_key = instrument_key.replace(':', '|')
         
         # 1. Targeted Subscriptions (Straddle Chart)
         if instrument_key and instrument_key in self.subscriptions:
@@ -554,6 +558,7 @@ class ConnectionManager:
                 try:
                     await connection.send_json(message)
                 except Exception as e:
+                    print(f"🔌 [WS] Disconnecting broken pipe for {instrument_key}")
                     to_remove.append(connection)
             for conn in to_remove:
                 self.disconnect(conn)
@@ -605,6 +610,24 @@ streamer: Optional[UpstoxStreamer] = None
 loop = None # Global event loop reference
 
 # --- WebSocket Endpoints ---
+
+@app.websocket("/ws/straddle")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    print("🔌 [WS] New Straddle WS Connection")
+    try:
+        while True:
+            # We expect a message like {"action": "subscribe", "keys": ["NSE_FO|..."]}
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("action") == "subscribe" and msg.get("keys"):
+                    await manager.subscribe(websocket, msg["keys"])
+            except json.JSONDecodeError:
+                print(f"⚠️ [WS] Invalid JSON received: {data}")
+    except WebSocketDisconnect:
+        print("🔌 [WS] Straddle WS Disconnected")
+        manager.disconnect(websocket)
 
 @app.on_event("startup")
 async def startup_event():

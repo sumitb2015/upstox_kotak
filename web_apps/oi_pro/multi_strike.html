@@ -92,6 +92,8 @@
             const [priceData, setPriceData] = useState([]);
             const [oiMetadata, setOiMetadata] = useState({});
             const [priceMetadata, setPriceMetadata] = useState({});
+            const [refreshInterval, setRefreshInterval] = useState(60000);
+            const [lastUpdated, setLastUpdated] = useState(null);
 
             // 1. Fetch Expiries
             useEffect(() => {
@@ -152,6 +154,8 @@
                         setPriceData(priceResult.data || []);
                         setPriceMetadata(priceResult.metadata || {});
                     }
+                    
+                    setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
                 } catch (err) {
                     console.error("Data fetch failed", err);
@@ -162,9 +166,14 @@
 
             useEffect(() => {
                 fetchData();
-                const interval = setInterval(fetchData, 60000);
-                return () => clearInterval(interval);
-            }, [fetchData]);
+                let intervalId;
+                if (refreshInterval > 0) {
+                    intervalId = setInterval(fetchData, refreshInterval);
+                }
+                return () => {
+                    if (intervalId) clearInterval(intervalId);
+                };
+            }, [fetchData, refreshInterval]);
 
             // 4. Render Charts
             useEffect(() => {
@@ -262,6 +271,21 @@
                             </div>
 
                             <div className="flex items-center gap-3 bg-slate-900/40 p-1.5 rounded-2xl border border-slate-800/40">
+                                <div className="hidden sm:flex flex-col items-end pr-3 border-r border-slate-800">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Updated</span>
+                                    <span className="text-xs font-black text-emerald-400">{lastUpdated || "---"}</span>
+                                </div>
+                                <select
+                                    className="bg-transparent border-none text-slate-400 text-sm font-bold focus:ring-0 cursor-pointer pl-2 pr-8 py-2 rounded-xl hover:bg-slate-800/40 transition-colors"
+                                    value={refreshInterval}
+                                    onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                                >
+                                    <option value={30000} className="bg-slate-900">30s</option>
+                                    <option value={60000} className="bg-slate-900">1m</option>
+                                    <option value={180000} className="bg-slate-900">3m</option>
+                                    <option value={300000} className="bg-slate-900">5m</option>
+                                </select>
+                                <div className="w-px h-6 bg-slate-800"></div>
                                 <select
                                     className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer pl-4 pr-10 py-2 rounded-xl hover:bg-slate-800/40 transition-colors"
                                     value={symbol}

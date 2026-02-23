@@ -45,6 +45,8 @@
             const [wsConnected, setWsConnected] = useState(false);
             const [error, setError]         = useState(null);
             const [isFullscreen, setIsFullscreen] = useState(false);
+            const [refreshInterval, setRefreshInterval] = useState(0); // 0 = Live (WS only)
+            const [lastUpdated, setLastUpdated] = useState(null);
 
             const chartRef        = useRef(null);
             const wsRef           = useRef(null);
@@ -147,16 +149,22 @@
             // ---------- Resolve instrument keys ----------
             const resolveKeys = useCallback(async (currentLegs) => {
                 return Promise.all(currentLegs.map(async leg => {
-                    if (!leg.strike || !leg.expiry) return { ...leg, instrumentKey: null };
+                    if (!leg.strike || !leg.expiry) return { ...leg, instrumentKey: null, initialLtp: null };
                     try {
                         const res = await fetch(`/api/option-chain?symbol=${symbol}&expiry=${leg.expiry}&count=100`);
                         const result = await res.json();
                         if (result.status === "success" && result.data) {
                             const row = result.data.find(r => String(r.strike_price) === String(leg.strike));
-                            if (row) return { ...leg, instrumentKey: leg.type === 'CE' ? row.ce_key : row.pe_key };
+                            if (row) {
+                                return { 
+                                    ...leg, 
+                                    instrumentKey: leg.type === 'CE' ? row.ce_key : row.pe_key,
+                                    initialLtp: leg.type === 'CE' ? row.ce_ltp : row.pe_ltp
+                                };
+                            }
                         }
                     } catch(e) {}
-                    return { ...leg, instrumentKey: null };
+                    return { ...leg, instrumentKey: null, initialLtp: null };
                 }));
             }, [symbol]);
 
@@ -178,19 +186,28 @@
 
                 ws.onopen = () => {
                     setWsConnected(true);
-                    ws.send(JSON.stringify({ action: "subscribe", keys: activeLegs.map(l => l.instrumentKey) }));
+                    const keysToSub = activeLegs.map(l => l.instrumentKey.replace(':', '|'));
+                    console.log("📡 [WS] Subscribing to:", keysToSub);
+                    ws.send(JSON.stringify({ action: "subscribe", keys: keysToSub }));
                 };
 
                 ws.onmessage = (event) => {
                     try {
                         const msg = JSON.parse(event.data);
-                        const instrKey = msg.instrument_key || msg.key;
-                        const ltp = msg.ltp;
+                        let instrKey = msg.instrument_key || msg.key;
+                        if (instrKey) instrKey = instrKey.replace(':', '|');
+                        
+                        const ltp = msg.ltp || msg.last_price;
                         if (!instrKey || ltp == null) return;
+                        
+                        console.log(`⚡ [WS] Tick: ${instrKey} = ${ltp}`);
 
                         const currentLegs = legsRef.current;
-                        const matchingLegs = currentLegs.filter(l => l.instrumentKey === instrKey);
-                        if (matchingLegs.length === 0) return;
+                        const matchingLegs = currentLegs.filter(l => l.instrumentKey && l.instrumentKey.replace(':', '|') === instrKey);
+                        if (matchingLegs.length === 0) {
+                            console.warn(`⚠️ [WS] Received tick for unknown key: ${instrKey}`);
+                            return;
+                        }
 
                         // ---- Update mutable ref immediately (no stale state) ----
                         matchingLegs.forEach(l => { livePricesRef.current[l.id] = ltp; });
@@ -250,6 +267,7 @@
                             return buf;
                         });
 
+                        setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
                     } catch(e) { console.error(e); }
                 };
 
@@ -261,21 +279,23 @@
             useEffect(() => () => wsRef.current?.close(), []);
 
             // ---------- Load Chart: fetch history + connect WS ----------
-            const handleApply = async () => {
-                setLoading(true);
-                setError(null);
-                setChartData([]);
-                setLivePrices({});
-                setNetPremium(null);
+            const handleApply = async (isAutoRefresh = false) => {
+                if (!isAutoRefresh) {
+                    setLoading(true);
+                    setError(null);
+                    setChartData([]);
+                    setLivePrices({});
+                    setNetPremium(null);
+                }
 
                 try {
-                    const withKeys = await resolveKeys(legs);
-                    setLegs(withKeys);
+                    const withKeys = await resolveKeys(legsRef.current);
+                    if (!isAutoRefresh) setLegs(withKeys);
 
                     const activeLegs = withKeys.filter(l => l.instrumentKey);
                     if (activeLegs.length === 0) {
-                        setError("Could not resolve instrument keys. Check strikes.");
-                        setLoading(false);
+                        if (!isAutoRefresh) setError("Could not resolve instrument keys. Check strikes.");
+                        if (!isAutoRefresh) setLoading(false);
                         return;
                     }
 
@@ -295,21 +315,51 @@
                         setChartData(result.data);
                         const last = result.data[result.data.length - 1];
                         setNetPremium(last.premium);
+                        setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
                     }
 
-                    // Register which leg IDs must have prices before chart updates
-                    livePricesRef.current = {};
-                    requiredKeysRef.current = new Set(withKeys.filter(l => l.instrumentKey).map(l => l.id));
+                    if (!isAutoRefresh) {
+                        // Register which leg IDs must have prices before chart updates
+                        const initialPrices = {};
+                        withKeys.forEach(l => {
+                            if (l.instrumentKey && l.initialLtp != null) {
+                                initialPrices[l.id] = l.initialLtp;
+                            }
+                        });
+                        
+                        livePricesRef.current = initialPrices;
+                        setLivePrices(initialPrices); // Populate immediately
+                        requiredKeysRef.current = new Set(withKeys.filter(l => l.instrumentKey).map(l => l.id));
 
-                    // Connect WebSocket for live ticks
-                    connectWS(withKeys);
+                        // CRITICAL: Update legsRef.current immediately to avoid race condition with WebSocket onmessage
+                        legsRef.current = withKeys;
+
+                        // Connect WebSocket for live ticks
+                        connectWS(withKeys);
+                    }
 
                 } catch(e) {
-                    setError("Error: " + e.message);
+                    if (!isAutoRefresh) setError("Error: " + e.message);
                 } finally {
-                    setLoading(false);
+                    if (!isAutoRefresh) setLoading(false);
                 }
             };
+
+            const handleApplyRef = useRef();
+            useEffect(() => { handleApplyRef.current = handleApply; }, [handleApply]);
+
+            useEffect(() => {
+                let intervalId;
+                if (refreshInterval > 0) {
+                    intervalId = setInterval(() => {
+                        const allHaveStrikes = legsRef.current.length > 0 && legsRef.current.every(l => l.strike);
+                        if (handleApplyRef.current && allHaveStrikes) {
+                            handleApplyRef.current(true);
+                        }
+                    }, refreshInterval);
+                }
+                return () => clearInterval(intervalId);
+            }, [refreshInterval]);
 
             // ---------- Render chart ----------
             useEffect(() => {
@@ -354,15 +404,35 @@
                         <div className="w-[340px] flex flex-col gap-3 flex-shrink-0">
 
                             {/* Header */}
-                            <header className="flex items-center justify-between">
-                                <h1 className="text-xl font-black text-white uppercase tracking-tight">
-                                    Multi <span className="text-emerald-500">Chart</span>
-                                    {wsConnected && <span className="ml-2 inline-block w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>}
-                                </h1>
-                                <select value={symbol} onChange={e => setSymbol(e.target.value)}
-                                    className="bg-slate-800/50 border border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-emerald-400 outline-none">
-                                    {SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
+                            <header className="flex flex-col gap-3">
+                                <div className="flex items-center justify-between">
+                                    <h1 className="text-xl font-black text-white uppercase tracking-tight flex items-center">
+                                        Multi <span className="text-emerald-500 ml-1">Chart</span>
+                                        {wsConnected && <span className="ml-2 inline-block w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>}
+                                    </h1>
+                                </div>
+                                <div className="flex items-center gap-2 bg-slate-900/40 p-1 rounded-xl border border-slate-800/40">
+                                    <div className="hidden sm:flex flex-col items-end pr-2 border-r border-slate-800">
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Updated</span>
+                                        <span className="text-[10px] font-black text-emerald-400">{lastUpdated || "---"}</span>
+                                    </div>
+                                    <select
+                                        className="bg-transparent border-none text-slate-400 text-xs font-bold focus:ring-0 cursor-pointer pl-1 pr-6 py-1 rounded-lg hover:bg-slate-800/40 transition-colors"
+                                        value={refreshInterval}
+                                        onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                                    >
+                                        <option value={0} className="bg-slate-900">Live (WS)</option>
+                                        <option value={30000} className="bg-slate-900">30s</option>
+                                        <option value={60000} className="bg-slate-900">1m</option>
+                                        <option value={180000} className="bg-slate-900">3m</option>
+                                        <option value={300000} className="bg-slate-900">5m</option>
+                                    </select>
+                                    <div className="w-px h-5 bg-slate-800"></div>
+                                    <select value={symbol} onChange={e => { setSymbol(e.target.value); setLegs([]); }}
+                                        className="bg-transparent border-none text-emerald-400 text-xs font-bold focus:ring-0 px-2 py-1 outline-none">
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                    </select>
+                                </div>
                             </header>
 
                             {/* Legs */}
@@ -394,7 +464,13 @@
                                                         {leg.action === 'buy' ? 'BUY' : 'SELL'}
                                                     </button>
                                                     <input type="number" value={leg.lot} min={1}
-                                                        onChange={e => updateLeg(leg.id, 'lot', parseInt(e.target.value)||1)}
+                                                        onChange={e => {
+                                                            let val = e.target.value;
+                                                            updateLeg(leg.id, 'lot', val === '' ? '' : (parseInt(val) || 1));
+                                                        }}
+                                                        onBlur={e => {
+                                                            if (leg.lot === '' || parseInt(leg.lot) < 1) updateLeg(leg.id, 'lot', 1);
+                                                        }}
                                                         className="w-10 bg-slate-800 border border-slate-700 rounded text-center text-xs font-bold text-white outline-none py-1"/>
                                                     <select value={leg.expiry} onChange={e => updateLeg(leg.id, 'expiry', e.target.value)}
                                                         className="bg-slate-800 border border-slate-700 rounded px-1 py-1 text-[10px] text-slate-300 outline-none flex-1">
@@ -432,7 +508,7 @@
                             </div>
 
                             {/* Apply button */}
-                            <button onClick={handleApply} disabled={loading || !hasAllStrikes}
+                            <button onClick={() => handleApply(false)} disabled={loading || !hasAllStrikes}
                                 className={`w-full py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${hasAllStrikes && !loading ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_20px_rgba(16,185,129,0.25)]' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}>
                                 {loading ? '⏳ Loading...' : '▶ Load Chart'}
                             </button>
