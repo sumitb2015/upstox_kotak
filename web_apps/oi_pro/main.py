@@ -48,6 +48,8 @@ TRADING_SYMBOL_LOOKUP = {}
 # Structure: {(symbol, expiry): pd.DataFrame}
 # Columns: [timestamp, strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi, ...]
 GREEKS_HISTORY_CACHE: Dict[tuple, pd.DataFrame] = {}
+DELTA_HEATMAP_CACHE: Dict[tuple, List[dict]] = {}
+LAST_CACHE_RESET_DATE = datetime.now().date()
 
 # --- Global Cache for Previous Closes (Indices) ---
 PREV_CLOSES: Dict[str, float] = {}
@@ -524,7 +526,9 @@ class ConnectionManager:
 
     async def subscribe(self, websocket: WebSocket, instrument_keys: List[str]):
         """Subscribe a websocket to specific instrument keys"""
-        for key in instrument_keys:
+        normalized_keys = [k.replace(':', '|') for k in instrument_keys]
+        print(f"📡 [WS] Subscribing socket to: {normalized_keys}")
+        for key in normalized_keys:
             if key not in self.subscriptions:
                 self.subscriptions[key] = []
             if websocket not in self.subscriptions[key]:
@@ -533,9 +537,9 @@ class ConnectionManager:
         # Trigger subscription on Upstox Streamer
         if streamer and streamer.market_streamer:
             try:
-                streamer.subscribe_market_data(instrument_keys)
+                streamer.subscribe_market_data(normalized_keys)
             except Exception as e:
-                print(f"Error subscribing to keys {instrument_keys}: {e}")
+                print(f"❌ [WS] Error subscribing to keys {normalized_keys}: {e}")
 
     async def broadcast(self, message: dict):
         """
@@ -544,6 +548,8 @@ class ConnectionManager:
         This method must be called from an async loop.
         """
         instrument_key = message.get('instrument_key')
+        if instrument_key:
+            instrument_key = instrument_key.replace(':', '|')
         
         # 1. Targeted Subscriptions (Straddle Chart)
         if instrument_key and instrument_key in self.subscriptions:
@@ -552,6 +558,7 @@ class ConnectionManager:
                 try:
                     await connection.send_json(message)
                 except Exception as e:
+                    print(f"🔌 [WS] Disconnecting broken pipe for {instrument_key}")
                     to_remove.append(connection)
             for conn in to_remove:
                 self.disconnect(conn)
@@ -603,6 +610,24 @@ streamer: Optional[UpstoxStreamer] = None
 loop = None # Global event loop reference
 
 # --- WebSocket Endpoints ---
+
+@app.websocket("/ws/straddle")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    print("🔌 [WS] New Straddle WS Connection")
+    try:
+        while True:
+            # We expect a message like {"action": "subscribe", "keys": ["NSE_FO|..."]}
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("action") == "subscribe" and msg.get("keys"):
+                    await manager.subscribe(websocket, msg["keys"])
+            except json.JSONDecodeError:
+                print(f"⚠️ [WS] Invalid JSON received: {data}")
+    except WebSocketDisconnect:
+        print("🔌 [WS] Straddle WS Disconnected")
+        manager.disconnect(websocket)
 
 @app.on_event("startup")
 async def startup_event():
@@ -715,28 +740,114 @@ async def prefetch_option_master():
     except Exception as e:
         print(f"❌ Prefetch failed: {e}")
 
+async def load_todays_data():
+    """
+    Recovers today's historical data from CSV snapshots on startup.
+    Populates GREEKS_HISTORY_CACHE and reconstructs DELTA_HEATMAP_CACHE.
+    """
+    print("⏳ [CORE] [Persistence] Loading today's data from CSV...")
+    try:
+        from lib.utils.greeks_helper import LOT_SIZE_MAP
+        today = datetime.now().date()
+        
+        for symbol in SYMBOL_MAP.keys():
+            file_path = greeks_storage._get_file_path(symbol, today)
+            if not file_path.exists():
+                continue
+                
+            print(f"   📂 Reading {file_path.name}...")
+            df = pd.read_csv(file_path)
+            if df.empty: continue
+            
+            # Convert timestamp to datetime objects
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            # 1. Populate GREEKS_HISTORY_CACHE (Direct snapshots)
+            for expiry, exp_group in df.groupby('expiry'):
+                cache_key = (symbol, str(expiry))
+                GREEKS_HISTORY_CACHE[cache_key] = exp_group.copy()
+                
+                # 2. Populate DELTA_HEATMAP_CACHE (Reconstruct 1-min intervals)
+                if cache_key not in DELTA_HEATMAP_CACHE:
+                    DELTA_HEATMAP_CACHE[cache_key] = []
+                
+                lot_size = LOT_SIZE_MAP.get(symbol, 65)
+                df_copy = exp_group.copy()
+                df_copy['time_key'] = df_copy['timestamp'].dt.strftime("%H:%M")
+                
+                # We group by the EXACT timestamp to match the poller logic
+                for time_key, time_group in df_copy.groupby('time_key'):
+                    spot = time_group['spot_price'].iloc[0]
+                    
+                    # Filter to ATM ± 8 strikes (Enforcing the rule on recovery)
+                    time_group = time_group.copy()
+                    all_snaps_strikes = sorted(time_group['strike_price'].unique())
+                    if len(all_snaps_strikes) > 0:
+                        atm = min(all_snaps_strikes, key=lambda s: abs(s - spot))
+                        atm_idx = all_snaps_strikes.index(atm)
+                        low_idx = max(0, atm_idx - 8)
+                        high_idx = min(len(all_snaps_strikes) - 1, atm_idx + 8)
+                        selected = set(all_snaps_strikes[low_idx : high_idx + 1])
+                        time_group = time_group[time_group['strike_price'].isin(selected)]
+
+                    strike_deltas = []
+                    for _, row in time_group.iterrows():
+                        strike = row.get('strike_price', 0)
+                        ce_d = row.get('ce_delta', 0) or 0
+                        pe_d = row.get('pe_delta', 0) or 0
+                        ce_oi = row.get('ce_oi', 0) or 0
+                        pe_oi = row.get('pe_oi', 0) or 0
+                        net_d = (ce_d * ce_oi * lot_size) + (pe_d * pe_oi * lot_size)
+                        strike_deltas.append({"strike": float(strike), "net_delta": round(float(net_d), 0)})
+                    
+                    snapshot = {
+                        "timestamp": time_key,
+                        "spot": float(spot),
+                        "strikes": strike_deltas
+                    }
+                    DELTA_HEATMAP_CACHE[cache_key].append(snapshot)
+                
+                # Trim heatmap cache (Max 100 snapshots)
+                DELTA_HEATMAP_CACHE[cache_key] = DELTA_HEATMAP_CACHE[cache_key][-100:]
+                print(f"   ✅ {symbol} {expiry}: Loaded {len(DELTA_HEATMAP_CACHE[cache_key])} intervals")
+        
+        print("✅ [Persistence] Data recovery complete.")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ [Persistence] Failed to load data: {e}")
+
 async def poll_major_greeks():
     """
-    Background task to poll NIFTY and BANKNIFTY Greeks every 1 minute.
-    Populates GREEKS_HISTORY_CACHE for Net GEX line charts.
+    Background task to poll all indices every 1 minute.
+    Populates GREEKS_HISTORY_CACHE and saves CSV snapshots.
     """
     print("🚀 [CORE] [Greeks Poller] Background task started (1-min interval)")
+    global LAST_CACHE_RESET_DATE
+    
     while True:
         try:
+            # --- Daily Cache Reset ---
+            today = datetime.now().date()
+            if today > LAST_CACHE_RESET_DATE:
+                print(f"🧹 [CORE] New day detected ({today}). Resetting Greeks caches.")
+                GREEKS_HISTORY_CACHE.clear()
+                DELTA_HEATMAP_CACHE.clear()
+                LAST_CACHE_RESET_DATE = today
+
             token = auth_get_token()
-            for symbol in ["NIFTY", "BANKNIFTY"]:
+            for symbol in SYMBOL_MAP.keys():
                 index_key = SYMBOL_MAP.get(symbol)
                 if not index_key: continue
                 
                 expiries = await run_in_threadpool(get_expiries, token, index_key)
                 if not expiries: continue
                 
-                expiry = str(expiries[0]) # Target current week (normalized string)
+                expiry = str(expiries[0]) 
                 print(f"📊 [Greeks Poller] Fetching {symbol} {expiry}...")
                 
                 df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
                 if df is not None and not df.empty:
-                    # Calculate and cache
                     df = calculate_gex_for_chain(df, symbol)
                     snapshot_df = prepare_snapshot(df)
                     
@@ -744,27 +855,94 @@ async def poll_major_greeks():
                     if cache_key not in GREEKS_HISTORY_CACHE:
                         GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
                     else:
-                        # Append new snapshot
                         GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
                     
-                    print(f"   ✅ {symbol} GEX Saved. Points: {len(GREEKS_HISTORY_CACHE[cache_key])}")
-                    
-                    # Cleanup: Keep only today's data
-                    today = datetime.now().date()
-                    GREEKS_HISTORY_CACHE[cache_key] = GREEKS_HISTORY_CACHE[cache_key][
-                        GREEKS_HISTORY_CACHE[cache_key]['timestamp'].dt.date == today
-                    ]
-                    
-                    # Persistent storage (CSV)
+                    # Store to CSV
                     try:
                         greeks_storage.save_snapshot(symbol, expiry, snapshot_df)
                     except Exception as storage_err:
                         print(f"❌ [Greeks Poller] Storage error: {storage_err}")
             
-            await asyncio.sleep(60) # 1 minute interval
+            await asyncio.sleep(60) 
         except Exception as e:
             print(f"❌ [Greeks Poller] Error: {e}")
-            await asyncio.sleep(30) # Wait before retry
+            await asyncio.sleep(30)
+
+async def poll_delta_heatmap():
+    """
+    Background task to poll Net Delta Velocity every 1 minute.
+    Net Delta = (ce_delta * ce_oi * lot_size) + (pe_delta * pe_oi * lot_size)
+    """
+    print("🚀 [CORE] [Delta Heatmap Poller] Background task started (1-min interval)")
+    global LAST_CACHE_RESET_DATE
+    
+    while True:
+        try:
+            today = datetime.now().date()
+            if today > LAST_CACHE_RESET_DATE:
+                DELTA_HEATMAP_CACHE.clear()
+                LAST_CACHE_RESET_DATE = today
+
+            token = auth_get_token()
+            for symbol in SYMBOL_MAP.keys():
+                index_key = SYMBOL_MAP.get(symbol)
+                if not index_key: continue
+
+                expiries = await run_in_threadpool(get_expiries, token, index_key)
+                if not expiries: continue
+                expiry = str(expiries[0])
+
+                df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
+                if df is None or df.empty: continue
+
+                from lib.utils.greeks_helper import LOT_SIZE_MAP
+                lot_size = LOT_SIZE_MAP.get(symbol, 65)
+                spot_price = df['spot_price'].iloc[0] if 'spot_price' in df.columns else 0
+
+                # Filter to ATM ± 8 strikes
+                if spot_price > 0 and 'strike_price' in df.columns:
+                    all_strikes = sorted(df['strike_price'].unique())
+                    atm = min(all_strikes, key=lambda s: abs(s - spot_price))
+                    idx = all_strikes.index(atm)
+                    df = df[df['strike_price'].isin(all_strikes[max(0, idx-8) : idx+9])]
+
+                strike_deltas = []
+                for _, row in df.iterrows():
+                    net_d = (row.get('ce_delta', 0)*row.get('ce_oi', 0)*lot_size) + (row.get('pe_delta', 0)*row.get('pe_oi', 0)*lot_size)
+                    strike_deltas.append({"strike": float(row.get('strike_price', 0)), "net_delta": round(float(net_d), 0)})
+
+                snapshot = {
+                    "timestamp": datetime.now().strftime("%H:%M"),
+                    "spot": float(spot_price),
+                    "strikes": strike_deltas
+                }
+
+                cache_key = (symbol, expiry)
+                if cache_key not in DELTA_HEATMAP_CACHE: DELTA_HEATMAP_CACHE[cache_key] = []
+                DELTA_HEATMAP_CACHE[cache_key].append(snapshot)
+                DELTA_HEATMAP_CACHE[cache_key] = DELTA_HEATMAP_CACHE[cache_key][-100:]
+
+            await asyncio.sleep(60) 
+        except Exception as e:
+            print(f"❌ [Delta Heatmap Poller] Error: {e}")
+            await asyncio.sleep(30)
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize background tasks and load state from disk."""
+    print("🌅 [CORE] Dashboard Server Starting...")
+    try:
+        # 1. Recover persistent state
+        await load_todays_data()
+        
+        # 2. Launch Background Pollers
+        asyncio.create_task(prefetch_option_master())
+        asyncio.create_task(poll_major_greeks())
+        asyncio.create_task(poll_delta_heatmap())
+        
+        print("✅ [CORE] All background tasks initialized.")
+    except Exception as e:
+        print(f"❌ [CORE] Startup Failure: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1187,6 +1365,107 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f"Error fetching GEX history: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/heatmap", response_class=HTMLResponse)
+async def serve_heatmap_page():
+    """Serves the Exposure Change Heatmap page."""
+    html_path = os.path.join(os.path.dirname(__file__), "heatmap.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="heatmap.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/api/delta-heatmap")
+async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolution: int = 1):
+    """
+    Returns the cached Net Delta heatmap snapshots.
+    Supports sampling via the 'resolution' parameter (e.g. resolution=3 returns every 3rd snapshot).
+    """
+    try:
+        index_key = SYMBOL_MAP.get(symbol.upper())
+        if not index_key:
+            raise HTTPException(status_code=400, detail="Invalid symbol")
+
+        token = auth_get_token()
+        if not expiry:
+            expiries = await run_in_threadpool(get_expiries, token, index_key)
+            if not expiries: return {"status": "error", "message": "No expiries"}
+            expiry = str(expiries[0])
+        else:
+            expiry = str(expiry).replace('T', ' ')
+
+        cache_key = (symbol.upper(), expiry)
+        intervals = DELTA_HEATMAP_CACHE.get(cache_key, [])
+
+        # Apply sampling based on resolution
+        if resolution > 1:
+            # We take the latest snapshot and then every Nth snapshot BEFORE it to ensure we stay current
+            intervals = intervals[::-resolution][::-1]
+
+        if not intervals:
+            return {"status": "success", "is_demo": True, "message": "First poll in progress. Loading demo...", "timestamps": [], "strikes": []}
+
+        # Format for Heatmap rendering
+        all_strikes = sorted(list(set(s['strike'] for snap in intervals for s in snap['strikes'])), reverse=True)
+        timestamps = [snap['timestamp'] for snap in intervals]
+        
+        # Build 2D matrix [strike][time] of NET DELTA
+        net_delta_matrix = []
+        for strike in all_strikes:
+            row_data = []
+            for snap in intervals:
+                match = next((s for s in snap['strikes'] if s['strike'] == strike), None)
+                row_data.append(match['net_delta'] if match else 0)
+            net_delta_matrix.append(row_data)
+
+        # ─── CALCULATE CHANGES (VELOCITY) ───
+        # changes[strike_idx][time_idx] = current_net - prev_net
+        changes_matrix = []
+        for row in net_delta_matrix:
+            row_changes = [0] # First column always 0 change
+            for i in range(1, len(row)):
+                row_changes.append(row[i] - row[i-1])
+            changes_matrix.append(row_changes)
+
+        # ─── CALCULATE MAX ABS PER COLUMN (For Normalization) ───
+        num_cols = len(timestamps)
+        max_per_col = []
+        for t in range(num_cols):
+            col_vals = [abs(changes_matrix[s][t]) for s in range(len(all_strikes))]
+            max_per_col.append(max(col_vals) if col_vals else 1)
+
+        # ─── CALCULATE TREND (Cumulative Change) ───
+        # Trend = latest - first
+        trend = []
+        for row in net_delta_matrix:
+            trend.append(row[-1] - row[0])
+
+        # Latest Net Delta (Standalone column)
+        latest_net_delta = [row[-1] for row in net_delta_matrix]
+
+        latest = intervals[-1]
+        spot = latest['spot']
+        open_spot = intervals[0]['spot']
+        prev_close = PREV_CLOSES.get(symbol.upper(), open_spot)
+        
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "expiry": expiry,
+            "spot": float(spot),
+            "open_spot": float(prev_close), # Map prev_close to open_spot for minimal frontend path change, or add new field
+            "prev_close": float(prev_close),
+            "strikes": all_strikes,
+            "timestamps": timestamps,
+            "changes": changes_matrix,
+            "trend": trend,
+            "net_delta": latest_net_delta,
+            "max_per_col": max_per_col,
+            "is_demo": False
+        }
+    except Exception as e:
+        import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/strike-greeks-history")
@@ -1723,6 +2002,7 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
 class LegRequest(BaseModel):
     instrument_key: str
     direction: str  # "BUY" or "SELL"
+    lot: int = 1
 
 @app.post("/api/multi-strike-history")
 async def get_multi_strike_history(legs: List[LegRequest]):
@@ -1752,7 +2032,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
     tasks = [fetch_candle(leg) for leg in legs]
     results = await asyncio.gather(*tasks)
 
-    # 2. Process Data — raw price sum (no direction multiplier, matches broker chart display)
+    # 2. Process Data — credit-first premium sum (SELL=+1, BUY=-1)
     price_dfs = []
     vol_dfs = []
     for res in results:
@@ -1766,7 +2046,9 @@ async def get_multi_strike_history(legs: List[LegRequest]):
                 df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
             col = f'price_{leg.instrument_key}'
             vcol = f'vol_{leg.instrument_key}'
-            df[col] = df['close']   # raw price, no direction sign
+            # Apply direction and lot multiplier (Credit-first: SELL=+1, BUY=-1)
+            mult = 1 if leg.direction == "SELL" else -1
+            df[col] = df['close'] * mult * leg.lot
             df[vcol] = df['volume']
             df.set_index('timestamp', inplace=True)
             price_dfs.append(df[[col]])
@@ -1793,7 +2075,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
     price_combined = price_combined.ffill().fillna(0)
     vol_combined = vol_combined.fillna(0)
 
-    # Combined Premium = sum of all leg prices (raw, matches broker)
+    # Combined Premium = sum of all signed leg prices
     combined_df = pd.DataFrame(index=price_combined.index)
     combined_df['premium'] = price_combined.sum(axis=1)
 
@@ -1809,7 +2091,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
 
     # Format timestamps as IST strings
     combined_df.reset_index(inplace=True)
-    combined_df['timestamp'] = combined_df['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S')
+    combined_df['timestamp'] = combined_df['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S+05:30')
 
     chart_data = combined_df[['timestamp', 'premium', 'vwap']].to_dict(orient='records')
 

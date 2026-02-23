@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exposure Change Heatmap — OI Pro</title>
+    <meta name="description" content="Real-time Net Delta change heatmap showing where smart money is building or unwinding exposure across strikes.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #030712;
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-strong {
+            background: rgba(17, 24, 39, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+
+        /* Heatmap table */
+        .heatmap-table {
+            border-collapse: separate;
+            border-spacing: 2px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .heatmap-table th {
+            font-family: 'Inter', sans-serif;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #475569;
+            padding: 4px 6px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .heatmap-table th.time-header {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            transform: rotate(180deg);
+            height: 48px;
+            vertical-align: bottom;
+        }
+
+        .heatmap-cell {
+            width: 36px;
+            min-width: 36px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+            position: relative;
+        }
+
+        .heatmap-cell:hover {
+            transform: scale(1.15);
+            z-index: 10;
+        }
+
+        .strike-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #94a3b8;
+            padding: 2px 10px 2px 6px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .strike-label.atm {
+            color: #fbbf24;
+        }
+
+        .atm-row td { background-clip: padding-box; }
+
+        .trend-cell {
+            font-size: 9px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 4px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .net-delta-cell {
+            font-size: 9px;
+            font-weight: 700;
+            color: #64748b;
+            padding: 2px 8px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        /* Tooltip */
+        .cell-tooltip {
+            position: fixed;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 11px;
+            color: #e2e8f0;
+            pointer-events: none;
+            z-index: 1000;
+            min-width: 160px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        /* Pulse animation for live badge */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.9); }
+        }
+        .pulse-live { animation: pulse-ring 2s ease infinite; }
+
+        /* Shimmer loading */
+        @keyframes shimmer {
+            0% { background-position: -200px 0; }
+            100% { background-position: 200px 0; }
+        }
+        .shimmer {
+            background: linear-gradient(90deg, #0f172a 25%, #1e293b 50%, #0f172a 75%);
+            background-size: 400px 100%;
+            animation: shimmer 1.5s infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+    <div class="cell-tooltip" id="cell-tooltip"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY"];
+
+        // ─── Formatting Helpers ──────────────────────────────────────────────────
+
+        function formatDelta(val) {
+            const abs = Math.abs(val);
+            if (abs >= 10000000) return (val / 10000000).toFixed(2) + "Cr";
+            if (abs >= 100000)   return (val / 100000).toFixed(1) + "L";
+            if (abs >= 1000)     return (val / 1000).toFixed(1) + "K";
+            return val.toFixed(0);
+        }
+
+        function formatDate(d) {
+            if (!d) return "---";
+            const dt = new Date(d);
+            if (isNaN(dt)) return d;
+            return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        // ─── Cell Color ───────────────────────────────────────────────────────────
+
+        function getCellColor(change, maxAbs) {
+            if (!maxAbs || maxAbs === 0) return "rgba(15,23,42,0.9)";
+            const norm = change / maxAbs; // -1 to +1
+            const absNorm = Math.min(1, Math.abs(norm));
+            const alpha = Math.min(0.95, absNorm * 1.1 + 0.08);
+
+            if (norm > 0.02) {
+                // Bullish build — green
+                const g = Math.round(120 + absNorm * 100);
+                return `rgba(10, ${g}, 60, ${alpha})`;
+            } else if (norm < -0.02) {
+                // Bearish unwind — red
+                const r = Math.round(160 + absNorm * 80);
+                return `rgba(${r}, 20, 40, ${alpha})`;
+            }
+            // Flat — near black
+            return `rgba(20, 28, 48, 0.7)`;
+        }
+
+        // ─── Main App ─────────────────────────────────────────────────────────────
+
+        function HeatmapApp() {
+            const [symbol, setSymbol]       = useState("NIFTY");
+            const [expiry, setExpiry]       = useState("");
+            const [expiries, setExpiries]   = useState([]);
+            const [data, setData]           = useState(null);
+            const [loading, setLoading]     = useState(false);
+            const [error, setError]         = useState(null);
+            const [lastUpdate, setLastUpdate] = useState(null);
+            const [hoveredCell, setHoveredCell] = useState(null);
+            const [refreshInterval, setRefreshInterval] = useState(60000); // Default 1 min
+            const tooltipRef = useRef(null);
+
+            // Fetch expiries on symbol change
+            useEffect(() => {
+                fetch(`/api/expiries?symbol=${symbol}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.expiries?.length > 0) {
+                            setExpiries(d.expiries);
+                            setExpiry(d.expiries[0]);
+                        }
+                    })
+                    .catch(console.error);
+            }, [symbol]);
+
+            // Fetch heatmap data
+            const fetchData = useCallback(() => {
+                if (!expiry) return;
+                setLoading(true);
+                setError(null);
+                const resMin = Math.max(1, Math.floor(refreshInterval / 60000));
+                const url = `/api/delta-heatmap?symbol=${symbol}&expiry=${encodeURIComponent(expiry)}&resolution=${resMin}`;
+                fetch(url)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.status === "success") {
+                            setData(d);
+                            setLastUpdate(new Date());
+                        } else {
+                            setError(d.message || "Failed to load data");
+                        }
+                        setLoading(false);
+                    })
+                    .catch(e => {
+                        setError("Network error: " + e.message);
+                        setLoading(false);
+                    });
+            }, [symbol, expiry, refreshInterval]);
+
+            useEffect(() => {
+                fetchData();
+                const timer = setInterval(fetchData, refreshInterval);
+                return () => clearInterval(timer);
+            }, [fetchData, refreshInterval]);
+
+            // ─── Derived Summary ──────────────────────────────────────────────
+
+            const summary = React.useMemo(() => {
+                if (!data?.strikes?.length || !data?.trend) return null;
+
+                const totalBull = data.trend.filter(t => t > 0).reduce((a, b) => a + b, 0);
+                const totalBear = data.trend.filter(t => t < 0).reduce((a, b) => a + b, 0);
+                const netFlow   = totalBull + totalBear; // positive = bullish net
+
+                // Most active strike = highest absolute trend
+                let maxTrend = 0, maxStrikeIdx = -1;
+                data.trend.forEach((t, i) => {
+                    if (Math.abs(t) > Math.abs(maxTrend)) { maxTrend = t; maxStrikeIdx = i; }
+                });
+                const activeStrike = maxStrikeIdx >= 0 ? data.strikes[maxStrikeIdx] : null;
+
+                const spotVsPrevClose = data.open_spot > 0
+                    ? ((data.spot - data.open_spot) / data.open_spot * 100).toFixed(2)
+                    : "0.00";
+
+                return { netFlow, activeStrike, spotVsPrevClose };
+            }, [data]);
+
+            // ─── ATM Strike ───────────────────────────────────────────────────
+
+            const atmStrike = React.useMemo(() => {
+                if (!data?.strikes?.length || !data?.spot) return null;
+                return data.strikes.reduce((prev, curr) =>
+                    Math.abs(curr - data.spot) < Math.abs(prev - data.spot) ? curr : prev
+                );
+            }, [data]);
+
+            // ─── Tooltip ──────────────────────────────────────────────────────
+
+            function handleCellMouseEnter(e, strike, timeIdx, change, maxAbs) {
+                const tooltip = document.getElementById('cell-tooltip');
+                if (!tooltip) return;
+                const pct = maxAbs > 0 ? ((change / maxAbs) * 100).toFixed(1) : "0.0";
+                const dir = change > 0 ? "📈 Building" : change < 0 ? "📉 Unwinding" : "➡️ Flat";
+                const ts  = data?.timestamps?.[timeIdx] || "---";
+                tooltip.innerHTML = `
+                    <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Strike ${strike.toLocaleString()} | ${ts}</div>
+                    <div style="font-weight:700;margin-bottom:2px;">${dir}</div>
+                    <div>Change: <span style="color:${change >= 0 ? '#10b981' : '#f43f5e'}">${formatDelta(change)}</span></div>
+                    <div style="color:#475569;font-size:10px;">Intensity: ${change >= 0 ? '+' : ''}${pct}%</div>
+                `;
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.clientX + 12) + 'px';
+                tooltip.style.top  = (e.clientY - 40) + 'px';
+            }
+
+            function handleCellMouseLeave() {
+                const tooltip = document.getElementById('cell-tooltip');
+                if (tooltip) tooltip.style.display = 'none';
+            }
+
+            function handleCellMouseMove(e) {
+                const tooltip = document.getElementById('cell-tooltip');
+                if (tooltip && tooltip.style.display === 'block') {
+                    tooltip.style.left = (e.clientX + 12) + 'px';
+                    tooltip.style.top  = (e.clientY - 40) + 'px';
+                }
+            }
+
+            // ─── Render ───────────────────────────────────────────────────────
+
+            const hasData = data?.strikes?.length > 0 && data?.timestamps?.length > 0;
+
+            const TrendPill = ({ value }) => {
+                const label = Math.abs(value) < 5000 ? "FLAT"
+                            : value > 0 ? "BUILD" : "UNWIND";
+                const color = label === "BUILD" ? "rgba(16,185,129,0.15)"
+                            : label === "UNWIND" ? "rgba(239,68,68,0.15)" : "rgba(71,85,105,0.2)";
+                const text  = label === "BUILD" ? "#10b981"
+                            : label === "UNWIND" ? "#f43f5e" : "#64748b";
+                return (
+                    <span className="trend-cell" style={{ background: color, color: text, border: `1px solid ${text}30` }}>
+                        {label}
+                    </span>
+                );
+            };
+
+            return (
+                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
+                    {/* Sidebar */}
+                    <div id="sidebar-root"></div>
+
+                    <main className="pl-24 pr-6 py-8 w-full overflow-y-auto custom-scrollbar">
+
+                        {/* ── Header ─────────────────────────────────────── */}
+                        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+                            <div>
+                                <h1 className="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+                                    Exposure&nbsp;<span className="text-emerald-400">Change</span>&nbsp;Heatmap
+                                </h1>
+                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">
+                                    Net Delta Velocity · strike · {Math.max(1, Math.floor(refreshInterval / 60000))}-min interval · green = building · red = unwinding
+                                </p>
+                            </div>
+
+                            <div className="flex flex-wrap gap-3 items-center">
+                                {/* Symbol */}
+                                <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-black uppercase">Symbol</span>
+                                    <select className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        value={symbol} onChange={e => setSymbol(e.target.value)}>
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Expiry */}
+                                <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-black uppercase">Expiry</span>
+                                    <select className="bg-transparent border-none text-slate-300 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        value={expiry} onChange={e => setExpiry(e.target.value)}>
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Frequency Dropdown */}
+                                <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-black uppercase">Refresh</span>
+                                    <select className="bg-transparent border-none text-indigo-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        value={refreshInterval} onChange={e => setRefreshInterval(Number(e.target.value))}>
+                                        <option value={30000} className="bg-[#0b0f1a]">30 Sec</option>
+                                        <option value={60000} className="bg-[#0b0f1a]">1 Min</option>
+                                        <option value={180000} className="bg-[#0b0f1a]">3 Min</option>
+                                        <option value={300000} className="bg-[#0b0f1a]">5 Min</option>
+                                    </select>
+                                </div>
+
+                                {/* Refresh btn */}
+                                <button onClick={fetchData}
+                                    className="glass px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer">
+                                    ↻ Refresh
+                                </button>
+
+                                {/* Live badge */}
+                                <div className="glass px-4 py-1.5 rounded-xl flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${loading ? 'bg-amber-500 pulse-live' : 'bg-emerald-500 pulse-live'}`}></div>
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        {loading ? 'Polling...' : (lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : `${refreshInterval/60000}-min Auto`)}
+                                    </span>
+                                </div>
+
+                                {/* Demo badge — shown when live cache is cold */}
+                                {data?.is_demo && (
+                                    <div className="px-3 py-1.5 rounded-xl flex items-center gap-2"
+                                        style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)' }}>
+                                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">🧪 Demo Data</span>
+                                        <span className="text-[9px] text-amber-600">Live data loads after first poll</span>
+                                    </div>
+                                )}
+                            </div>
+                        </header>
+
+                        {/* ── KPI Row ────────────────────────────────────── */}
+                        {summary && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                <div className="glass-strong p-5 rounded-3xl">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Net Flow (All Strikes)</p>
+                                    <h3 className={`text-2xl font-black ${summary.netFlow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {summary.netFlow >= 0 ? '▲ BULLISH' : '▼ BEARISH'}
+                                    </h3>
+                                    <p className="text-[10px] text-slate-600 mt-1">{formatDelta(Math.abs(summary.netFlow))} net trend</p>
+                                </div>
+                                <div className="glass-strong p-5 rounded-3xl">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Most Active Strike</p>
+                                    <h3 className="text-2xl font-black text-amber-400">
+                                        {summary.activeStrike ? summary.activeStrike.toLocaleString() : "---"}
+                                    </h3>
+                                    <p className="text-[10px] text-slate-600 mt-1">Highest absolute flow</p>
+                                </div>
+                                <div className="glass-strong p-5 rounded-3xl">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Spot vs Prev Close</p>
+                                    <h3 className={`text-2xl font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
+                                    </h3>
+                                    <p className="text-[10px] text-slate-600 mt-1">
+                                        {data?.spot?.toFixed(2)} now / {data?.open_spot?.toFixed(2)} close
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Heatmap Grid ────────────────────────────────── */}
+                        <div className="glass-strong rounded-[2.5rem] border-slate-800/40 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent"></div>
+
+                            <div className="p-6">
+                                {/* Error State */}
+                                {error && (
+                                    <div className="flex flex-col items-center justify-center py-16 gap-3">
+                                        <div className="text-3xl">⚠️</div>
+                                        <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-500">{error}</p>
+                                        <p className="text-[10px] text-slate-600">The heatmap fills up as 3-minute polling cycles complete.</p>
+                                    </div>
+                                )}
+
+                                {/* Loading / No Data */}
+                                {!error && loading && !hasData && (
+                                    <div className="flex flex-col items-center justify-center py-16 gap-4 opacity-60">
+                                        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+                                        <p className="text-xs font-black uppercase tracking-[0.3em] text-emerald-500">Initializing Engine...</p>
+                                        <p className="text-[10px] text-slate-600">First snapshot populates after the initial 3-min poller cycle.</p>
+                                    </div>
+                                )}
+
+                                {/* Heatmap Table */}
+                                {hasData && (
+                                    <div className="overflow-x-auto custom-scrollbar" onMouseMove={handleCellMouseMove}>
+                                        <table className="heatmap-table w-full">
+                                            <thead>
+                                                <tr>
+                                                    <th className="text-left" style={{ minWidth: '70px' }}>STRIKE</th>
+                                                    {data.timestamps.map((ts, ti) => (
+                                                        <th key={ti} className="time-header">{ts}</th>
+                                                    ))}
+                                                    <th style={{ minWidth: '60px', textAlign: 'center' }}>TREND</th>
+                                                    <th style={{ minWidth: '70px', textAlign: 'right' }}>LATEST NET Δ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {data.strikes.map((strike, si) => {
+                                                    const isAtm = strike === atmStrike;
+                                                    const rowChanges = data.changes[si] || [];
+                                                    const trendVal  = data.trend[si] || 0;
+                                                    const netDelta  = data.net_delta[si] || 0;
+
+                                                    return (
+                                                        <tr key={si} className={isAtm ? "atm-row" : ""}>
+                                                            {/* Strike label */}
+                                                            <td className={`strike-label ${isAtm ? 'atm' : ''}`}>
+                                                                {isAtm ? '▶ ' : ''}{strike.toLocaleString()}
+                                                            </td>
+
+                                                            {/* Change cells */}
+                                                            {rowChanges.map((change, ti) => {
+                                                                const maxAbs = data.max_per_col[ti] || 1;
+                                                                const bgColor = getCellColor(change, maxAbs);
+                                                                // ATM row gets a subtle outline
+                                                                const border = isAtm ? '1px solid rgba(251,191,36,0.25)' : 'none';
+                                                                return (
+                                                                    <td key={ti} style={{ padding: '1px' }}>
+                                                                        <div
+                                                                            className="heatmap-cell"
+                                                                            style={{ background: bgColor, border }}
+                                                                            onMouseEnter={e => handleCellMouseEnter(e, strike, ti, change, maxAbs)}
+                                                                            onMouseLeave={handleCellMouseLeave}
+                                                                        />
+                                                                    </td>
+                                                                );
+                                                            })}
+
+                                                            {/* Trend */}
+                                                            <td style={{ padding: '2px 6px', textAlign: 'center' }}>
+                                                                <TrendPill value={trendVal} />
+                                                            </td>
+
+                                                            {/* Latest Net Delta */}
+                                                            <td className="net-delta-cell"
+                                                                style={{ color: netDelta >= 0 ? '#10b981' : '#f43f5e' }}>
+                                                                {netDelta >= 0 ? '+' : ''}{formatDelta(netDelta)}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ── Legend ─────────────────────────────────────── */}
+                        {hasData && (
+                            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+                                <div className="glass p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-8 h-5 rounded" style={{ background: 'rgba(10, 180, 80, 0.8)' }}></div>
+                                        <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">Deep Green</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">Net delta increased → Call buyers or put writers covering. Smart money building longs at this strike.</p>
+                                </div>
+                                <div className="glass p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-8 h-5 rounded" style={{ background: 'rgba(220, 50, 50, 0.8)' }}></div>
+                                        <span className="text-xs font-black text-rose-400 uppercase tracking-widest">Deep Red</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">Net delta decreased → Call writers unwinding OR put buyers adding. Bearish pressure at this strike.</p>
+                                </div>
+                                <div className="glass p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-8 h-5 rounded" style={{ background: 'rgba(20, 28, 48, 0.8)', border: '1px solid #1e293b' }}></div>
+                                        <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Black / Dark</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">Almost no change. Strike is quiet — no fresh positioning. Smart money is not active here.</p>
+                                </div>
+                                <div className="glass p-5 rounded-2xl">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-amber-400 font-black text-sm">▶</span>
+                                        <span className="text-xs font-black text-amber-400 uppercase tracking-widest">ATM Strike</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400">Current At-The-Money strike. Closest to spot price. Most sensitive to directional moves.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Live Interpretation Footer ───────────────── */}
+                        {summary && hasData && (
+                            <div className="glass-strong rounded-2xl p-5 mb-8"
+                                style={{ border: data?.is_demo ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(16,185,129,0.1)' }}>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-3"
+                                    style={{ color: data?.is_demo ? '#f59e0b' : '#10b981' }}>
+                                    {data?.is_demo ? '🧪 Demo Interpretation (Synthetic Data)' : '⚡ Live Interpretation'}
+                                </p>
+                                <div className="flex flex-wrap gap-6 text-xs">
+                                    <div>
+                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Net Flow: </span>
+                                        <span className={`font-black ${summary.netFlow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {summary.netFlow >= 0 ? '▲ BULLISH' : '▼ BEARISH'}
+                                        </span>
+                                        {Math.abs(summary.netFlow) > 10000 && (
+                                            <span className="text-slate-600 ml-2 font-bold">
+                                                {Math.abs(summary.netFlow) > 10000 ? '& WEAKENING' : '& STRENGTHENING'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Most active strike: </span>
+                                        <span className="font-black text-amber-400">
+                                            {summary.activeStrike?.toLocaleString() || "---"}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Spot vs Prev Close: </span>
+                                        <span className={`font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
+                                            &nbsp;({data.spot?.toFixed(2)})
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Snapshots: </span>
+                                        <span className="font-black text-indigo-400">{data.timestamps.length}</span>
+                                        <span className="text-slate-600 ml-1">× {data.strikes.length} strikes</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HeatmapApp />);
+    </script>
+    <script src="/sidebar.js"></script>
+</body>
+
+</html>

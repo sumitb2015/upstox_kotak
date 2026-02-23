@@ -2,6 +2,15 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 
+# --- Lot Size Configuration (Standardized for 2026) ---
+LOT_SIZE_MAP = {
+    "NIFTY": 65,
+    "BANKNIFTY": 30,
+    "FINNIFTY": 40,
+    "MIDCPNIFTY": 50,
+    "SENSEX": 10
+}
+
 def calculate_gex_for_chain(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     """
     Calculates CE GEX and PE GEX for a given option chain DataFrame.
@@ -35,16 +44,6 @@ def calculate_gex_for_chain(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         df['pe_gex'] = 0
         return df
 
-    # Multiplier (Q): Define Lot Sizes for standardized scaling.
-    # Nifty lot size is 65. Using a default map if not provided in the dataframe.
-    LOT_SIZE_MAP = {
-        "NIFTY": 65,
-        "BANKNIFTY": 15,
-        "FINNIFTY": 25,
-        "MIDCPNIFTY": 50,
-        "SENSEX": 10
-    }
-    
     # Try to find lot size from dataframe, fall back to map or 1
     lot_size = 1
     if 'lot_size' in df.columns and df['lot_size'].iloc[0] > 0:
