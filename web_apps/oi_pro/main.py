@@ -798,7 +798,18 @@ async def load_todays_data():
                         ce_oi = row.get('ce_oi', 0) or 0
                         pe_oi = row.get('pe_oi', 0) or 0
                         net_d = (ce_d * ce_oi * lot_size) + (pe_d * pe_oi * lot_size)
-                        strike_deltas.append({"strike": float(strike), "net_delta": round(float(net_d), 0)})
+                        strike_deltas.append({
+                            "strike": float(strike), 
+                            "net_delta": round(float(net_d), 0),
+                            "ce_oi": ce_oi,
+                            "pe_oi": pe_oi,
+                            "ce_ltp": row.get('ce_ltp', 0) or 0,
+                            "pe_ltp": row.get('pe_ltp', 0) or 0,
+                            "ce_prev_oi": row.get('ce_prev_oi', 0) or 0,
+                            "pe_prev_oi": row.get('pe_prev_oi', 0) or 0,
+                            "ce_close": row.get('ce_close', 0) or 0,
+                            "pe_close": row.get('pe_close', 0) or 0
+                        })
                     
                     snapshot = {
                         "timestamp": time_key,
@@ -909,7 +920,18 @@ async def poll_delta_heatmap():
                 strike_deltas = []
                 for _, row in df.iterrows():
                     net_d = (row.get('ce_delta', 0)*row.get('ce_oi', 0)*lot_size) + (row.get('pe_delta', 0)*row.get('pe_oi', 0)*lot_size)
-                    strike_deltas.append({"strike": float(row.get('strike_price', 0)), "net_delta": round(float(net_d), 0)})
+                    strike_deltas.append({
+                        "strike": float(row.get('strike_price', 0)), 
+                        "net_delta": round(float(net_d), 0),
+                        "ce_oi": row.get('ce_oi', 0) or 0,
+                        "pe_oi": row.get('pe_oi', 0) or 0,
+                        "ce_ltp": row.get('ce_ltp', 0) or 0,
+                        "pe_ltp": row.get('pe_ltp', 0) or 0,
+                        "ce_prev_oi": row.get('ce_prev_oi', 0) or 0,
+                        "pe_prev_oi": row.get('pe_prev_oi', 0) or 0,
+                        "ce_close": row.get('ce_close', 0) or 0,
+                        "pe_close": row.get('pe_close', 0) or 0
+                    })
 
                 snapshot = {
                     "timestamp": datetime.now().strftime("%H:%M"),
@@ -1406,62 +1428,88 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
         if not intervals:
             return {"status": "success", "is_demo": True, "message": "First poll in progress. Loading demo...", "timestamps": [], "strikes": []}
 
-        # Format for Heatmap rendering
+        # Format for Dual Heatmap rendering
         all_strikes = sorted(list(set(s['strike'] for snap in intervals for s in snap['strikes'])), reverse=True)
         timestamps = [snap['timestamp'] for snap in intervals]
         
-        # Build 2D matrix [strike][time] of NET DELTA
-        net_delta_matrix = []
-        for strike in all_strikes:
-            row_data = []
-            for snap in intervals:
-                match = next((s for s in snap['strikes'] if s['strike'] == strike), None)
-                row_data.append(match['net_delta'] if match else 0)
-            net_delta_matrix.append(row_data)
-
-        # ─── CALCULATE CHANGES (VELOCITY) ───
-        # changes[strike_idx][time_idx] = current_net - prev_net
-        changes_matrix = []
-        for row in net_delta_matrix:
-            row_changes = [0] # First column always 0 change
-            for i in range(1, len(row)):
-                row_changes.append(row[i] - row[i-1])
-            changes_matrix.append(row_changes)
-
-        # ─── CALCULATE MAX ABS PER COLUMN (For Normalization) ───
-        num_cols = len(timestamps)
-        max_per_col = []
-        for t in range(num_cols):
-            col_vals = [abs(changes_matrix[s][t]) for s in range(len(all_strikes))]
-            max_per_col.append(max(col_vals) if col_vals else 1)
-
-        # ─── CALCULATE TREND (Cumulative Change) ───
-        # Trend = latest - first
-        trend = []
-        for row in net_delta_matrix:
-            trend.append(row[-1] - row[0])
-
-        # Latest Net Delta (Standalone column)
-        latest_net_delta = [row[-1] for row in net_delta_matrix]
-
         latest = intervals[-1]
         spot = latest['spot']
         open_spot = intervals[0]['spot']
         prev_close = PREV_CLOSES.get(symbol.upper(), open_spot)
         
+        # Build 3D heatmap data matrix [strike][time] -> {ce_data, pe_data}
+        # In a UI table, rows are strikes, columns are timestamps
+        heatmap_data = [] # List of strikes with timeline data
+        
+        for strike in all_strikes:
+            strike_timeline = []
+            
+            for snap in intervals:
+                match = next((s for s in snap['strikes'] if s['strike'] == strike), None)
+                
+                if match:
+                    ce_oi_chg = match['ce_oi'] - match['ce_prev_oi']
+                    pe_oi_chg = match['pe_oi'] - match['pe_prev_oi']
+                    
+                    ce_oi_chg_pct = (ce_oi_chg / match['ce_prev_oi'] * 100) if match['ce_prev_oi'] else 0
+                    pe_oi_chg_pct = (pe_oi_chg / match['pe_prev_oi'] * 100) if match['pe_prev_oi'] else 0
+                    
+                    ce_price_chg_pct = ((match['ce_ltp'] - match['ce_close']) / match['ce_close'] * 100) if match['ce_close'] else 0
+                    pe_price_chg_pct = ((match['pe_ltp'] - match['pe_close']) / match['pe_close'] * 100) if match['pe_close'] else 0
+                    
+                    ce_buildup = calculate_buildup(ce_price_chg_pct, ce_oi_chg_pct)
+                    pe_buildup = calculate_buildup(pe_price_chg_pct, pe_oi_chg_pct)
+                    
+                    strike_timeline.append({
+                        "ce": {
+                            "oi": match['ce_oi'],
+                            "prev_oi": match['ce_prev_oi'],
+                            "ltp": match['ce_ltp'],
+                            "oi_chg_pct": round(ce_oi_chg_pct, 2),
+                            "price_chg_pct": round(ce_price_chg_pct, 2),
+                            "buildup": ce_buildup
+                        },
+                        "pe": {
+                            "oi": match['pe_oi'],
+                            "prev_oi": match['pe_prev_oi'],
+                            "ltp": match['pe_ltp'],
+                            "oi_chg_pct": round(pe_oi_chg_pct, 2),
+                            "price_chg_pct": round(pe_price_chg_pct, 2),
+                            "buildup": pe_buildup
+                        },
+                        "net_delta": match['net_delta']
+                    })
+                else:
+                    # Empty filler if missing
+                    strike_timeline.append(None)
+                    
+            heatmap_data.append({
+                "strike": strike,
+                "timeline": strike_timeline,
+                "latest_net_delta": strike_timeline[-1]['net_delta'] if strike_timeline[-1] else 0
+            })
+            
+        # Calculate max intensity for color scaling across ALL time periods for Calls and Puts separately
+        max_ce_oi_chg_pct = []
+        max_pe_oi_chg_pct = []
+        
+        for ti in range(len(timestamps)):
+            ce_col_vals = [abs(data['timeline'][ti]['ce']['oi_chg_pct']) for data in heatmap_data if data['timeline'][ti]]
+            pe_col_vals = [abs(data['timeline'][ti]['pe']['oi_chg_pct']) for data in heatmap_data if data['timeline'][ti]]
+            max_ce_oi_chg_pct.append(max(ce_col_vals) if ce_col_vals else 1)
+            max_pe_oi_chg_pct.append(max(pe_col_vals) if pe_col_vals else 1)
+
         return {
             "status": "success",
             "symbol": symbol,
             "expiry": expiry,
             "spot": float(spot),
-            "open_spot": float(prev_close), # Map prev_close to open_spot for minimal frontend path change, or add new field
+            "open_spot": float(prev_close), 
             "prev_close": float(prev_close),
-            "strikes": all_strikes,
             "timestamps": timestamps,
-            "changes": changes_matrix,
-            "trend": trend,
-            "net_delta": latest_net_delta,
-            "max_per_col": max_per_col,
+            "data": heatmap_data,
+            "max_ce_oi_chg_pct": max_ce_oi_chg_pct,
+            "max_pe_oi_chg_pct": max_pe_oi_chg_pct,
             "is_demo": False
         }
     except Exception as e:
