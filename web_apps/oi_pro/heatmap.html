@@ -51,6 +51,15 @@
             font-family: 'JetBrains Mono', monospace;
         }
 
+        .heatmap-table td:first-child,
+        .heatmap-table th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 20;
+            background: #030712;
+            border-right: 1px solid rgba(255,255,255,0.05);
+        }
+
         .heatmap-table th {
             font-family: 'Inter', sans-serif;
             font-size: 9px;
@@ -233,7 +242,27 @@
             const [lastUpdate, setLastUpdate] = useState(null);
             const [refreshInterval, setRefreshInterval] = useState(60000); // Default 1 min
             const [viewSide, setViewSide]   = useState("CE"); // 'CE' or 'PE'
+            const [fixedTimestamps, setFixedTimestamps] = useState([]);
             const tooltipRef = useRef(null);
+
+            // Generate full day timeline (9:15 to 15:30) based on refreshInterval
+            useEffect(() => {
+                const timestamps = [];
+                let d = new Date();
+                d.setHours(9, 15, 0, 0); // Start at 09:15 AM
+                const endTime = new Date();
+                endTime.setHours(15, 30, 0, 0); // End at 3:30 PM
+
+                const intervalMs = refreshInterval || 60000;
+
+                while (d <= endTime) {
+                    const hh = String(d.getHours()).padStart(2, '0');
+                    const mm = String(d.getMinutes()).padStart(2, '0');
+                    timestamps.push(`${hh}:${mm}`);
+                    d.setTime(d.getTime() + intervalMs);
+                }
+                setFixedTimestamps(timestamps);
+            }, [refreshInterval]);
 
             // Fetch expiries on symbol change
             useEffect(() => {
@@ -469,31 +498,27 @@
 
                         {/* ── KPI Row ── */}
                         {summary && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                <div className="glass-strong p-5 rounded-3xl flex justify-between items-center">
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Spot vs Prev Close</p>
-                                        <h3 className={`text-2xl font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
-                                        </h3>
-                                        <p className="text-[10px] text-slate-600 mt-1">
-                                            {data?.spot?.toFixed(2)} now / {data?.open_spot?.toFixed(2)} close
-                                        </p>
-                                    </div>
-                                    <div className="text-right">
-                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Current ATM</p>
-                                         <h3 className="text-2xl font-black text-amber-400 block">
-                                            {atmStrike ? atmStrike.toLocaleString() : "---"}
-                                         </h3>
-                                    </div>
+                            <div className="flex flex-wrap items-center gap-3 mb-5">
+                                <div className="glass px-4 py-2 rounded-xl flex items-center justify-between gap-6 overflow-hidden">
+                                     <div className="flex flex-col">
+                                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Spot vs Prev Close</span>
+                                         <span className={`text-sm font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}% <span className="text-[9px] text-slate-600 ml-1 font-semibold">{data?.spot?.toFixed(2)} (now)</span>
+                                         </span>
+                                     </div>
+                                     <div className="flex flex-col text-right border-l border-slate-700/50 pl-4">
+                                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Current ATM</span>
+                                         <span className="text-sm font-black text-amber-400">{atmStrike ? atmStrike.toLocaleString() : "---"}</span>
+                                     </div>
                                 </div>
-                                <div className="glass-strong p-5 rounded-3xl border-l-[3px] border-blue-500/50">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">How exactly does this work?</p>
-                                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                                        Unlike typical minute-delta, this tracks overall conviction since yesterday's close.
-                                        It looks at cumulative open interest changes against the previous close's OI.
-                                        A bright green cell means that at this poll time, the strike had massive Long Buildup compared to yesterday.
-                                    </p>
+                                
+                                {/* Info Tip Box */}
+                                <div className="glass px-4 py-2 rounded-xl border-l-[3px] border-blue-500/50 flex-1 flex items-center gap-3 opacity-80 hover:opacity-100 transition-opacity max-w-2xl">
+                                    <span className="text-[16px]">💡</span>
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">HOW IT WORKS</span>
+                                        <span className="text-[10px] text-slate-400 leading-tight">Tracks day-over-day conviction vs previous close OI & price. Brightness scales with relative volume intensity.</span>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -528,7 +553,7 @@
                                             <thead>
                                                 <tr>
                                                     <th className="text-left" style={{ minWidth: '70px' }}>STRIKE</th>
-                                                    {data.timestamps.map((ts, ti) => (
+                                                    {fixedTimestamps.map((ts, ti) => (
                                                         <th key={ti} className="time-header">{ts}</th>
                                                     ))}
                                                     <th style={{ minWidth: '70px', textAlign: 'center' }}>{viewSide} BUILDUP</th>
@@ -538,10 +563,22 @@
                                                 {data.data.map((row_data, si) => {
                                                     const strike = row_data.strike;
                                                     const isAtm = strike === atmStrike;
-                                                    const timeline = row_data.timeline || [];
+                                                    const apiTimeline = row_data.timeline || [];
+                                                    const apiTimestamps = data.timestamps || [];
                                                     
-                                                    // Get the latest buildup status for the summary column
-                                                    const latestCell = timeline[timeline.length - 1];
+                                                    // Create a lookup map for exact timestamp matches
+                                                    const cellMap = {};
+                                                    apiTimestamps.forEach((ts, idx) => {
+                                                        cellMap[ts] = {
+                                                            data: apiTimeline[idx],
+                                                            // We need to pass along the index from the API array to get the correct max_pct
+                                                            maxCeAbs: data.max_ce_oi_chg_pct ? data.max_ce_oi_chg_pct[idx] : 1,
+                                                            maxPeAbs: data.max_pe_oi_chg_pct ? data.max_pe_oi_chg_pct[idx] : 1,
+                                                        };
+                                                    });
+
+                                                    // Get the latest buildup status for the summary column (from available data)
+                                                    const latestCell = apiTimeline[apiTimeline.length - 1];
                                                     let latestBuildup = "Neutral";
                                                     if (latestCell && latestCell[viewSide.toLowerCase()]) {
                                                         latestBuildup = latestCell[viewSide.toLowerCase()].buildup;
@@ -554,26 +591,29 @@
                                                                 {isAtm ? '▶ ' : ''}{strike.toLocaleString()}
                                                             </td>
 
-                                                            {/* Change cells */}
-                                                            {timeline.map((cellObj, ti) => {
-                                                                const maxArr = viewSide === 'CE' ? data.max_ce_oi_chg_pct : data.max_pe_oi_chg_pct;
-                                                                const maxAbs = maxArr ? maxArr[ti] : 1;
+                                                            {/* Change cells mapped to fixed timeline */}
+                                                            {fixedTimestamps.map((ts, ti) => {
+                                                                const matchedObj = cellMap[ts];
+                                                                const cellObj = matchedObj ? matchedObj.data : null;
                                                                 
-                                                                let bgColor = "rgba(15,23,42,0.9)";
-                                                                if (cellObj && cellObj[viewSide.toLowerCase()]) {
+                                                                let bgColor = "rgba(15,23,42,0.4)"; // Faded blank background for missing/future data
+                                                                const border = isAtm ? '1px solid rgba(251,191,36,0.25)' : 'none';
+                                                                
+                                                                if (matchedObj && cellObj && cellObj[viewSide.toLowerCase()]) {
                                                                     const sideData = cellObj[viewSide.toLowerCase()];
+                                                                    const maxAbs = viewSide === 'CE' ? matchedObj.maxCeAbs : matchedObj.maxPeAbs;
                                                                     bgColor = getCellColor(sideData.buildup, sideData.oi_chg_pct, maxAbs);
                                                                 }
 
-                                                                // ATM row gets a subtle outline
-                                                                const border = isAtm ? '1px solid rgba(251,191,36,0.25)' : 'none';
-                                                                
                                                                 return (
                                                                     <td key={ti} style={{ padding: '1px' }}>
                                                                         <div
                                                                             className="heatmap-cell"
                                                                             style={{ background: bgColor, border }}
-                                                                            onMouseEnter={e => handleCellMouseEnter(e, strike, ti, cellObj)}
+                                                                            onMouseEnter={e => {
+                                                                                // Only show tooltip if we actually have data for this exact timestamp
+                                                                                if (cellObj) handleCellMouseEnter(e, strike, apiTimestamps.indexOf(ts), cellObj);
+                                                                            }}
                                                                             onMouseLeave={handleCellMouseLeave}
                                                                         />
                                                                     </td>
