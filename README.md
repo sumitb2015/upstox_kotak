@@ -16,8 +16,8 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **OI Pro Analytics Dashboard**: Interactive web-based dashboard for real-time Open Interest (OI), PCR, and Greeks analysis.
   - **Multi-Option Chart**: Build custom multi-leg option strategies and view net premium charts updating in real-time via WebSockets.
   - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts and custom strike selection.
-  - **Exposure Change Heatmap**: High-resolution heatmap tracking Net Delta shifts ("Velocity") every 60 seconds.
-  - **Persistence Engine**: Automatic daily CSV snapshots of all index Greeks, allowing for full state recovery on script restart.
+  - **OI Buildup Heatmap**: NIFTY-focused heatmap tracking day-over-day OI buildup every minute. Loads full-day history from 9:15 AM on restart. Strikes auto-pin to current ATM ± 8 (50-pt intervals). Buildup classified as Long/Short Buildup, Short Covering, or Long Unwinding — all relative to previous session's baseline OI.
+  - **Persistence Engine**: Automatic daily CSV snapshots of all index Greeks, allowing full state recovery on server restart.
   - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
   - **Greeks Exposure Analysis**: Real-time tracking of systemic Delta and Gamma exposure per strike.
   - **Net GEX Regime Analysis**: Identification of Market Volatility Regimes (Traffic Light logic) and the Zero Gamma Flip Point.
@@ -62,6 +62,18 @@ c:/algo/upstox/
 3. **Configuration**
    - Ensure you have your API credentials ready.
    - Configure your strategy settings in the respective `config.py` files within the `strategies/` directory.
+
+### Running the OI Pro Dashboard
+
+```bash
+# From the repo root
+cd web_apps/oi_pro
+PYTHONUTF8=1 python main.py
+# Open http://127.0.0.1:8001/heatmap
+```
+
+> **Note (Windows):** The `PYTHONUTF8=1` prefix is required on Windows to prevent
+> charmap encoding errors from emoji characters in log output.
 
 ### Running a Strategy
 
