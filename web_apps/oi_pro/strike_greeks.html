@@ -115,7 +115,7 @@
                             if (res.metadata && res.metadata.spot) {
                                 // Default to ATM
                                 const spot = res.metadata.spot;
-                                const closest = availableStrikes.reduce((prev, curr) => 
+                                const closest = availableStrikes.reduce((prev, curr) =>
                                     Math.abs(curr - spot) < Math.abs(prev - spot) ? curr : prev
                                 );
                                 setSelectedStrike(closest);
@@ -154,7 +154,7 @@
                 if (data.length === 0) return;
 
                 const timestamps = data.map(d => d.timestamp);
-                
+
                 const createTrace = (name, yData, color) => ({
                     x: timestamps,
                     y: yData,
@@ -210,9 +210,9 @@
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
                     {/* Unified Sidebar Navigation */}
-                        <div id="sidebar-root"></div>
+                    <div id="sidebar-root"></div>
 
-                    <main className="pl-16 pr-8 py-8 w-full max-w-[1600px] mx-auto overflow-y-auto custom-scrollbar">
+                    <main className="pl-28 pr-8 py-8 w-full max-w-[1600px] mx-auto overflow-y-auto custom-scrollbar">
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                             <div>
@@ -252,8 +252,8 @@
                                 >
                                     {strikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                 </select>
-                                
-                                <button 
+
+                                <button
                                     onClick={fetchHistory}
                                     className="bg-emerald-500 hover:bg-emerald-600 px-4 py-2 rounded-xl text-white font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.2)]"
                                 >
@@ -277,16 +277,16 @@
                                 <div id="theta-chart" className="w-full h-[350px]"></div>
                             </div>
                         </div>
-                        
+
                         {data.length === 0 && !loading && (
                             <div className="mt-8 glass p-12 rounded-3xl text-center">
                                 <p className="text-xl text-slate-400">No historical data available for this strike yet.</p>
                                 <p className="text-sm text-slate-500 mt-2">Data is logged every minute when the poller is active.</p>
                             </div>
                         )}
-                        
+
                         {loading && (
-                             <div className="mt-8 flex justify-center">
+                            <div className="mt-8 flex justify-center">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
                             </div>
                         )}

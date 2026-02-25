@@ -5,9 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exposure Change Heatmap — OI Pro</title>
-    <meta name="description" content="Real-time Net Delta change heatmap showing where smart money is building or unwinding exposure across strikes.">
+    <meta name="description"
+        content="Real-time Net Delta change heatmap showing where smart money is building or unwinding exposure across strikes.">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -39,10 +42,24 @@
             background-size: 1rem;
         }
 
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b transparent;
+        }
 
         /* Heatmap table */
         .heatmap-table {
@@ -57,7 +74,7 @@
             left: 0;
             z-index: 20;
             background: #030712;
-            border-right: 1px solid rgba(255,255,255,0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .heatmap-table th {
@@ -107,7 +124,9 @@
             color: #fbbf24;
         }
 
-        .atm-row td { background-clip: padding-box; }
+        .atm-row td {
+            background-clip: padding-box;
+        }
 
         .trend-cell {
             font-size: 9px;
@@ -139,23 +158,42 @@
             pointer-events: none;
             z-index: 1000;
             min-width: 160px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             display: none;
         }
 
         /* Pulse animation for live badge */
         @keyframes pulse-ring {
-            0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-            100% { transform: scale(0.9); }
+            0% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                transform: scale(0.9);
+            }
         }
-        .pulse-live { animation: pulse-ring 2s ease infinite; }
+
+        .pulse-live {
+            animation: pulse-ring 2s ease infinite;
+        }
 
         /* Shimmer loading */
         @keyframes shimmer {
-            0% { background-position: -200px 0; }
-            100% { background-position: 200px 0; }
+            0% {
+                background-position: -200px 0;
+            }
+
+            100% {
+                background-position: 200px 0;
+            }
         }
+
         .shimmer {
             background: linear-gradient(90deg, #0f172a 25%, #1e293b 50%, #0f172a 75%);
             background-size: 400px 100%;
@@ -182,8 +220,8 @@
         function formatDelta(val) {
             const abs = Math.abs(val);
             if (abs >= 10000000) return (val / 10000000).toFixed(2) + "Cr";
-            if (abs >= 100000)   return (val / 100000).toFixed(1) + "L";
-            if (abs >= 1000)     return (val / 1000).toFixed(1) + "K";
+            if (abs >= 100000) return (val / 100000).toFixed(1) + "L";
+            if (abs >= 1000) return (val / 1000).toFixed(1) + "K";
             return val.toFixed(0);
         }
 
@@ -195,19 +233,19 @@
         }
 
         // ─── Cell Color ───
-        
+
         function getCellColor(buildup, pctChange, maxAbs) {
             if (!maxAbs || maxAbs === 0 || !buildup || buildup === "Neutral") return "rgba(15,23,42,0.9)";
-            
+
             // Normalize percentage change against the max for this column
             const absPct = Math.abs(pctChange);
             const norm = Math.min(1, absPct / maxAbs);
             const alpha = Math.min(0.95, norm * 0.8 + 0.15); // Base opacity 0.15, max 0.95
-            
+
             // Map Buildup to explicit colors
             // Greenish: Long Buildup, Short Covering
             // Reddish: Short Buildup, Long Unwinding
-            
+
             if (buildup === "Long Buildup") {
                 // Bright Green
                 const g = Math.round(150 + norm * 105);
@@ -233,15 +271,15 @@
         // ─── Main App ───
 
         function HeatmapApp() {
-            const [symbol, setSymbol]       = useState("NIFTY");
-            const [expiry, setExpiry]       = useState("");
-            const [expiries, setExpiries]   = useState([]);
-            const [data, setData]           = useState(null);
-            const [loading, setLoading]     = useState(false);
-            const [error, setError]         = useState(null);
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiry, setExpiry] = useState("");
+            const [expiries, setExpiries] = useState([]);
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
             const [lastUpdate, setLastUpdate] = useState(null);
             const [refreshInterval, setRefreshInterval] = useState(60000); // Default 1 min
-            const [viewSide, setViewSide]   = useState("CE"); // 'CE' or 'PE'
+            const [viewSide, setViewSide] = useState("CE"); // 'CE' or 'PE'
             const [fixedTimestamps, setFixedTimestamps] = useState([]);
             const tooltipRef = useRef(null);
 
@@ -337,13 +375,13 @@
             function handleCellMouseEnter(e, strike, timeIdx, cellData) {
                 const tooltip = document.getElementById('cell-tooltip');
                 if (!tooltip || !cellData) return;
-                
+
                 const sideData = cellData[viewSide.toLowerCase()];
                 if (!sideData) return;
-                
-                const ts  = data?.timestamps?.[timeIdx] || "---";
+
+                const ts = data?.timestamps?.[timeIdx] || "---";
                 const bType = sideData.buildup || "Neutral";
-                
+
                 let bColor = "#64748b";
                 if (bType.includes("Long Buildup") || bType.includes("Short Covering")) bColor = "#10b981";
                 if (bType.includes("Short Buildup") || bType.includes("Long Unwinding")) bColor = "#f43f5e";
@@ -368,7 +406,7 @@
                 `;
                 tooltip.style.display = 'block';
                 tooltip.style.left = (e.clientX + 12) + 'px';
-                tooltip.style.top  = (e.clientY - 40) + 'px';
+                tooltip.style.top = (e.clientY - 40) + 'px';
             }
 
             function handleCellMouseLeave() {
@@ -380,7 +418,7 @@
                 const tooltip = document.getElementById('cell-tooltip');
                 if (tooltip && tooltip.style.display === 'block') {
                     tooltip.style.left = (e.clientX + 12) + 'px';
-                    tooltip.style.top  = (e.clientY - 40) + 'px';
+                    tooltip.style.top = (e.clientY - 40) + 'px';
                 }
             }
 
@@ -390,12 +428,12 @@
 
             const BuildupPill = ({ type }) => {
                 if (!type || type === "Neutral") {
-                     return <span className="trend-cell" style={{ background: "rgba(71,85,105,0.2)", color: "#64748b", border: `1px solid #64748b30` }}>FLAT</span>;
+                    return <span className="trend-cell" style={{ background: "rgba(71,85,105,0.2)", color: "#64748b", border: `1px solid #64748b30` }}>FLAT</span>;
                 }
-                
+
                 let text = type.replace(" ", "\n").toUpperCase();
                 let color, bg, border;
-                
+
                 if (type === "Long Buildup") { text = "LONG\nBUILD"; color = "#10b981"; bg = "rgba(16,185,129,0.15)"; border = `1px solid ${color}30`; }
                 else if (type === "Short Covering") { text = "SHORT\nCOVER"; color = "#34d399"; bg = "rgba(52,211,153,0.1)"; border = `1px solid ${color}30`; }
                 else if (type === "Short Buildup") { text = "SHORT\nBUILD"; color = "#f43f5e"; bg = "rgba(239,68,68,0.15)"; border = `1px solid ${color}30`; }
@@ -403,7 +441,7 @@
 
                 return (
                     <span className="trend-cell block text-[8px] leading-tight" style={{ background: bg, color, border }}>
-                        {text.split('\n')[0]}<br/>{text.split('\n')[1]}
+                        {text.split('\n')[0]}<br />{text.split('\n')[1]}
                     </span>
                 );
             };
@@ -413,7 +451,7 @@
                     {/* Sidebar */}
                     <div id="sidebar-root"></div>
 
-                    <main className="pl-24 pr-6 py-8 w-full overflow-y-auto custom-scrollbar">
+                    <main className="pl-28 pr-6 py-8 w-full overflow-y-auto custom-scrollbar">
 
                         {/* ── Header ── */}
                         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
@@ -462,26 +500,26 @@
                                     className="glass px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-colors cursor-pointer">
                                     ↻ Refresh
                                 </button>
-                                
+
                                 {/* UI Toggle */}
                                 <div className="glass px-1 py-1 rounded-xl flex items-center overflow-hidden">
-                                     <button 
+                                    <button
                                         onClick={() => setViewSide("CE")}
                                         className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'CE' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-slate-500 hover:text-slate-300'}`}>
                                         Calls
-                                     </button>
-                                     <button 
+                                    </button>
+                                    <button
                                         onClick={() => setViewSide("PE")}
                                         className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'PE' ? 'bg-orange-600/20 text-orange-400 border border-orange-500/30' : 'text-slate-500 hover:text-slate-300'}`}>
                                         Puts
-                                     </button>
+                                    </button>
                                 </div>
 
                                 {/* Live badge */}
                                 <div className="glass px-4 py-1.5 rounded-xl flex items-center gap-2">
                                     <div className={`w-2 h-2 rounded-full ${loading ? 'bg-amber-500 pulse-live' : 'bg-emerald-500 pulse-live'}`}></div>
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        {loading ? 'Polling...' : (lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : `${refreshInterval/60000}-min Auto`)}
+                                        {loading ? 'Polling...' : (lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : `${refreshInterval / 60000}-min Auto`)}
                                     </span>
                                 </div>
 
@@ -500,18 +538,18 @@
                         {summary && (
                             <div className="flex flex-wrap items-center gap-3 mb-5">
                                 <div className="glass px-4 py-2 rounded-xl flex items-center justify-between gap-6 overflow-hidden">
-                                     <div className="flex flex-col">
-                                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Spot vs Prev Close</span>
-                                         <span className={`text-sm font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Spot vs Prev Close</span>
+                                        <span className={`text-sm font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}% <span className="text-[9px] text-slate-600 ml-1 font-semibold">{data?.spot?.toFixed(2)} (now)</span>
-                                         </span>
-                                     </div>
-                                     <div className="flex flex-col text-right border-l border-slate-700/50 pl-4">
-                                         <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Current ATM</span>
-                                         <span className="text-sm font-black text-amber-400">{atmStrike ? atmStrike.toLocaleString() : "---"}</span>
-                                     </div>
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-col text-right border-l border-slate-700/50 pl-4">
+                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Current ATM</span>
+                                        <span className="text-sm font-black text-amber-400">{atmStrike ? atmStrike.toLocaleString() : "---"}</span>
+                                    </div>
                                 </div>
-                                
+
                                 {/* Info Tip Box */}
                                 <div className="glass px-4 py-2 rounded-xl border-l-[3px] border-blue-500/50 flex-1 flex items-center gap-3 opacity-80 hover:opacity-100 transition-opacity max-w-2xl">
                                     <span className="text-[16px]">💡</span>
@@ -565,7 +603,7 @@
                                                     const isAtm = strike === atmStrike;
                                                     const apiTimeline = row_data.timeline || [];
                                                     const apiTimestamps = data.timestamps || [];
-                                                    
+
                                                     // Create a lookup map for exact timestamp matches
                                                     const cellMap = {};
                                                     apiTimestamps.forEach((ts, idx) => {
@@ -595,10 +633,10 @@
                                                             {fixedTimestamps.map((ts, ti) => {
                                                                 const matchedObj = cellMap[ts];
                                                                 const cellObj = matchedObj ? matchedObj.data : null;
-                                                                
+
                                                                 let bgColor = "rgba(15,23,42,0.4)"; // Faded blank background for missing/future data
                                                                 const border = isAtm ? '1px solid rgba(251,191,36,0.25)' : 'none';
-                                                                
+
                                                                 if (matchedObj && cellObj && cellObj[viewSide.toLowerCase()]) {
                                                                     const sideData = cellObj[viewSide.toLowerCase()];
                                                                     const maxAbs = viewSide === 'CE' ? matchedObj.maxCeAbs : matchedObj.maxPeAbs;

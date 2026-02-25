@@ -85,26 +85,133 @@
     function renderSidebar() {
         const currentPath = window.location.pathname;
 
+        // Inject Styles
+        if (!document.getElementById('sidebar-styles')) {
+            const style = document.createElement('style');
+            style.id = 'sidebar-styles';
+            style.innerHTML = `
+                .oi-pro-sidebar {
+                    position: fixed;
+                    left: 0;
+                    top: 0;
+                    height: 100%;
+                    width: 5.5rem;
+                    background: #0b0f1a;
+                    border-right: 1px solid rgba(51, 65, 85, 0.4);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-start;
+                    padding: 1.5rem 0.75rem;
+                    gap: 1.25rem;
+                    z-index: 1000;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
+                    scrollbar-width: thin;
+                    scrollbar-color: #1e293b transparent;
+                }
+
+                .oi-pro-sidebar:hover {
+                    width: 18rem;
+                    background: #0f172a;
+                    box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+                }
+
+                .nav-item {
+                    display: flex;
+                    align-items: center;
+                    width: 100%;
+                    min-height: 3rem;
+                    padding: 0 0.85rem;
+                    border-radius: 0.75rem;
+                    text-decoration: none;
+                    transition: all 0.2s ease;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    gap: 1.25rem;
+                }
+
+                .nav-item-icon {
+                    flex-shrink: 0;
+                    width: 2.5rem;
+                    height: 2.5rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 0.625rem;
+                    transition: transform 0.2s;
+                }
+
+                .nav-label {
+                    opacity: 0;
+                    transform: translateX(-15px);
+                    transition: opacity 0.2s ease 0.1s, transform 0.2s ease 0.1s;
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                    color: #94a3b8;
+                }
+
+                .oi-pro-sidebar:hover .nav-label {
+                    opacity: 1;
+                    transform: translateX(0);
+                }
+
+                .nav-item.active .nav-label {
+                    color: white;
+                }
+                
+                .nav-item:hover .nav-label {
+                    color: #10b981;
+                }
+                
+                .nav-item:hover .nav-item-icon {
+                    transform: scale(1.05);
+                }
+
+                /* Active/Inactive states */
+                .nav-item.active .nav-item-icon {
+                    background: #10b981;
+                    box-shadow: 0 0 15px rgba(16,185,129,0.4);
+                    color: white;
+                }
+                
+                .nav-item.inactive .nav-item-icon {
+                    background: rgba(30, 41, 59, 0.5);
+                    color: #64748b;
+                }
+                
+                .nav-item.inactive:hover .nav-item-icon {
+                    background: rgba(16,185,129,0.15);
+                    color: #10b981;
+                }
+
+                /* Hide scrollbar */
+                .oi-pro-sidebar::-webkit-scrollbar { width: 4px; }
+                .oi-pro-sidebar::-webkit-scrollbar-track { background: transparent; }
+                .oi-pro-sidebar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+            `;
+            document.head.appendChild(style);
+        }
+
         // Build nav HTML
         const itemsHTML = NAV_ITEMS.map(function (item) {
-            // Exact match for home, prefix match for others
             const isActive = item.href === "/"
                 ? currentPath === "/"
                 : currentPath === item.href || currentPath.startsWith(item.href + "/");
 
-            const baseClasses = "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-105";
-            const activeClasses = "bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]";
-            const inactiveClasses = "bg-slate-800/50 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400";
             const strokeColor = isActive ? "white" : "currentColor";
 
-            return '<a href="' + item.href + '" class="' + baseClasses + ' ' + (isActive ? activeClasses : inactiveClasses) + '" title="' + item.title + '">' +
+            return '<a href="' + item.href + '" class="nav-item ' + (isActive ? 'active' : 'inactive') + '">' +
+                '<div class="nav-item-icon">' +
                 '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + strokeColor + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
                 item.svg +
                 '</svg>' +
+                '</div>' +
+                '<span class="nav-label">' + item.title + '</span>' +
                 '</a>';
         }).join('\n');
 
-        const navHTML = '<nav style="position:fixed;left:0;top:0;height:100%;width:4rem;background:#0b0f1a;border-right:1px solid rgba(51,65,85,0.4);display:flex;flex-direction:column;align-items:center;padding:1.5rem 0;gap:1.25rem;z-index:50;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1e293b transparent;">' +
+        const navHTML = '<nav class="oi-pro-sidebar">' +
             itemsHTML +
             '</nav>';
 
@@ -112,12 +219,12 @@
         if (root) {
             root.innerHTML = navHTML;
         } else {
-            // Fallback: inject at top of body if no placeholder found
             const div = document.createElement('div');
             div.innerHTML = navHTML;
             document.body.insertBefore(div.firstChild, document.body.firstChild);
         }
     }
+
 
     // Run on DOM ready
     if (document.readyState === 'loading') {
