@@ -14,7 +14,7 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ### 3. Cumulative Option Prices (`/cumulative-prices`)
 - **Functionality**: Real-time sum of all Call and Put option prices across the entire option chain.
-- **Key Features**: Dual-axis real-time chart tracking CE premiums vs PE premiums alongside the Index Spot price, and a smoothed CE-PE Difference chart with sentiment coloration.
+- **Key Features**: Dual-axis real-time chart tracking CE premiums vs PE premiums alongside the Index Spot price, and a smoothed CE-PE Difference chart with sentiment coloration. Full-width layout.
 
 ### 3. Net GEX Regime Analysis (`/gex`)
 - **Functionality**: Visualizes total Gamma Exposure (GEX) and total Notional Exposure.
@@ -30,7 +30,7 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ### 6. Max Pain & IV Smile (`/max-pain`)
 - **Functionality**: Uses the Max Pain theory to identify the strike where option buyers lose the most (and sellers gain the most).
-- **Key Features**: Displays the Max Pain strike and the Volatility Smile (Implied Volatility per strike).
+- **Key Features**: Displays the Max Pain strike, Volatility Smile, analytics KPI grid (Highest CE/PE OI strikes, Best Premium to Sell, PCR, Average PoP), and Top 10 Opportunities table for options sellers. Full-width layout.
 
 ### 7. Multi-Option Chart (`/multi`)
 - **Functionality**: A custom strategy builder for multi-leg positions (Spreads, Iron Condors, etc.).
@@ -50,11 +50,11 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ### 11. PoP & Premium Analytics (`/pop`)
 - **Functionality**: Helps in strike selection for option selling.
-- **Key Features**: Scatter plot of Probability of Profit (PoP) vs. Premium received. Ideal for finding high-probability OTM credits.
+- **Key Features**: Scatter plot of Probability of Profit (PoP) vs. Premium received. Includes 6-card KPI analytics strip (Highest CE/PE OI, Best CE/PE to Sell, PCR, Avg PoP) and a Top 10 Opportunities table ranked by premium. Full-width layout.
 
 ### 12. ATM Straddle Analysis (`/straddle`)
 - **Functionality**: Dedicated module for tracking the "heartbeat" of market volatility.
-- **Key Features**: Real-time tracking of the ATM Straddle premium, intraday High/Low, and Straddle VWAP.
+- **Key Features**: Real-time tracking of the ATM Straddle premium, intraday High/Low, Straddle VWAP, and individual CE/PE leg traces on secondary axis. 8-card KPI strip adds Open, VWAP, CE LTP, PE LTP. High/Low band shading and open price reference line. Full-width layout.
 
 ### 13. Strategy Command Center (`/strategies`)
 - **Functionality**: Centralized management interface for automated trading strategies.
@@ -62,7 +62,15 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ### 14. Strike Analysis (`/strike`)
 - **Functionality**: Isolated deep-dive into a single strike.
-- **Key Features**: Historical and real-time intraday tracking of CE vs. PE OI, Price, and Buildup for a specific strike price.
+- **Key Features**: Historical and real-time intraday tracking of CE vs. PE OI, Price, and Buildup for a specific strike price. Includes dynamic-colored bars (buildup vs unwinding), Net OI / Net Change secondary lines, ATM amber annotations, zero-band shading, and a 6-card KPI strip (Max CE/PE OI, Max CE/PE OI Change, PCR, Sentiment).
+
+### 15. Options Buildup (`/`)
+- **Functionality**: Visualizes strike-level OI buildup patterns with sentiment classification.
+- **Key Features**: Three enhanced charts — Sentiment Scatter (√-scaled bubbles, quadrant zones, top-3 labels), Total OI Bar (dynamic opacity, Net OI line), OI Change Bar (dynamic coloring, Net Change line). ATM reference lines across all charts. Buildup Summary Strip showing CE/PE counts by type and dominant signal.
+
+### 16. Strike Greeks History (`/strike-greeks`)
+- **Functionality**: Persistent historical time-series of option Greeks for a specific strike.
+- **Key Features**: 5 charts — Delta, Gamma, Vega, Theta, and Implied Volatility. 8-card KPI strip with latest values and intraday change. Color-coded CE (solid) / PE (dashed) spline traces. Live pulse badge and informative empty-state.
 
 ---
 
