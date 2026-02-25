@@ -321,9 +321,9 @@
                                     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
                                         {stats.map(s => (
                                             <div key={s.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${s.color}` }}>
-                                                <p style={{ fontSize: 9, color: '#64748b', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{s.label}</p>
+                                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{s.label}</p>
                                                 <p style={{ fontSize: '1.5rem', fontWeight: 900, color: s.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{s.value}</p>
-                                                <p style={{ fontSize: 9, color: '#475569' }}>{s.sub}</p>
+                                                <p style={{ fontSize: 9, color: '#94a3b8' }}>{s.sub}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -340,7 +340,7 @@
                                                     <thead>
                                                         <tr style={{ background: 'rgba(15,23,42,0.6)' }}>
                                                             {['#', 'Strike', 'Type', 'Premium', 'PoP %', 'OI', 'Signal'].map(h => (
-                                                                <th key={h} className="px-4 py-2 text-left" style={{ color: '#475569', fontWeight: 800, fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{h}</th>
+                                                                <th key={h} className="px-4 py-2 text-left" style={{ color: '#94a3b8', fontWeight: 800, fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{h}</th>
                                                             ))}
                                                         </tr>
                                                     </thead>
@@ -354,7 +354,7 @@
                                                                 return (
                                                                     <tr key={`${d.strike}-${d.type}`} style={{ borderBottom: '1px solid rgba(30,41,59,0.5)' }}
                                                                         className="hover:bg-slate-800/20 transition-colors">
-                                                                        <td className="px-4 py-2" style={{ color: '#475569', fontWeight: 700 }}>#{i + 1}</td>
+                                                                        <td className="px-4 py-2" style={{ color: '#94a3b8', fontWeight: 700 }}>#{i + 1}</td>
                                                                         <td className="px-4 py-2" style={{ color: '#e2e8f0', fontWeight: 800 }}>{d.strike.toLocaleString('en-IN')}</td>
                                                                         <td className="px-4 py-2">
                                                                             <span style={{
@@ -368,7 +368,7 @@
                                                                         </td>
                                                                         <td className="px-4 py-2" style={{ color: isCE ? '#34d399' : '#f87171', fontWeight: 900 }}>₹{d.premium.toFixed(1)}</td>
                                                                         <td className="px-4 py-2" style={{ color: d.pop >= 80 ? '#34d399' : d.pop >= 70 ? '#fbbf24' : '#94a3b8', fontWeight: 800 }}>{d.pop}%</td>
-                                                                        <td className="px-4 py-2" style={{ color: '#64748b' }}>{fmtOI(d.oi)}</td>
+                                                                        <td className="px-4 py-2" style={{ color: '#94a3b8' }}>{fmtOI(d.oi)}</td>
                                                                         <td className="px-4 py-2" style={{ color: signal[1], fontWeight: 700, fontSize: 10 }}>{signal[0]}</td>
                                                                     </tr>
                                                                 );
