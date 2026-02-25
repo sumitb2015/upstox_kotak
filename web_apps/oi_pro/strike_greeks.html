@@ -102,11 +102,10 @@
         });
 
         /* ── Trace builder ─────────────────────────────────────────────── */
-        const mkTrace = (name, times, vals, color, dash = 'solid', fillToZero = false) => ({
+        const mkTrace = (name, times, vals, color, dash = 'solid') => ({
             x: times, y: vals, name,
             type: 'scatter', mode: 'lines',
-            ...(fillToZero ? { fill: 'tozeroy', fillcolor: color.replace(')', ',0.08)').replace('rgb', 'rgba') } : {}),
-            line: { color, width: 2, dash, shape: 'spline', smoothing: 0.6 },
+            line: { color, width: dash === 'solid' ? 2.5 : 1.5, dash, shape: 'spline', smoothing: 0.6 },
             hovertemplate: `<b>${name}</b>: %{y:.4f}<extra></extra>`,
         });
 
