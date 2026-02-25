@@ -349,7 +349,7 @@
                 if (bType.includes("Short Buildup") || bType.includes("Long Unwinding")) bColor = "#f43f5e";
 
                 tooltip.innerHTML = `
-                    <div style="font-size:10px;color:#64748b;margin-bottom:4px;">Strike ${strike.toLocaleString()} ${viewSide} | ${ts}</div>
+                    <div style="font-size:10px;color:#e2e8f0;margin-bottom:4px;">Strike ${strike.toLocaleString()} ${viewSide} | ${ts}</div>
                     <div style="font-weight:700;margin-bottom:8px;color:${bColor}">${bType}</div>
                     
                     <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
@@ -362,7 +362,7 @@
                         <span style="color:${sideData.price_chg_pct >= 0 ? '#10b981' : '#f43f5e'}">${sideData.price_chg_pct > 0 ? '+' : ''}${sideData.price_chg_pct}%</span>
                     </div>
                     
-                    <div style="color:#475569;font-size:10px; margin-top:6px; padding-top:4px; border-top:1px solid #1e293b;">
+                    <div style="color:#e2e8f0;font-size:10px; margin-top:6px; padding-top:4px; border-top:1px solid #1e293b;">
                         Live OI: ${formatDelta(sideData.oi)} • LTP: ₹${sideData.ltp}
                     </div>
                 `;
