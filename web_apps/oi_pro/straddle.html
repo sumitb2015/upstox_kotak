@@ -223,50 +223,102 @@
                 const times = data.map(d => d.timestamp);
                 const premiums = data.map(d => d.combined_premium);
                 const vwap = data.map(d => d.vwap);
+                const ceLeg = data.map(d => d.ce_price || null);
+                const peLeg = data.map(d => d.pe_price || null);
 
-                const premiumTrace = {
-                    x: times,
-                    y: premiums,
+                const openPrice = premiums[0] || 0;
+                const dayHigh = Math.max(...premiums);
+                const dayLow = Math.min(...premiums);
+
+                // 1. Filled area under premium
+                const premiumArea = {
+                    x: times, y: premiums,
                     name: 'Combined Premium',
-                    type: 'scatter',
-                    mode: 'lines',
-                    line: { color: '#fbbf24', width: 3 }
+                    type: 'scatter', mode: 'lines',
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(251,191,36,0.07)',
+                    line: { color: '#fbbf24', width: 2.5 },
+                    hovertemplate: '<b>%{x}</b><br>Premium: ₹%{y:.2f}<extra></extra>',
                 };
 
+                // 2. VWAP line
                 const vwapTrace = {
-                    x: times,
-                    y: vwap,
-                    name: 'Straddle VWAP',
-                    type: 'scatter',
-                    mode: 'lines',
-                    line: { color: '#ef4444', width: 2, dash: 'dot' }
+                    x: times, y: vwap,
+                    name: 'VWAP',
+                    type: 'scatter', mode: 'lines',
+                    line: { color: '#ef4444', width: 1.5, dash: 'dot' },
+                    hovertemplate: '<b>%{x}</b><br>VWAP: ₹%{y:.2f}<extra></extra>',
+                };
+
+                // 3. CE & PE individual legs on secondary axis
+                const ceTrace = {
+                    x: times, y: ceLeg,
+                    name: 'CE Leg',
+                    type: 'scatter', mode: 'lines',
+                    yaxis: 'y2',
+                    line: { color: '#10b981', width: 1.5, dash: 'dot' },
+                    hovertemplate: '<b>%{x}</b><br>CE: ₹%{y:.2f}<extra></extra>',
+                };
+
+                const peTrace = {
+                    x: times, y: peLeg,
+                    name: 'PE Leg',
+                    type: 'scatter', mode: 'lines',
+                    yaxis: 'y2',
+                    line: { color: '#a78bfa', width: 1.5, dash: 'dot' },
+                    hovertemplate: '<b>%{x}</b><br>PE: ₹%{y:.2f}<extra></extra>',
+                };
+
+                // 4. High/Low band
+                const bandTop = {
+                    x: times, y: times.map(() => dayHigh), name: 'Day High', type: 'scatter', mode: 'lines',
+                    fill: 'tonexty', fillcolor: 'rgba(239,68,68,0.04)', line: { color: 'rgba(239,68,68,0.25)', width: 1, dash: 'dot' },
+                    showlegend: false, hoverinfo: 'skip'
+                };
+                const bandBot = {
+                    x: times, y: times.map(() => dayLow), name: 'Day Low', type: 'scatter', mode: 'lines',
+                    line: { color: 'rgba(16,185,129,0.25)', width: 1, dash: 'dot' },
+                    showlegend: false, hoverinfo: 'skip'
                 };
 
                 const layout = {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 12 }, orientation: 'h', y: -0.2 },
-                    margin: { t: 20, b: 60, l: 60, r: 20 },
+                    legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', y: -0.15, x: 0 },
+                    margin: { t: 20, b: 70, l: 70, r: 80 },
                     font: { family: 'Inter', color: '#64748b' },
                     xaxis: {
-                        gridcolor: '#1e293b',
-                        zerolinecolor: '#334155',
+                        gridcolor: '#1e293b', zerolinecolor: '#334155',
                         tickfont: { color: '#94a3b8', size: 10 }
                     },
                     yaxis: {
-                        title: 'Total Premium (₹)',
-                        gridcolor: '#1e293b',
-                        zerolinecolor: '#334155',
+                        title: { text: 'Total Premium (₹)', font: { color: '#94a3b8', size: 10 } },
+                        gridcolor: '#1e293b', zerolinecolor: '#334155',
                         tickfont: { color: '#94a3b8' },
-                        autorange: true,
-                        rangemode: 'normal'
+                        autorange: true, rangemode: 'normal'
+                    },
+                    yaxis2: {
+                        overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
+                        tickfont: { color: '#64748b', size: 9 },
+                        title: { text: 'Leg Price (₹)', font: { color: '#64748b', size: 9 } },
+                        autorange: true
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
+                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' },
+                    // Open price reference line
+                    shapes: openPrice > 0 ? [{
+                        type: 'line', x0: 0, x1: 1, xref: 'paper', y0: openPrice, y1: openPrice,
+                        line: { color: 'rgba(148,163,184,0.3)', width: 1, dash: 'longdash' }
+                    }] : [],
+                    annotations: openPrice > 0 ? [{
+                        xref: 'paper', x: 0.01, y: openPrice, text: `Open ₹${openPrice.toFixed(0)}`,
+                        showarrow: false, font: { color: '#64748b', size: 9, family: 'Inter' },
+                        bgcolor: 'rgba(15,23,42,0.7)', borderpad: 3
+                    }] : [],
                 };
 
-                Plotly.react(chartRef.current, [premiumTrace, vwapTrace], layout, { responsive: true, displayModeBar: false });
+                Plotly.react(chartRef.current, [bandBot, bandTop, premiumArea, vwapTrace, ceTrace, peTrace], layout, { responsive: true, displayModeBar: false });
             };
 
             return (
@@ -274,7 +326,7 @@
                     {/* Unified Sidebar Navigation */}
                     <div id="sidebar-root"></div>
 
-                    <main className="pl-28 pr-8 py-8 max-w-[1400px] mx-auto">
+                    <main className="pl-28 pr-4 py-8 w-full">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
                             <div>
                                 <h1 className="text-4xl font-black text-white tracking-tight uppercase flex items-center gap-3">
@@ -327,36 +379,24 @@
                             </div>
                         </header>
 
-                        {/* KPI Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-                            <div className="glass p-6 rounded-3xl border-slate-800/60 shadow-lg relative overflow-hidden group">
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2">Current Straddle</p>
-                                <h3 className="text-4xl font-black text-white tracking-tighter">₹{kpis.current || "---"}</h3>
-                                <div className="mt-2 flex items-center gap-2">
-                                    <span className={`text-xs font-bold ${kpis.change >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                                        {kpis.change > 0 ? '▲' : '▼'} {Math.abs(kpis.change).toFixed(2)} ({kpis.change_pct}%)
-                                    </span>
-                                    <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">vs Open</span>
+                        {/* KPI Row 1 */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
+                            {[
+                                { label: 'Current Straddle', value: `₹${kpis.current || '---'}`, sub: kpis.change != null ? `${kpis.change >= 0 ? '▲' : '▼'} ${Math.abs(kpis.change || 0).toFixed(2)} (${kpis.change_pct}%) vs Open` : '', color: '#fbbf24', big: true },
+                                { label: 'Day High', value: `₹${kpis.high || '---'}`, sub: 'Maximum Premium', color: '#ef4444' },
+                                { label: 'Day Low', value: `₹${kpis.low || '---'}`, sub: 'Minimum Premium', color: '#10b981' },
+                                { label: 'Strike', value: metadata.target_strike || '---', sub: `Spot ${metadata.spot?.toFixed(1) || '---'}`, color: '#a78bfa' },
+                                { label: 'Open', value: kpis.open ? `₹${Number(kpis.open).toFixed(1)}` : '---', sub: '09:15 Premium', color: '#94a3b8' },
+                                { label: 'VWAP', value: kpis.vwap ? `₹${Number(kpis.vwap).toFixed(1)}` : '---', sub: 'Volume Wtd Avg', color: '#38bdf8' },
+                                { label: 'CE LTP', value: kpis.ce_ltp ? `₹${Number(kpis.ce_ltp).toFixed(1)}` : '---', sub: 'Call Leg Price', color: '#34d399' },
+                                { label: 'PE LTP', value: kpis.pe_ltp ? `₹${Number(kpis.pe_ltp).toFixed(1)}` : '---', sub: 'Put Leg Price', color: '#c084fc' },
+                            ].map(c => (
+                                <div key={c.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderTop: `2px solid ${c.color}` }}>
+                                    <p style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</p>
+                                    <p style={{ fontSize: c.big ? '1.8rem' : '1.35rem', fontWeight: 900, color: c.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{c.value}</p>
+                                    <p style={{ fontSize: 8, color: '#94a3b8' }}>{c.sub}</p>
                                 </div>
-                            </div>
-
-                            <div className="glass p-6 rounded-3xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2">Day High</p>
-                                <h3 className="text-3xl font-black text-white tracking-tighter">₹{kpis.high || "---"}</h3>
-                                <div className="mt-2 text-[10px] text-slate-600 font-bold uppercase tracking-widest">Maximum Premium</div>
-                            </div>
-
-                            <div className="glass p-6 rounded-3xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2">Day Low</p>
-                                <h3 className="text-3xl font-black text-white tracking-tighter">₹{kpis.low || "---"}</h3>
-                                <div className="mt-2 text-[10px] text-slate-600 font-bold uppercase tracking-widest">Minimum Premium</div>
-                            </div>
-
-                            <div className="glass p-6 rounded-3xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2">Display Strike</p>
-                                <h3 className="text-3xl font-black text-emerald-400 tracking-tighter">{metadata.target_strike || "---"}</h3>
-                                <div className="mt-2 text-[10px] text-slate-600 font-bold uppercase tracking-widest">SPOT: {metadata.spot?.toFixed(1)}</div>
-                            </div>
+                            ))}
                         </div>
 
                         {/* Chart Section */}
