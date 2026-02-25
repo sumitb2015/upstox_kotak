@@ -228,7 +228,7 @@
                     {/* Unified Sidebar Navigation */}
                     <div id="sidebar-root"></div>
 
-                    <main className="pl-28 pr-8 py-8 max-w-[1600px] mx-auto">
+                    <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                             <div>
@@ -274,6 +274,114 @@
                                 Showing <span className="text-white font-bold">{filteredData.length}</span> opportunities with PoP {'>'} {minPoP}%
                             </div>
                         </div>
+
+                        {/* ── Analytics Stats Grid ── */}
+                        {data.length > 0 && (() => {
+                            const ceAll = data.filter(d => d.type === "CE");
+                            const peAll = data.filter(d => d.type === "PE");
+                            const ceFiltered = filteredData.filter(d => d.type === "CE");
+                            const peFiltered = filteredData.filter(d => d.type === "PE");
+
+                            // Sorted by OI
+                            const topCeOI = [...ceAll].sort((a, b) => b.oi - a.oi)[0];
+                            const topPeOI = [...peAll].sort((a, b) => b.oi - a.oi)[0];
+
+                            // Best sell opportunity: highest premium at filtered PoP
+                            const bestCePrem = [...ceFiltered].sort((a, b) => b.premium - a.premium)[0];
+                            const bestPePrem = [...peFiltered].sort((a, b) => b.premium - a.premium)[0];
+
+                            // Average PoP across filtered
+                            const avgPoP = filteredData.length
+                                ? (filteredData.reduce((s, d) => s + d.pop, 0) / filteredData.length).toFixed(1)
+                                : 0;
+
+                            // Max premium across filtered
+                            const maxPrem = filteredData.length
+                                ? Math.max(...filteredData.map(d => d.premium)).toFixed(1)
+                                : 0;
+
+                            // PCR by OI of all data
+                            const totalCeOI = ceAll.reduce((s, d) => s + d.oi, 0);
+                            const totalPeOI = peAll.reduce((s, d) => s + d.oi, 0);
+                            const pcr = totalCeOI > 0 ? (totalPeOI / totalCeOI).toFixed(2) : '---';
+
+                            const fmtOI = v => v >= 1e7 ? (v / 1e7).toFixed(2) + ' Cr' : v >= 1e5 ? (v / 1e5).toFixed(2) + ' L' : v.toLocaleString('en-IN');
+
+                            const stats = [
+                                { label: 'Highest CE OI Strike', value: topCeOI?.strike?.toLocaleString('en-IN') ?? '---', sub: topCeOI ? `OI: ${fmtOI(topCeOI.oi)} · PoP ${topCeOI.pop}%` : '', color: '#10b981' },
+                                { label: 'Highest PE OI Strike', value: topPeOI?.strike?.toLocaleString('en-IN') ?? '---', sub: topPeOI ? `OI: ${fmtOI(topPeOI.oi)} · PoP ${topPeOI.pop}%` : '', color: '#ef4444' },
+                                { label: 'Best CE to Sell', value: bestCePrem?.strike?.toLocaleString('en-IN') ?? '---', sub: bestCePrem ? `₹${bestCePrem.premium.toFixed(1)} prem · PoP ${bestCePrem.pop}%` : '', color: '#34d399' },
+                                { label: 'Best PE to Sell', value: bestPePrem?.strike?.toLocaleString('en-IN') ?? '---', sub: bestPePrem ? `₹${bestPePrem.premium.toFixed(1)} prem · PoP ${bestPePrem.pop}%` : '', color: '#f87171' },
+                                { label: 'PCR (by OI)', value: pcr, sub: `CE OI ${fmtOI(totalCeOI)} · PE OI ${fmtOI(totalPeOI)}`, color: Number(pcr) > 1 ? '#34d399' : '#f87171' },
+                                { label: 'Avg PoP (Filtered)', value: `${avgPoP}%`, sub: `${filteredData.length} opp · max prem ₹${maxPrem}`, color: '#a78bfa' },
+                            ];
+
+                            return (
+                                <>
+                                    <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
+                                        {stats.map(s => (
+                                            <div key={s.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${s.color}` }}>
+                                                <p style={{ fontSize: 9, color: '#64748b', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{s.label}</p>
+                                                <p style={{ fontSize: '1.5rem', fontWeight: 900, color: s.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{s.value}</p>
+                                                <p style={{ fontSize: 9, color: '#475569' }}>{s.sub}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Top Opportunities Table */}
+                                    {filteredData.length > 0 && (
+                                        <div className="glass rounded-2xl mb-6 overflow-hidden">
+                                            <div className="px-5 py-3 border-b border-slate-800/60 flex items-center justify-between">
+                                                <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Top Selling Opportunities</span>
+                                                <span style={{ fontSize: 9, color: '#475569' }}>Sorted by Premium · PoP ≥ {minPoP}%</span>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr style={{ background: 'rgba(15,23,42,0.6)' }}>
+                                                            {['#', 'Strike', 'Type', 'Premium', 'PoP %', 'OI', 'Signal'].map(h => (
+                                                                <th key={h} className="px-4 py-2 text-left" style={{ color: '#475569', fontWeight: 800, fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{h}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {[...filteredData]
+                                                            .sort((a, b) => b.premium - a.premium)
+                                                            .slice(0, 10)
+                                                            .map((d, i) => {
+                                                                const isCE = d.type === 'CE';
+                                                                const signal = d.pop >= 85 ? ['🟢 Strong', '#34d399'] : d.pop >= 70 ? ['🟡 Moderate', '#fbbf24'] : ['⚪ Weak', '#64748b'];
+                                                                return (
+                                                                    <tr key={`${d.strike}-${d.type}`} style={{ borderBottom: '1px solid rgba(30,41,59,0.5)' }}
+                                                                        className="hover:bg-slate-800/20 transition-colors">
+                                                                        <td className="px-4 py-2" style={{ color: '#475569', fontWeight: 700 }}>#{i + 1}</td>
+                                                                        <td className="px-4 py-2" style={{ color: '#e2e8f0', fontWeight: 800 }}>{d.strike.toLocaleString('en-IN')}</td>
+                                                                        <td className="px-4 py-2">
+                                                                            <span style={{
+                                                                                fontSize: 8, fontWeight: 800, padding: '2px 7px', borderRadius: 4,
+                                                                                color: isCE ? '#10b981' : '#ef4444',
+                                                                                background: isCE ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                                                                                border: `1px solid ${isCE ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`
+                                                                            }}>
+                                                                                {d.type}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-4 py-2" style={{ color: isCE ? '#34d399' : '#f87171', fontWeight: 900 }}>₹{d.premium.toFixed(1)}</td>
+                                                                        <td className="px-4 py-2" style={{ color: d.pop >= 80 ? '#34d399' : d.pop >= 70 ? '#fbbf24' : '#94a3b8', fontWeight: 800 }}>{d.pop}%</td>
+                                                                        <td className="px-4 py-2" style={{ color: '#64748b' }}>{fmtOI(d.oi)}</td>
+                                                                        <td className="px-4 py-2" style={{ color: signal[1], fontWeight: 700, fontSize: 10 }}>{signal[0]}</td>
+                                                                    </tr>
+                                                                );
+                                                            })
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        })()}
 
                         {/* Chart Area */}
                         <div className="glass p-6 rounded-3xl min-h-[500px] relative">
