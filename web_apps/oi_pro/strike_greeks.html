@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strike Greeks Analysis</title>
+    <title>Strike Greeks History — OI Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
@@ -24,55 +24,93 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
-        .glass-strong {
-            background: rgba(17, 24, 39, 0.9);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-        }
-
         select {
             appearance: none;
             -webkit-appearance: none;
-            -moz-appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 0.75rem center;
             background-size: 1rem;
         }
 
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 3px;
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+            animation: pulse-anim 1.5s infinite;
         }
 
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
+        @keyframes pulse-anim {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1)
+            }
+
+            50% {
+                opacity: .5;
+                transform: scale(1.3)
+            }
         }
 
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #1e293b;
-            border-radius: 10px;
+        .chart-card {
+            transition: box-shadow 0.2s;
         }
 
-        .custom-scrollbar {
-            scrollbar-width: thin;
-            scrollbar-color: #1e293b transparent;
+        .chart-card:hover {
+            box-shadow: 0 0 40px rgba(16, 185, 129, 0.08);
         }
     </style>
 </head>
 
 <body>
     <div id="root"></div>
-
-    <!-- Scripts -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
+        /* ── Greek palette ───────────────────────────────────────────────── */
+        const GREEK_META = {
+            delta: { label: 'Delta', ce: '#10b981', pe: '#f87171', desc: 'Price sensitivity to spot movement' },
+            gamma: { label: 'Gamma', ce: '#a78bfa', pe: '#f472b6', desc: 'Rate of delta change' },
+            vega: { label: 'Vega', ce: '#38bdf8', pe: '#818cf8', desc: 'Sensitivity to IV change' },
+            theta: { label: 'Theta', ce: '#fbbf24', pe: '#fb923c', desc: 'Time decay per day' },
+            iv: { label: 'IV', ce: '#34d399', pe: '#f87171', desc: 'Implied Volatility (%)' },
+        };
+
+        /* ── Chart layout factory ────────────────────────────────────────── */
+        const mkLayout = (title, yTitle, extra = {}) => ({
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            title: { text: title, font: { color: '#e2e8f0', size: 13, family: 'Inter' }, x: 0.02 },
+            showlegend: true,
+            legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
+            margin: { t: 40, b: 60, l: 65, r: 30 },
+            font: { family: 'Inter', color: '#64748b' },
+            hovermode: 'x unified',
+            hoverlabel: { bgcolor: '#0f172a', bordercolor: '#1e293b', font: { color: '#e2e8f0', family: 'Inter' } },
+            xaxis: { gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 9 }, zeroline: false },
+            yaxis: { title: { text: yTitle, font: { color: '#94a3b8', size: 9 } }, gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 9 }, zeroline: true, zerolinecolor: '#334155', zerolinewidth: 1, tickformat: '.4f' },
+            ...extra,
+        });
+
+        /* ── Trace builder ─────────────────────────────────────────────── */
+        const mkTrace = (name, times, vals, color, dash = 'solid', fillToZero = false) => ({
+            x: times, y: vals, name,
+            type: 'scatter', mode: 'lines',
+            ...(fillToZero ? { fill: 'tozeroy', fillcolor: color.replace(')', ',0.08)').replace('rgb', 'rgba') } : {}),
+            line: { color, width: 2, dash, shape: 'spline', smoothing: 0.6 },
+            hovertemplate: `<b>${name}</b>: %{y:.4f}<extra></extra>`,
+        });
+
+        /* ── Component ─────────────────────────────────────────────────── */
         function StrikeGreeksAnalytics() {
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
@@ -82,211 +120,240 @@
             const [data, setData] = useState([]);
             const [loading, setLoading] = useState(false);
             const [lastUpdated, setLastUpdated] = useState(null);
+            const [spotPrice, setSpotPrice] = useState(0);
+            const tickRef = useRef(null);
 
-            // Format Date Helper
-            const formatDate = (dateStr) => {
-                if (!dateStr) return "---";
-                const date = new Date(dateStr);
-                if (isNaN(date)) return dateStr;
-                return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            const formatDate = (d) => {
+                if (!d) return "---";
+                const dt = new Date(d);
+                return isNaN(dt) ? d : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
             };
 
-            // Fetch Expiries
+            /* fetch expiries */
             useEffect(() => {
                 fetch(`/api/expiries?symbol=${symbol}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.expiries && data.expiries.length > 0) {
-                            setExpiries(data.expiries);
-                            setExpiry(data.expiries[0]);
-                        }
-                    });
+                    .then(r => r.json())
+                    .then(d => { if (d.expiries?.length) { setExpiries(d.expiries); setExpiry(d.expiries[0]); } });
             }, [symbol]);
 
-            // Fetch Strikes when expiry changes
+            /* fetch strikes + auto-ATM */
             useEffect(() => {
                 if (!expiry) return;
                 fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
-                    .then(res => res.json())
+                    .then(r => r.json())
                     .then(res => {
                         if (res.status === "success") {
-                            const availableStrikes = res.data.map(d => d.strike_price);
-                            setStrikes(availableStrikes);
-                            if (res.metadata && res.metadata.spot) {
-                                // Default to ATM
-                                const spot = res.metadata.spot;
-                                const closest = availableStrikes.reduce((prev, curr) =>
-                                    Math.abs(curr - spot) < Math.abs(prev - spot) ? curr : prev
-                                );
-                                setSelectedStrike(closest);
-                            } else if (availableStrikes.length > 0) {
-                                setSelectedStrike(availableStrikes[Math.floor(availableStrikes.length / 2)]);
-                            }
+                            const av = res.data.map(d => d.strike_price);
+                            setStrikes(av);
+                            const sp = res.metadata?.spot || 0;
+                            setSpotPrice(sp);
+                            const closest = sp > 0
+                                ? av.reduce((p, c) => Math.abs(c - sp) < Math.abs(p - sp) ? c : p)
+                                : av[Math.floor(av.length / 2)];
+                            setSelectedStrike(closest);
                         }
                     });
             }, [symbol, expiry]);
 
+            /* fetch greek history */
             const fetchHistory = () => {
                 if (!expiry || !selectedStrike) return;
                 setLoading(true);
                 fetch(`/api/strike-greeks-history?symbol=${symbol}&expiry=${expiry}&strike=${selectedStrike}`)
-                    .then(res => res.json())
+                    .then(r => r.json())
                     .then(res => {
-                        if (res.status === "success") {
-                            setData(res.data || []);
-                            setLastUpdated(new Date());
-                        }
+                        if (res.status === "success") { setData(res.data || []); setLastUpdated(new Date()); }
                         setLoading(false);
                     })
-                    .catch(err => {
-                        console.error(err);
-                        setLoading(false);
-                    });
+                    .catch(() => setLoading(false));
             };
 
             useEffect(() => {
                 fetchHistory();
-                const interval = setInterval(fetchHistory, 60000);
-                return () => clearInterval(interval);
+                const id = setInterval(fetchHistory, 60000);
+                return () => clearInterval(id);
             }, [symbol, expiry, selectedStrike]);
 
+            /* render charts */
             useEffect(() => {
-                if (data.length === 0) return;
+                if (!data.length) return;
+                const ts = data.map(d => d.timestamp);
+                const last = data[data.length - 1] || {};
 
-                const timestamps = data.map(d => d.timestamp);
+                const plotConfig = { responsive: true, displayModeBar: false };
 
-                const createTrace = (name, yData, color) => ({
-                    x: timestamps,
-                    y: yData,
-                    name: name,
-                    type: 'scatter',
-                    mode: 'lines',
-                    line: { color: color, width: 2 },
-                    hovertemplate: `<b>${name}</b>: %{y:.4f}<br><extra></extra>`
-                });
+                /* Delta */
+                Plotly.react('chart-delta', [
+                    mkTrace('CE Delta', ts, data.map(d => d.ce_delta), GREEK_META.delta.ce, 'solid', true),
+                    mkTrace('PE Delta', ts, data.map(d => d.pe_delta), GREEK_META.delta.pe, 'dot'),
+                ], mkLayout(`Delta  ·  ${selectedStrike} ${symbol}`, 'Delta (0-1)'), plotConfig);
 
-                const layoutBase = {
-                    paper_bgcolor: 'rgba(0,0,0,0)',
-                    plot_bgcolor: 'rgba(0,0,0,0)',
-                    showlegend: true,
-                    legend: { font: { color: '#94a3b8' }, orientation: 'h', y: 1.1 },
-                    margin: { t: 30, r: 10, b: 40, l: 60 },
-                    xaxis: {
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155',
-                        zeroline: false
-                    },
-                    yaxis: {
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155',
-                        zeroline: false
-                    },
-                    hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white' } }
-                };
+                /* Gamma */
+                Plotly.react('chart-gamma', [
+                    mkTrace('CE Gamma', ts, data.map(d => d.ce_gamma), GREEK_META.gamma.ce, 'solid', true),
+                    mkTrace('PE Gamma', ts, data.map(d => d.pe_gamma), GREEK_META.gamma.pe, 'dot'),
+                ], mkLayout(`Gamma  ·  ${selectedStrike} ${symbol}`, 'Gamma'), plotConfig);
 
-                // Delta Chart
-                const deltaTraceCE = createTrace('Call Delta', data.map(d => d.ce_delta), '#10b981');
-                const deltaTracePE = createTrace('Put Delta', data.map(d => d.pe_delta), '#ef4444');
-                Plotly.newPlot('delta-chart', [deltaTraceCE, deltaTracePE], { ...layoutBase, title: { text: 'Delta History', font: { color: '#fff' } } }, { responsive: true, displayModeBar: false });
+                /* Vega */
+                Plotly.react('chart-vega', [
+                    mkTrace('CE Vega', ts, data.map(d => d.ce_vega), GREEK_META.vega.ce, 'solid', true),
+                    mkTrace('PE Vega', ts, data.map(d => d.pe_vega), GREEK_META.vega.pe, 'dot'),
+                ], mkLayout(`Vega  ·  ${selectedStrike} ${symbol}`, 'Vega'), plotConfig);
 
-                // Gamma Chart
-                const gammaTraceCE = createTrace('Call Gamma', data.map(d => d.ce_gamma), '#8b5cf6');
-                const gammaTracePE = createTrace('Put Gamma', data.map(d => d.pe_gamma), '#f472b6');
-                Plotly.newPlot('gamma-chart', [gammaTraceCE, gammaTracePE], { ...layoutBase, title: { text: 'Gamma History', font: { color: '#fff' } } }, { responsive: true, displayModeBar: false });
+                /* Theta */
+                Plotly.react('chart-theta', [
+                    mkTrace('CE Theta', ts, data.map(d => d.ce_theta), GREEK_META.theta.ce, 'solid', true),
+                    mkTrace('PE Theta', ts, data.map(d => d.pe_theta), GREEK_META.theta.pe, 'dot'),
+                ], mkLayout(`Theta  ·  ${selectedStrike} ${symbol}`, 'Theta (₹/day)', { yaxis: { ...mkLayout('', '').yaxis, tickformat: '.3f' } }), plotConfig);
 
-                // Vega Chart
-                const vegaTraceCE = createTrace('Call Vega', data.map(d => d.ce_vega), '#3b82f6');
-                const vegaTracePE = createTrace('Put Vega', data.map(d => d.pe_vega), '#06b6d4');
-                Plotly.newPlot('vega-chart', [vegaTraceCE, vegaTracePE], { ...layoutBase, title: { text: 'Vega History', font: { color: '#fff' } } }, { responsive: true, displayModeBar: false });
-
-                // Theta Chart
-                const thetaTraceCE = createTrace('Call Theta', data.map(d => d.ce_theta), '#f59e0b');
-                const thetaTracePE = createTrace('Put Theta', data.map(d => d.pe_theta), '#fbbf24');
-                Plotly.newPlot('theta-chart', [thetaTraceCE, thetaTracePE], { ...layoutBase, title: { text: 'Theta History', font: { color: '#fff' } } }, { responsive: true, displayModeBar: false });
+                /* IV */
+                const ceIV = data.map(d => d.ce_iv != null ? d.ce_iv * 100 : null);
+                const peIV = data.map(d => d.pe_iv != null ? d.pe_iv * 100 : null);
+                Plotly.react('chart-iv', [
+                    mkTrace('CE IV', ts, ceIV, GREEK_META.iv.ce, 'solid', true),
+                    mkTrace('PE IV', ts, peIV, GREEK_META.iv.pe, 'dot'),
+                ], mkLayout(`Implied Volatility  ·  ${selectedStrike} ${symbol}`, 'IV (%)', { yaxis: { ...mkLayout('', '').yaxis, tickformat: '.1f' } }), plotConfig);
 
             }, [data]);
 
+            /* ── derived KPIs ── */
+            const last = data.length ? data[data.length - 1] : {};
+            const first = data.length ? data[0] : {};
+            const fmtG = (v) => v != null ? Number(v).toFixed(4) : '---';
+            const fmtIV = (v) => v != null ? (Number(v) * 100).toFixed(2) + '%' : '---';
+            const delta = (a, b) => (a != null && b != null) ? (Number(a) - Number(b)).toFixed(4) : null;
+
+            const kpis = [
+                { label: 'CE Delta', value: fmtG(last.ce_delta), change: delta(last.ce_delta, first.ce_delta), color: '#10b981' },
+                { label: 'PE Delta', value: fmtG(last.pe_delta), change: delta(last.pe_delta, first.pe_delta), color: '#f87171' },
+                { label: 'CE Gamma', value: fmtG(last.ce_gamma), change: delta(last.ce_gamma, first.ce_gamma), color: '#a78bfa' },
+                { label: 'PE Gamma', value: fmtG(last.pe_gamma), change: delta(last.pe_gamma, first.pe_gamma), color: '#f472b6' },
+                { label: 'CE Vega', value: fmtG(last.ce_vega), change: delta(last.ce_vega, first.ce_vega), color: '#38bdf8' },
+                { label: 'PE Vega', value: fmtG(last.pe_vega), change: delta(last.pe_vega, first.pe_vega), color: '#818cf8' },
+                { label: 'CE IV', value: fmtIV(last.ce_iv), change: null, color: '#34d399' },
+                { label: 'PE IV', value: fmtIV(last.pe_iv), change: null, color: '#fb923c' },
+            ];
+
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
-                    {/* Unified Sidebar Navigation */}
                     <div id="sidebar-root"></div>
 
-                    <main className="pl-28 pr-8 py-8 w-full max-w-[1600px] mx-auto overflow-y-auto custom-scrollbar">
-                        {/* Header */}
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                    <main className="pl-28 pr-4 py-8 w-full overflow-y-auto">
+
+                        {/* ── Header ── */}
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-5 mb-7">
                             <div>
-                                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
-                                    Strike Greeks History
-                                </h1>
-                                <p className="text-slate-400 mt-1 flex items-center gap-2">
-                                    Historical Time-series for Delta, Gamma, Vega, Theta
-                                    {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
-                                            Last Updated: {lastUpdated.toLocaleTimeString()}
-                                        </span>
+                                <div className="flex items-center gap-3 mb-1">
+                                    <h1 className="text-3xl font-black text-white tracking-tight uppercase">
+                                        Strike&nbsp;<span className="text-emerald-400">Greeks</span>
+                                    </h1>
+                                    {!loading && data.length > 0 && <span className="pulse-dot"></span>}
+                                    {loading && (
+                                        <svg className="animate-spin h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                                        </svg>
                                     )}
+                                </div>
+                                <p style={{ fontSize: 10, color: '#475569', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                                    Δ Γ ν Θ  ·  Historical intraday time-series
+                                    {lastUpdated && <span className="ml-3 text-slate-600">· Updated {lastUpdated.toLocaleTimeString()}</span>}
                                 </p>
                             </div>
-                            <div className="flex gap-4 items-center">
-                                <select
-                                    value={symbol}
-                                    onChange={e => setSymbol(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
-                                >
+
+                            {/* Controls */}
+                            <div className="flex flex-wrap gap-3 items-center">
+                                {/* Spot badge */}
+                                {spotPrice > 0 && (
+                                    <div className="glass px-3 py-1.5 rounded-xl flex flex-col">
+                                        <span style={{ fontSize: 8, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Spot</span>
+                                        <span className="text-amber-400 font-black text-sm tracking-tight">{spotPrice.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                )}
+                                <select value={symbol} onChange={e => setSymbol(e.target.value)}
+                                    className="glass px-3 py-2 rounded-xl text-emerald-400 text-sm font-black tracking-widest outline-none pr-8">
                                     {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                 </select>
-
-                                <select
-                                    value={expiry}
-                                    onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
-                                >
+                                <select value={expiry} onChange={e => setExpiry(e.target.value)}
+                                    className="glass px-3 py-2 rounded-xl text-slate-300 text-sm font-black outline-none pr-8">
                                     {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
                                 </select>
-
-                                <select
-                                    value={selectedStrike}
-                                    onChange={e => setSelectedStrike(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
-                                >
+                                <select value={selectedStrike} onChange={e => setSelectedStrike(e.target.value)}
+                                    className="glass px-3 py-2 rounded-xl text-emerald-400 text-sm font-black outline-none pr-8">
                                     {strikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                 </select>
-
-                                <button
-                                    onClick={fetchHistory}
-                                    className="bg-emerald-500 hover:bg-emerald-600 px-4 py-2 rounded-xl text-white font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-                                >
-                                    Refresh
+                                <button onClick={fetchHistory}
+                                    className="glass px-4 py-2 rounded-xl text-emerald-400 text-sm font-black tracking-widest hover:bg-emerald-500/10 transition-all border border-emerald-500/20 hover:border-emerald-500/50">
+                                    ↻ REFRESH
                                 </button>
                             </div>
                         </div>
 
-                        {/* Charts Grid */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <div className="glass p-4 rounded-3xl min-h-[400px]">
-                                <div id="delta-chart" className="w-full h-[350px]"></div>
-                            </div>
-                            <div className="glass p-4 rounded-3xl min-h-[400px]">
-                                <div id="gamma-chart" className="w-full h-[350px]"></div>
-                            </div>
-                            <div className="glass p-4 rounded-3xl min-h-[400px]">
-                                <div id="vega-chart" className="w-full h-[350px]"></div>
-                            </div>
-                            <div className="glass p-4 rounded-3xl min-h-[400px]">
-                                <div id="theta-chart" className="w-full h-[350px]"></div>
-                            </div>
-                        </div>
-
-                        {data.length === 0 && !loading && (
-                            <div className="mt-8 glass p-12 rounded-3xl text-center">
-                                <p className="text-xl text-slate-400">No historical data available for this strike yet.</p>
-                                <p className="text-sm text-slate-500 mt-2">Data is logged every minute when the poller is active.</p>
+                        {/* ── KPI Strip ── */}
+                        {data.length > 0 && (
+                            <div className="grid grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+                                {kpis.map(k => (
+                                    <div key={k.label} className="glass rounded-2xl p-3 flex flex-col gap-1" style={{ borderTop: `2px solid ${k.color}` }}>
+                                        <span style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{k.label}</span>
+                                        <span style={{ fontSize: '1.15rem', fontWeight: 900, color: k.color, lineHeight: 1, letterSpacing: '-0.03em' }}>{k.value}</span>
+                                        {k.change != null && (
+                                            <span style={{ fontSize: 8, color: Number(k.change) >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
+                                                {Number(k.change) >= 0 ? '▲' : '▼'} {Math.abs(Number(k.change)).toFixed(4)} today
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         )}
 
-                        {loading && (
-                            <div className="mt-8 flex justify-center">
+                        {/* ── Greek legend bar ── */}
+                        <div className="glass rounded-2xl px-5 py-3 mb-5 flex flex-wrap gap-5 items-center">
+                            {Object.entries(GREEK_META).map(([k, m]) => (
+                                <div key={k} className="flex items-center gap-2">
+                                    <div className="flex gap-1">
+                                        <div className="w-4 h-0.5 mt-1.5 rounded" style={{ background: m.ce }}></div>
+                                        <div className="w-4 h-0.5 mt-1.5 rounded" style={{ background: m.pe, opacity: 0.6 }}></div>
+                                    </div>
+                                    <div>
+                                        <span style={{ fontSize: 10, color: '#e2e8f0', fontWeight: 800 }}>{m.label}</span>
+                                        <span style={{ fontSize: 9, color: '#475569', marginLeft: 4 }}>{m.desc}</span>
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="ml-auto flex items-center gap-2">
+                                <div className="w-6 h-0.5 border-t border-dashed border-slate-600"></div>
+                                <span style={{ fontSize: 9, color: '#475569' }}>PE leg (dashed) · CE leg (solid)</span>
+                            </div>
+                        </div>
+
+                        {/* ── Charts Grid: 2×2 + full-width IV ── */}
+                        {data.length > 0 ? (
+                            <>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+                                    {[
+                                        { id: 'chart-delta', meta: GREEK_META.delta },
+                                        { id: 'chart-gamma', meta: GREEK_META.gamma },
+                                        { id: 'chart-vega', meta: GREEK_META.vega },
+                                        { id: 'chart-theta', meta: GREEK_META.theta },
+                                    ].map(({ id, meta }) => (
+                                        <div key={id} className="glass chart-card rounded-[1.5rem] p-4" style={{ borderLeft: `3px solid ${meta.ce}22` }}>
+                                            <div id={id} className="w-full h-[320px]"></div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* IV full-width */}
+                                <div className="glass chart-card rounded-[1.5rem] p-4" style={{ borderLeft: `3px solid ${GREEK_META.iv.ce}22` }}>
+                                    <div id="chart-iv" className="w-full h-[280px]"></div>
+                                </div>
+                            </>
+                        ) : !loading ? (
+                            <div className="glass p-16 rounded-3xl text-center">
+                                <p className="text-5xl mb-4">Δ</p>
+                                <p className="text-xl text-slate-400 font-black">No Greek history yet for {selectedStrike} {symbol}</p>
+                                <p className="text-sm text-slate-600 mt-2">Data is logged every minute when the poller is active. Select a different strike or check back soon.</p>
+                            </div>
+                        ) : (
+                            <div className="flex justify-center py-16">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
                             </div>
                         )}
