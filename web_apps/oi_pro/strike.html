@@ -164,151 +164,185 @@
             useEffect(() => {
                 if (data.length === 0) return;
 
-                // 1. Sort Data by Strike
+                // 1. Sort & filter to ATM ± range
                 const sortedData = [...data].sort((a, b) => a.strike - b.strike);
-
-                // 2. Find ATM Index
-                const atmIndex = sortedData.reduce((closestIdx, curr, idx) => {
-                    return Math.abs(curr.strike - spotPrice) < Math.abs(sortedData[closestIdx].strike - spotPrice)
-                        ? idx
-                        : closestIdx;
-                }, 0);
-
-                // 3. Filter Range
+                const atmIndex = sortedData.reduce((closestIdx, curr, idx) =>
+                    Math.abs(curr.strike - spotPrice) < Math.abs(sortedData[closestIdx].strike - spotPrice) ? idx : closestIdx, 0);
                 const startIdx = Math.max(0, atmIndex - strikeRange);
                 const endIdx = Math.min(sortedData.length, atmIndex + strikeRange + 1);
-                const filteredData = sortedData.slice(startIdx, endIdx);
+                const fd = sortedData.slice(startIdx, endIdx);
 
-                const strikes = filteredData.map(d => d.strike);
-
+                const strikes = fd.map(d => d.strike);
                 const isVertical = orientation === 'v';
 
-                // --- Total OI Chart Configuration ---
-                const ceOI = filteredData.map(d => d.ce_oi || 0);
-                const peOI = filteredData.map(d => d.pe_oi || 0);
+                // Shared layout base
+                const BASE = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { family: 'Inter', color: '#64748b' },
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.12 },
+                    hovermode: isVertical ? 'x unified' : 'y unified',
+                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } },
+                    margin: { t: 30, b: 80, l: 80, r: 80 },
+                };
+
+                // ATM shape + annotation helper
+                const atmShape = spotPrice > 0 ? (isVertical ? [{
+                    type: 'line', x0: spotPrice, x1: spotPrice, yref: 'paper', y0: 0, y1: 1,
+                    line: { color: 'rgba(251,191,36,0.45)', width: 1.5, dash: 'dot' }
+                }] : [{
+                    type: 'line', y0: spotPrice, y1: spotPrice, xref: 'paper', x0: 0, x1: 1,
+                    line: { color: 'rgba(251,191,36,0.45)', width: 1.5, dash: 'dot' }
+                }]) : [];
+
+                const atmLabel = spotPrice > 0 ? [{
+                    ...(isVertical
+                        ? { x: spotPrice, yref: 'paper', y: 1, xanchor: 'left' }
+                        : { y: spotPrice, xref: 'paper', x: 1, yanchor: 'bottom', xanchor: 'right' }),
+                    text: `ATM ${spotPrice.toLocaleString('en-IN')}`,
+                    showarrow: false,
+                    font: { color: '#fbbf24', size: 9, family: 'Inter' },
+                    bgcolor: 'rgba(251,191,36,0.1)', bordercolor: 'rgba(251,191,36,0.3)',
+                    borderwidth: 1, borderpad: 3
+                }] : [];
+
+                // ── Chart 1: Total OI ──
+                const ceOI = fd.map(d => d.ce_oi || 0);
+                const peOI = fd.map(d => d.pe_oi || 0);
+                const maxCeOI = Math.max(...ceOI, 1);
+                const maxPeOI = Math.max(...peOI, 1);
 
                 const traceCE_OI = {
                     x: isVertical ? strikes : ceOI,
                     y: isVertical ? ceOI : strikes,
-                    name: 'Call OI',
+                    name: 'Call OI ■',
                     type: 'bar',
                     orientation: orientation,
-                    marker: { color: '#ef4444' }, // Red for CE OI (Resistance)
-                    textposition: 'none',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } }
+                    marker: {
+                        color: ceOI.map(v => `rgba(239,68,68,${0.3 + 0.7 * Math.sqrt(v / maxCeOI)})`),
+                        line: { width: 0 }
+                    },
+                    hovertemplate: '<b>%{' + (isVertical ? 'x' : 'y') + '} CE</b><br>OI: %{' + (isVertical ? 'y' : 'x') + ':,.0f}<extra></extra>',
                 };
 
                 const tracePE_OI = {
                     x: isVertical ? strikes : peOI,
                     y: isVertical ? peOI : strikes,
-                    name: 'Put OI',
+                    name: 'Put OI ■',
                     type: 'bar',
                     orientation: orientation,
-                    marker: { color: '#10b981' }, // Green for PE OI (Support)
-                    textposition: 'none',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } }
+                    marker: {
+                        color: peOI.map(v => `rgba(16,185,129,${0.3 + 0.7 * Math.sqrt(v / maxPeOI)})`),
+                        line: { width: 0 }
+                    },
+                    hovertemplate: '<b>%{' + (isVertical ? 'x' : 'y') + '} PE</b><br>OI: %{' + (isVertical ? 'y' : 'x') + ':,.0f}<extra></extra>',
+                };
+
+                // Net OI line on secondary axis
+                const netOI = fd.map(d => (d.ce_oi || 0) - (d.pe_oi || 0));
+                const traceNetOI = {
+                    x: isVertical ? strikes : netOI,
+                    y: isVertical ? netOI : strikes,
+                    name: 'Net (CE−PE)',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    [isVertical ? 'yaxis' : 'xaxis']: isVertical ? 'y2' : 'x2',
+                    line: { color: '#a78bfa', width: 2, dash: 'dot' },
+                    marker: { size: 5, color: '#a78bfa' },
+                    hovertemplate: '<b>Net OI %{' + (isVertical ? 'x' : 'y') + '}</b><br>CE−PE: %{' + (isVertical ? 'y' : 'x') + ':+,.0f}<extra></extra>',
                 };
 
                 const layoutOI = {
-                    title: { text: 'Total Open Interest', font: { color: '#fff' } },
-                    paper_bgcolor: 'rgba(0,0,0,0)',
-                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    ...BASE,
+                    title: { text: 'Total Open Interest by Strike', font: { color: '#e2e8f0', size: 14 }, x: 0.02 },
                     barmode: 'group',
-                    showlegend: true,
-                    legend: { font: { color: '#94a3b8' } },
-                    xaxis: {
-                        title: { text: isVertical ? 'Strike Price' : 'OI', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
-                    },
-                    yaxis: {
-                        title: { text: isVertical ? 'OI' : 'Strike Price', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
-                    },
-                    hovermode: isVertical ? 'x unified' : 'y unified',
-                    shapes: isVertical ? [{
-                        type: 'line',
-                        x0: spotPrice, y0: 0, x1: spotPrice, y1: 1,
-                        yref: 'paper',
-                        line: { color: '#f59e0b', width: 2, dash: 'dot' }
-                    }] : [{
-                        type: 'line',
-                        x0: 0, y0: spotPrice, x1: 1, y1: spotPrice,
-                        xref: 'paper',
-                        line: { color: '#f59e0b', width: 2, dash: 'dot' }
-                    }]
+                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#334155' },
+                    yaxis: { title: { text: isVertical ? 'OI' : 'Strike Price', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#334155', tickformat: '.3s' },
+                    ...(isVertical
+                        ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: '#334155', tickformat: '.3s' } }
+                        : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: '#334155' } }),
+                    shapes: atmShape,
+                    annotations: atmLabel,
                 };
 
-                Plotly.react('chart-oi-div', [traceCE_OI, tracePE_OI], layoutOI, { responsive: true, displayModeBar: false });
+                Plotly.react('chart-oi-div', [traceCE_OI, tracePE_OI, traceNetOI], layoutOI, { responsive: true, displayModeBar: false });
 
-                // --- OI Change Chart Configuration ---
-                const ceChange = filteredData.map(d => d.ce_oi_chg || 0);
-                const peChange = filteredData.map(d => d.pe_oi_chg || 0);
+                // ── Chart 2: OI Change ──
+                const ceChg = fd.map(d => d.ce_oi_chg || 0);
+                const peChg = fd.map(d => d.pe_oi_chg || 0);
+
+                // Dynamic colors: positive = buildup, negative = unwinding
+                const ceChgColors = ceChg.map(v => v >= 0 ? 'rgba(239,68,68,0.80)' : 'rgba(14,165,233,0.75)');
+                const peChgColors = peChg.map(v => v >= 0 ? 'rgba(16,185,129,0.80)' : 'rgba(245,158,11,0.75)');
 
                 const traceCE_Chg = {
-                    x: isVertical ? strikes : ceChange,
-                    y: isVertical ? ceChange : strikes,
-                    name: 'Call OI Change',
+                    x: isVertical ? strikes : ceChg,
+                    y: isVertical ? ceChg : strikes,
+                    name: 'Call OI Chg',
                     type: 'bar',
                     orientation: orientation,
-                    marker: { color: '#ef4444' },
-                    textposition: 'none',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } }
+                    marker: { color: ceChgColors, line: { width: 0 } },
+                    hovertemplate: '<b>%{' + (isVertical ? 'x' : 'y') + '} CE</b><br>OI Chg: %{' + (isVertical ? 'y' : 'x') + ':+,.0f}<extra></extra>',
                 };
 
                 const tracePE_Chg = {
-                    x: isVertical ? strikes : peChange,
-                    y: isVertical ? peChange : strikes,
-                    name: 'Put OI Change',
+                    x: isVertical ? strikes : peChg,
+                    y: isVertical ? peChg : strikes,
+                    name: 'Put OI Chg',
                     type: 'bar',
                     orientation: orientation,
-                    marker: { color: '#10b981' },
-                    textposition: 'none',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } }
+                    marker: { color: peChgColors, line: { width: 0 } },
+                    hovertemplate: '<b>%{' + (isVertical ? 'x' : 'y') + '} PE</b><br>OI Chg: %{' + (isVertical ? 'y' : 'x') + ':+,.0f}<extra></extra>',
                 };
+
+                const netChg = fd.map(d => (d.ce_oi_chg || 0) - (d.pe_oi_chg || 0));
+                const traceNetChg = {
+                    x: isVertical ? strikes : netChg,
+                    y: isVertical ? netChg : strikes,
+                    name: 'Net Δ (CE−PE)',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    [isVertical ? 'yaxis' : 'xaxis']: isVertical ? 'y2' : 'x2',
+                    line: { color: '#f472b6', width: 2, dash: 'dot' },
+                    marker: { size: 5, color: '#f472b6' },
+                    hovertemplate: '<b>Net Δ %{' + (isVertical ? 'x' : 'y') + '}</b><br>CE−PE: %{' + (isVertical ? 'y' : 'x') + ':+,.0f}<extra></extra>',
+                };
+
+                // Zero-reference band
+                const zeroShape = isVertical
+                    ? { type: 'rect', x0: 0, x1: 1, xref: 'paper', y0: -1, y1: 1, yref: 'y', fillcolor: 'rgba(148,163,184,0.04)', line: { width: 0 } }
+                    : { type: 'rect', y0: 0, y1: 1, yref: 'paper', x0: -1, x1: 1, xref: 'x', fillcolor: 'rgba(148,163,184,0.04)', line: { width: 0 } };
 
                 const layoutChg = {
-                    title: { text: 'Open Interest Change (Intraday)', font: { color: '#fff' } },
-                    paper_bgcolor: 'rgba(0,0,0,0)',
-                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    ...BASE,
+                    title: { text: 'Open Interest Change (Intraday)', font: { color: '#e2e8f0', size: 14 }, x: 0.02 },
                     barmode: 'group',
-                    showlegend: true,
-                    legend: { font: { color: '#94a3b8' } },
-                    xaxis: {
-                        title: { text: isVertical ? 'Strike Price' : 'OI Change', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
-                    },
-                    yaxis: {
-                        title: { text: isVertical ? 'OI Change' : 'Strike Price', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
-                    },
-                    hovermode: isVertical ? 'x unified' : 'y unified',
-                    shapes: isVertical ? [{
-                        type: 'line',
-                        x0: spotPrice, y0: 0, x1: spotPrice, y1: 1,
-                        yref: 'paper',
-                        line: { color: '#f59e0b', width: 2, dash: 'dot' }
-                    }] : [{
-                        type: 'line',
-                        x0: 0, y0: spotPrice, x1: 1, y1: spotPrice,
-                        xref: 'paper',
-                        line: { color: '#f59e0b', width: 2, dash: 'dot' }
-                    }]
+                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI Change', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#475569', zerolinewidth: 1.5, zeroline: true },
+                    yaxis: { title: { text: isVertical ? 'OI Change' : 'Strike Price', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#475569', zerolinewidth: 1.5, zeroline: true, tickformat: '.3s' },
+                    ...(isVertical
+                        ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#f472b6', size: 9 }, title: { text: 'Net Δ', font: { color: '#f472b6', size: 9 } } } }
+                        : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#f472b6', size: 9 }, title: { text: 'Net Δ', font: { color: '#f472b6', size: 9 } } } }),
+                    shapes: [...atmShape, zeroShape],
+                    annotations: [
+                        ...atmLabel,
+                        {
+                            xref: 'paper', yref: 'paper', x: 0.01, y: 0.5, text: '← Unwind / Build →',
+                            showarrow: false, font: { size: 8, color: '#475569', family: 'Inter' }
+                        }
+                    ],
                 };
 
-                Plotly.react('chart-chg-div', [traceCE_Chg, tracePE_Chg], layoutChg, { responsive: true, displayModeBar: false });
+                Plotly.react('chart-chg-div', [traceCE_Chg, tracePE_Chg, traceNetChg], layoutChg, { responsive: true, displayModeBar: false });
 
             }, [data, spotPrice, orientation, strikeRange]);
 
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
                     {/* Unified Sidebar Navigation */}
-                        <div id="sidebar-root"></div>
+                    <div id="sidebar-root"></div>
 
-                    <main className="pl-16 pr-8 py-8 max-w-[1600px] mx-auto">
+                    <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                             <div>
@@ -376,6 +410,51 @@
                                 </button>
                             </div>
                         </div>
+
+                        {/* ── KPI Stats Strip ── */}
+                        {data.length > 0 && (() => {
+                            const sorted = [...data].sort((a, b) => a.strike - b.strike);
+                            const atmI = sorted.reduce((ci, c, i) => Math.abs(c.strike - spotPrice) < Math.abs(sorted[ci].strike - spotPrice) ? i : ci, 0);
+                            const fd = sorted.slice(Math.max(0, atmI - strikeRange), Math.min(sorted.length, atmI + strikeRange + 1));
+
+                            const topCeOI = [...fd].sort((a, b) => (b.ce_oi || 0) - (a.ce_oi || 0))[0];
+                            const topPeOI = [...fd].sort((a, b) => (b.pe_oi || 0) - (a.pe_oi || 0))[0];
+                            const topCeChg = [...fd].sort((a, b) => (b.ce_oi_chg || 0) - (a.ce_oi_chg || 0))[0];
+                            const topPeChg = [...fd].sort((a, b) => (b.pe_oi_chg || 0) - (a.pe_oi_chg || 0))[0];
+
+                            const totCeOI = fd.reduce((s, d) => s + (d.ce_oi || 0), 0);
+                            const totPeOI = fd.reduce((s, d) => s + (d.pe_oi || 0), 0);
+                            const pcr = totCeOI > 0 ? (totPeOI / totCeOI).toFixed(2) : '---';
+                            const pcrColor = Number(pcr) > 1 ? '#34d399' : '#f87171';
+                            const sentiment = Number(pcr) > 1.2 ? 'Bullish ↑' : Number(pcr) < 0.8 ? 'Bearish ↓' : 'Neutral ↔';
+                            const sentColor = Number(pcr) > 1.2 ? '#34d399' : Number(pcr) < 0.8 ? '#f87171' : '#fbbf24';
+
+                            const fmtOI = v => v >= 1e7 ? (v / 1e7).toFixed(1) + 'Cr' : v >= 1e5 ? (v / 1e5).toFixed(1) + 'L' : v.toLocaleString('en-IN');
+
+                            const cards = [
+                                { label: 'Max CE OI', value: topCeOI?.strike?.toLocaleString('en-IN') ?? '---', sub: fmtOI(topCeOI?.ce_oi || 0), color: '#ef4444', hint: 'Resistance' },
+                                { label: 'Max PE OI', value: topPeOI?.strike?.toLocaleString('en-IN') ?? '---', sub: fmtOI(topPeOI?.pe_oi || 0), color: '#10b981', hint: 'Support' },
+                                { label: 'Max CE Chg', value: topCeChg?.strike?.toLocaleString('en-IN') ?? '---', sub: (topCeChg?.ce_oi_chg || 0) > 0 ? '+' + fmtOI(topCeChg?.ce_oi_chg || 0) : fmtOI(topCeChg?.ce_oi_chg || 0), color: '#f87171', hint: 'Short Build' },
+                                { label: 'Max PE Chg', value: topPeChg?.strike?.toLocaleString('en-IN') ?? '---', sub: (topPeChg?.pe_oi_chg || 0) > 0 ? '+' + fmtOI(topPeChg?.pe_oi_chg || 0) : fmtOI(topPeChg?.pe_oi_chg || 0), color: '#34d399', hint: 'Long Build' },
+                                { label: 'PCR (OI)', value: pcr, sub: `CE ${fmtOI(totCeOI)} · PE ${fmtOI(totPeOI)}`, color: pcrColor, hint: '' },
+                                { label: 'Sentiment', value: sentiment, sub: `ATM \u00b1${strikeRange} strikes`, color: sentColor, hint: '' },
+                            ];
+
+                            return (
+                                <div className="grid grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                                    {cards.map(c => (
+                                        <div key={c.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${c.color}` }}>
+                                            <div className="flex justify-between items-center">
+                                                <span style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</span>
+                                                {c.hint && <span style={{ fontSize: 7, color: c.color, fontWeight: 700, opacity: 0.8 }}>{c.hint}</span>}
+                                            </div>
+                                            <p style={{ fontSize: '1.4rem', fontWeight: 900, color: c.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{c.value}</p>
+                                            <p style={{ fontSize: 9, color: '#94a3b8' }}>{c.sub}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
 
                         {/* Charts Area */}
                         <div className="flex flex-col gap-8">

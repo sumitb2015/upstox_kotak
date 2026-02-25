@@ -154,7 +154,7 @@
                         setPriceData(priceResult.data || []);
                         setPriceMetadata(priceResult.metadata || {});
                     }
-                    
+
                     setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
                 } catch (err) {
@@ -181,8 +181,8 @@
                 if (priceData.length > 0 && priceMetadata.columns) {
                     const traces = [];
                     const cols = priceMetadata.columns;
-                    const uniqueStrikes = [...new Set(cols.map(c => c.split('_')[0]))].sort((a,b)=>Number(a)-Number(b));
-                    
+                    const uniqueStrikes = [...new Set(cols.map(c => c.split('_')[0]))].sort((a, b) => Number(a) - Number(b));
+
                     uniqueStrikes.forEach((strike, idx) => {
                         const color = COLORS[idx % COLORS.length];
                         ['CE', 'PE'].forEach(type => {
@@ -218,7 +218,7 @@
                 if (oiData.length > 0 && oiMetadata.columns) {
                     const traces = [];
                     const cols = oiMetadata.columns;
-                    const uniqueStrikes = [...new Set(cols.map(c => c.split('_')[0]))].sort((a,b)=>Number(a)-Number(b));
+                    const uniqueStrikes = [...new Set(cols.map(c => c.split('_')[0]))].sort((a, b) => Number(a) - Number(b));
 
                     uniqueStrikes.forEach((strike, idx) => {
                         const color = COLORS[idx % COLORS.length];
@@ -258,9 +258,9 @@
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
                     {/* Unified Sidebar Navigation */}
-                        <div id="sidebar-root"></div>
+                    <div id="sidebar-root"></div>
 
-                    <main className="flex-1 ml-16 p-8 max-w-[1600px] mx-auto w-full">
+                    <main className="flex-1 pl-28 p-8 max-w-[1600px] mx-auto w-full">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
                             <div>
                                 <h1 className="text-4xl font-black text-white tracking-tighter flex items-center gap-3">

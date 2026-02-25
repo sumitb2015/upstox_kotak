@@ -37,10 +37,38 @@ This skill outlines the standard architecture and best practices for building fi
     -   **Tooltips**: Customize `hoverinfo` or `hovertemplate` to show precise data.
     -   **Responsiveness**: Ensure charts resize by setting `responsive: true` in Plotly config and using `w-full` logic.
 
-4.  **UI/UX Standards**:
-    -   **Dark Mode**: Default to dark theme (`bg-slate-950`, `text-slate-200`).
-    -   **Glassmorphism**: Use semi-transparent backgrounds with blur (`backdrop-filter: blur(16px)`).
-    -   **Grid Layouts**: Use CSS Grid for dense data displays (e.g., Option Chain, PCR Grid).
+4.  **UI/UX Standards (Premium Glassmorphism)**:
+    -   **Background**: Use deep dark backgrounds (e.g., `#030712`).
+    -   **Glass Cards**: Use semi-transparent surfaces `rgba(15, 23, 42, 0.8)` with heavy blur `backdrop-filter: blur(20px)` and subtle borders `rgba(255,255,255,0.07)`.
+    -   **Typography**: Use `Inter` font, extremely bold weights (`font-black`/`800`) for metrics, and wide tracking `tracking-[0.15em]` for uppercase sublabels.
+    -   **Color Coding**: Standardize on `#10b981` (Emerald) for positive/Put dominant, `#f87171` (Rose) for negative/Call dominant, and `#fbbf24` (Amber) for Spot prices.
+    -   **Loading States**: Always implement a "Loading..." spinner or shimmer effect while waiting for initial API or WebSocket payloads to prevent layout jump.
+    -   **Sentiment Badges**: Implement explicit visual badges (Bullish/Bearish/Neutral) dynamically driven by underlying data differences.
+
+### B. WebSocket Optimization (Backend & Frontend)
+1.  **Backend Async Loop (The 1-Second Broadcaster)**:
+    -   When sending real-time data over WebSockets, use a non-blocking `asyncio.wait_for` to handle incoming subscription requests, catching the `TimeoutError` to execute the periodic 1-second broadcast loop.
+    -   *Rule*: Pull data instantly from an in-memory dictionary cache (`streamer.get_latest_data(key)`) inside the periodic loop rather than event-driven pushing to clients, which easily causes backpressure.
+    -   Always send explicit `type: "status"` messages (`loading`, `ready`, `error`) so the frontend can react.
+
+2.  **Frontend Sync Guard (Preventing Duplicate Chart Data)**:
+    -   **Crucial Issue**: Backend often broadcasts data every 1s, even if market prices haven't moved (especially out of hours or low liquidity).
+    -   **Solution**: Only append to chart history arrays IF the core values have changed.
+    ```javascript
+    // Example Sync Guard
+    const priceChanged = (msg.ce_sum !== lastCe) || (msg.pe_sum !== lastPe);
+    if (priceChanged) {
+        h.times.push(msg.timestamp);
+        h.ce.push(msg.ce_sum);
+        // ... trim arrays to MAX_POINTS ...
+        renderCharts(h); // Re-render ONLY when actual data moved
+    }
+    // Note: Live KPI scalar numbers can update every tick regardless.
+    ```
+
+3.  **Real-Time Line Fills (Plotly)**:
+    -   To visualize momentum, use `fill: 'tozeroy'` with explicit color tracking in Plotly instead of raw bar charts.
+    -   Split data streams into discrete `positiveY` and `negativeY` arrays on the frontend dynamically to give independent positive/negative fill colors.
 
 ### B. Backend (FastAPI)
 1.  **Port Management**:

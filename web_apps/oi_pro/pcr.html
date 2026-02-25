@@ -109,24 +109,42 @@
         }
 
         @keyframes flash-green {
-            0% { color: #10b981; transform: scale(1.02); }
-            100% { color: inherit; transform: scale(1); }
+            0% {
+                color: #10b981;
+                transform: scale(1.02);
+            }
+
+            100% {
+                color: inherit;
+                transform: scale(1);
+            }
         }
 
         @keyframes flash-red {
-            0% { color: #ef4444; transform: scale(1.02); }
-            100% { color: inherit; transform: scale(1); }
+            0% {
+                color: #ef4444;
+                transform: scale(1.02);
+            }
+
+            100% {
+                color: inherit;
+                transform: scale(1);
+            }
         }
+
         .custom-scrollbar::-webkit-scrollbar {
             width: 3px;
         }
+
         .custom-scrollbar::-webkit-scrollbar-track {
             background: transparent;
         }
+
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #1e293b;
             border-radius: 10px;
         }
+
         .custom-scrollbar {
             scrollbar-width: thin;
             scrollbar-color: #1e293b transparent;
@@ -494,9 +512,9 @@
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased">
                     {/* Sidebar */}
-                        <div id="sidebar-root"></div>
+                    <div id="sidebar-root"></div>
 
-                    <main className="pl-16 pr-6 py-6 max-w-[1700px] mx-auto">
+                    <main className="pl-28 pr-6 py-6 max-w-[1700px] mx-auto">
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                             <div>

@@ -216,10 +216,40 @@
             };
 
             const renderPlot = () => {
+                const spot = metadata.spot || 0;
+
+                // ── Shared layout base ────────────────────────────────────────────────
+                const BASE_LAYOUT = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { family: 'Inter', color: '#64748b' },
+                    hovermode: 'closest',
+                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' },
+                    xaxis: { gridcolor: '#1e293b', zerolinecolor: '#334155', tickfont: { color: '#94a3b8' } },
+                    yaxis: { gridcolor: '#1e293b', zerolinecolor: '#334155', tickfont: { color: '#94a3b8' }, tickformat: '.3s' },
+                };
+
+                // Vertical ATM shape (shared across charts)
+                const atmShape = spot > 0 ? [{
+                    type: 'line', x0: spot, x1: spot, yref: 'paper', y0: 0, y1: 1,
+                    line: { color: 'rgba(251,191,36,0.4)', width: 1.5, dash: 'dot' }
+                }] : [];
+
+                const atmAnnotation = spot > 0 ? [{
+                    x: spot, yref: 'paper', y: 1, text: `ATM ${spot.toLocaleString('en-IN')}`,
+                    showarrow: false, font: { color: '#fbbf24', size: 9, family: 'Inter' },
+                    bgcolor: 'rgba(251,191,36,0.1)', bordercolor: 'rgba(251,191,36,0.3)',
+                    borderwidth: 1, borderpad: 3, xanchor: 'left', yanchor: 'top'
+                }] : [];
+
+                // ── Chart 1: Sentiment Distribution Scatter ──────────────────────────
                 const traces = [];
                 const buildupTypes = Object.keys(BUILDUP_COLORS);
                 const allOIs = data.flatMap(d => [d.ce_oi || 0, d.pe_oi || 0]);
                 const maxOI = Math.max(...allOIs, 1);
+
+                // Square-root scaling: range [8, 52] — better separation
+                const scaleSize = (oi) => 8 + Math.sqrt(oi / maxOI) * 44;
 
                 buildupTypes.forEach(type => {
                     const ce_subset = data.filter(d => d.ce_buildup === type);
@@ -229,14 +259,21 @@
                         traces.push({
                             x: ce_subset.map(d => d.strike_price),
                             y: ce_subset.map(d => d.ce_oi),
-                            hovertemplate: `<b>CE %{x}</b><br><span style="color:${BUILDUP_COLORS[type]}">${type}</span><br>OI: %{y:,.0f}<br>LTP: ₹%{customdata:.2f}<extra></extra>`,
-                            customdata: ce_subset.map(d => d.ce_ltp),
+                            hovertemplate:
+                                `<b>CE %{x}</b><br>` +
+                                `<span style="color:${BUILDUP_COLORS[type]}">${type}</span><br>` +
+                                `OI: %{y:,.0f}<br>` +
+                                `LTP: ₹%{customdata[0]:.2f}<br>` +
+                                `OI Chg: %{customdata[1]:+,.0f}` +
+                                `<extra></extra>`,
+                            customdata: ce_subset.map(d => [d.ce_ltp, d.ce_oi_chg || 0]),
                             mode: 'markers',
-                            name: `${type} (CE)`,
+                            name: `${type} CE●`,
                             marker: {
-                                size: ce_subset.map(d => 12 + (d.ce_oi / maxOI) * 24),
+                                size: ce_subset.map(d => scaleSize(d.ce_oi)),
                                 color: BUILDUP_COLORS[type],
-                                opacity: 0.85,
+                                opacity: 0.88,
+                                symbol: 'circle',
                                 line: { color: '#030712', width: 1.5 }
                             }
                         });
@@ -246,14 +283,20 @@
                         traces.push({
                             x: pe_subset.map(d => d.strike_price),
                             y: pe_subset.map(d => d.pe_oi),
-                            hovertemplate: `<b>PE %{x}</b><br><span style="color:${BUILDUP_COLORS[type]}">${type}</span><br>OI: %{y:,.0f}<br>LTP: ₹%{customdata:.2f}<extra></extra>`,
-                            customdata: pe_subset.map(d => d.pe_ltp),
+                            hovertemplate:
+                                `<b>PE %{x}</b><br>` +
+                                `<span style="color:${BUILDUP_COLORS[type]}">${type}</span><br>` +
+                                `OI: %{y:,.0f}<br>` +
+                                `LTP: ₹%{customdata[0]:.2f}<br>` +
+                                `OI Chg: %{customdata[1]:+,.0f}` +
+                                `<extra></extra>`,
+                            customdata: pe_subset.map(d => [d.pe_ltp, d.pe_oi_chg || 0]),
                             mode: 'markers',
-                            name: `${type} (PE)`,
+                            name: `${type} PE◆`,
                             marker: {
-                                size: pe_subset.map(d => 12 + (d.pe_oi / maxOI) * 24),
+                                size: pe_subset.map(d => scaleSize(d.pe_oi)),
                                 color: BUILDUP_COLORS[type],
-                                opacity: 0.85,
+                                opacity: 0.88,
                                 symbol: 'diamond',
                                 line: { color: '#030712', width: 1.5 }
                             }
@@ -261,76 +304,194 @@
                     }
                 });
 
-                const layout = {
-                    paper_bgcolor: 'rgba(0,0,0,0)',
-                    plot_bgcolor: 'rgba(0,0,0,0)',
+                // Top-3 CE + PE OI strikes as floating annotations
+                const topCE = [...data].sort((a, b) => (b.ce_oi || 0) - (a.ce_oi || 0)).slice(0, 3);
+                const topPE = [...data].sort((a, b) => (b.pe_oi || 0) - (a.pe_oi || 0)).slice(0, 3);
+                const strike1Annotations = [
+                    ...topCE.map(d => ({
+                        x: d.strike_price, y: d.ce_oi,
+                        text: `CE ${d.strike_price.toLocaleString('en-IN')}`,
+                        showarrow: true, arrowhead: 0, arrowcolor: 'rgba(16,185,129,0.4)',
+                        arrowsize: 0.5, ax: 0, ay: -28,
+                        font: { size: 9, color: '#10b981', family: 'Inter' },
+                        bgcolor: 'rgba(16,185,129,0.08)', borderpad: 2,
+                        bordercolor: 'rgba(16,185,129,0.2)', borderwidth: 1
+                    })),
+                    ...topPE.map(d => ({
+                        x: d.strike_price, y: d.pe_oi,
+                        text: `PE ${d.strike_price.toLocaleString('en-IN')}`,
+                        showarrow: true, arrowhead: 0, arrowcolor: 'rgba(239,68,68,0.4)',
+                        arrowsize: 0.5, ax: 0, ay: 28,
+                        font: { size: 9, color: '#f87171', family: 'Inter' },
+                        bgcolor: 'rgba(239,68,68,0.08)', borderpad: 2,
+                        bordercolor: 'rgba(239,68,68,0.2)', borderwidth: 1
+                    })),
+                    ...atmAnnotation
+                ];
+
+                const chart1Layout = {
+                    ...BASE_LAYOUT,
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', y: -0.15 },
+                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.15, x: 0 },
                     margin: { t: 20, b: 100, l: 80, r: 40 },
-                    font: { family: 'Inter', color: '#64748b' },
-                    xaxis: { title: 'Strike Price', gridcolor: '#1e293b', zerolinecolor: '#334155', tickfont: { color: '#94a3b8' } },
-                    yaxis: { title: 'Open Interest', gridcolor: '#1e293b', zerolinecolor: '#334155', tickfont: { color: '#94a3b8' }, tickformat: '.2s' },
-                    hovermode: 'closest',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' }
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike Price', font: { color: '#64748b', size: 11 } } },
+                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Open Interest', font: { color: '#64748b', size: 11 } } },
+                    shapes: atmShape,
+                    annotations: strike1Annotations,
                 };
 
-                Plotly.react(chartRef.current, traces, layout, { responsive: true, displayModeBar: false });
+                Plotly.react(chartRef.current, traces, chart1Layout, { responsive: true, displayModeBar: false });
 
-                // --- 2. Total OI Bar Chart ---
+                // ── Chart 2: Total OI by Strike ──────────────────────────────────────
+                // Dynamic opacity based on OI magnitude within each side
+                const maxCeOI = Math.max(...data.map(d => d.ce_oi || 0), 1);
+                const maxPeOI = Math.max(...data.map(d => d.pe_oi || 0), 1);
+
                 const ce_total = {
                     x: data.map(d => d.strike_price),
                     y: data.map(d => d.ce_oi),
                     name: 'CE OI',
                     type: 'bar',
-                    marker: { color: '#10b981' }
+                    marker: {
+                        color: data.map(d => `rgba(16,185,129,${0.3 + 0.7 * Math.sqrt(d.ce_oi / maxCeOI)})`),
+                        line: { width: 0 }
+                    },
+                    hovertemplate: '<b>CE %{x}</b><br>OI: %{y:,.0f}<br>PCR: %{customdata:.2f}<extra></extra>',
+                    customdata: data.map(d => (d.pe_oi && d.ce_oi) ? d.pe_oi / d.ce_oi : 0)
                 };
                 const pe_total = {
                     x: data.map(d => d.strike_price),
                     y: data.map(d => d.pe_oi),
                     name: 'PE OI',
                     type: 'bar',
-                    marker: { color: '#ef4444' }
+                    marker: {
+                        color: data.map(d => `rgba(239,68,68,${0.3 + 0.7 * Math.sqrt(d.pe_oi / maxPeOI)})`),
+                        line: { width: 0 }
+                    },
+                    hovertemplate: '<b>PE %{x}</b><br>OI: %{y:,.0f}<br>PCR: %{customdata:.2f}<extra></extra>',
+                    customdata: data.map(d => (d.pe_oi && d.ce_oi) ? d.pe_oi / d.ce_oi : 0)
+                };
+                // Net OI line: CE - PE shows call vs put dominance
+                const net_oi = {
+                    x: data.map(d => d.strike_price),
+                    y: data.map(d => (d.ce_oi || 0) - (d.pe_oi || 0)),
+                    name: 'Net (CE−PE)',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    yaxis: 'y2',
+                    line: { color: '#a78bfa', width: 2, dash: 'dot' },
+                    marker: { size: 5, color: '#a78bfa' },
+                    hovertemplate: '<b>Net OI %{x}</b><br>CE−PE: %{y:+,.0f}<extra></extra>',
                 };
                 const oiLayout = {
-                    ...layout,
+                    ...BASE_LAYOUT,
                     barmode: 'group',
-                    yaxis: { ...layout.yaxis, title: 'Total OI' },
-                    height: 400
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18 },
+                    margin: { t: 20, b: 90, l: 70, r: 70 },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: '#64748b', size: 10 } } },
+                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Total OI', font: { color: '#64748b', size: 10 } } },
+                    yaxis2: {
+                        overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
+                        tickfont: { color: '#a78bfa', size: 9 }, zeroline: true, zerolinecolor: '#334155',
+                        title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }
+                    },
+                    height: 400,
+                    shapes: atmShape,
+                    annotations: atmAnnotation,
                 };
-                Plotly.react(oiChartRef.current, [ce_total, pe_total], oiLayout, { responsive: true, displayModeBar: false });
+                Plotly.react(oiChartRef.current, [ce_total, pe_total, net_oi], oiLayout, { responsive: true, displayModeBar: false });
 
-                // --- 3. OI Change Bar Chart ---
+                // ── Chart 3: OI Change by Strike (dynamic colors + Net Change) ───────
+                // Dynamic per-bar color: CE change positive=green, negative=blue (covering)
+                const ceChgColors = data.map(d => (d.ce_oi_chg || 0) >= 0 ? 'rgba(16,185,129,0.75)' : 'rgba(14,165,233,0.75)');
+                const peChgColors = data.map(d => (d.pe_oi_chg || 0) >= 0 ? 'rgba(239,68,68,0.75)' : 'rgba(245,158,11,0.75)');
+
                 const ce_chg = {
                     x: data.map(d => d.strike_price),
                     y: data.map(d => d.ce_oi_chg),
                     name: 'CE OI Chg',
                     type: 'bar',
-                    marker: { color: '#059669' }
+                    marker: { color: ceChgColors, line: { width: 0 } },
+                    hovertemplate: '<b>CE %{x}</b><br>OI Chg: %{y:+,.0f}<extra></extra>',
                 };
                 const pe_chg = {
                     x: data.map(d => d.strike_price),
                     y: data.map(d => d.pe_oi_chg),
                     name: 'PE OI Chg',
                     type: 'bar',
-                    marker: { color: '#dc2626' }
+                    marker: { color: peChgColors, line: { width: 0 } },
+                    hovertemplate: '<b>PE %{x}</b><br>OI Chg: %{y:+,.0f}<extra></extra>',
                 };
+                const net_chg = {
+                    x: data.map(d => d.strike_price),
+                    y: data.map(d => (d.ce_oi_chg || 0) - (d.pe_oi_chg || 0)),
+                    name: 'Net Chg (CE−PE)',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    yaxis: 'y2',
+                    line: { color: '#f472b6', width: 2, dash: 'dot' },
+                    marker: { size: 5, color: '#f472b6' },
+                    hovertemplate: '<b>Net Δ %{x}</b><br>CE−PE Chg: %{y:+,.0f}<extra></extra>',
+                };
+                // Shaded zero band
+                const chgShapes = [
+                    ...atmShape,
+                    {
+                        type: 'rect', x0: 0, x1: 1, xref: 'paper', y0: -1, y1: 1, yref: 'y',
+                        fillcolor: 'rgba(148,163,184,0.04)', line: { width: 0 }
+                    }
+                ];
                 const chgLayout = {
-                    ...layout,
+                    ...BASE_LAYOUT,
                     barmode: 'group',
-                    yaxis: { ...layout.yaxis, title: 'OI Change' },
-                    height: 400
+                    showlegend: true,
+                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18 },
+                    margin: { t: 20, b: 90, l: 75, r: 70 },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: '#64748b', size: 10 } } },
+                    yaxis: {
+                        ...BASE_LAYOUT.yaxis, title: { text: 'OI Change', font: { color: '#64748b', size: 10 } },
+                        zeroline: true, zerolinecolor: '#475569', zerolinewidth: 1.5
+                    },
+                    yaxis2: {
+                        overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
+                        tickfont: { color: '#f472b6', size: 9 },
+                        title: { text: 'Net Δ', font: { color: '#f472b6', size: 9 } }
+                    },
+                    height: 400,
+                    shapes: chgShapes,
+                    annotations: [
+                        ...atmAnnotation,
+                        {
+                            xref: 'paper', yref: 'paper', x: 0.01, y: 0.5, text: '← Unwind / Build →',
+                            showarrow: false, font: { size: 8, color: '#475569', family: 'Inter' }
+                        }
+                    ],
                 };
-                Plotly.react(changeChartRef.current, [ce_chg, pe_chg], chgLayout, { responsive: true, displayModeBar: false });
+                Plotly.react(changeChartRef.current, [ce_chg, pe_chg, net_chg], chgLayout, { responsive: true, displayModeBar: false });
             };
 
             const pcrVal = metadata.pcr?.oi || 0;
+            const spot = metadata.spot || 0;
+
+            // Buildup Summary counts for summary strip
+            const BUILDUP_TYPES = Object.keys(BUILDUP_COLORS);
+            const buildupSummary = BUILDUP_TYPES.map(type => ({
+                type,
+                color: BUILDUP_COLORS[type],
+                ce: data.filter(d => d.ce_buildup === type).length,
+                pe: data.filter(d => d.pe_buildup === type).length,
+            })).filter(b => b.ce > 0 || b.pe > 0);
+            const dominantBuildupCE = buildupSummary.reduce((a, b) => a.ce > b.ce ? a : b, { type: '---', ce: 0, color: '#94a3b8' });
+            const dominantBuildupPE = buildupSummary.reduce((a, b) => a.pe > b.pe ? a : b, { type: '---', pe: 0, color: '#94a3b8' });
+
 
             return (
                 <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
                     {/* Unified Sidebar Navigation */}
-                        <div id="sidebar-root"></div>
+                    <div id="sidebar-root"></div>
 
-                    <main className="pl-24 pr-8 py-8 max-w-[1800px] mx-auto">
+                    <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header & Market Grid */}
                         <div className="flex flex-col lg:flex-row gap-8 mb-8 items-start">
                             <div className="flex-shrink-0">
@@ -429,13 +590,45 @@
                             </div>
                         </div>
 
+                        {/* Buildup Summary Strip */}
+                        {data.length > 0 && (
+                            <div className="glass px-5 py-3 rounded-2xl border-slate-800/60 shadow-lg flex flex-wrap items-center gap-0 overflow-hidden">
+                                {/* Label */}
+                                <div className="pr-5 border-r border-slate-800/60 mr-5">
+                                    <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Buildup Count</p>
+                                    <p className="text-slate-400 text-[10px] font-bold">{data.length} Strikes</p>
+                                </div>
+                                {/* Per-type counts */}
+                                {buildupSummary.map(b => (
+                                    <div key={b.type} className="flex flex-col px-4 border-r border-slate-800/40 last:border-r-0">
+                                        <span className="text-[8px] font-black uppercase tracking-wider mb-1" style={{ color: b.color }}>{b.type}</span>
+                                        <div className="flex gap-3">
+                                            <span className="text-[10px] font-black" style={{ color: '#10b981' }}>CE <span className="text-slate-300">{b.ce}</span></span>
+                                            <span className="text-[10px] font-black" style={{ color: '#ef4444' }}>PE <span className="text-slate-300">{b.pe}</span></span>
+                                        </div>
+                                    </div>
+                                ))}
+                                {/* Dominant Signal */}
+                                <div className="ml-auto pl-5 border-l border-slate-800/60 flex gap-4">
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-wider mb-0.5">CE Dominant</span>
+                                        <span className="text-[10px] font-black" style={{ color: dominantBuildupCE.color }}>{dominantBuildupCE.type}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-wider mb-0.5">PE Dominant</span>
+                                        <span className="text-[10px] font-black" style={{ color: dominantBuildupPE.color }}>{dominantBuildupPE.type}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Distribution Chart Section */}
                         <div className="flex flex-col gap-8">
                             <div className="glass p-8 rounded-[2.5rem] border-slate-800/80 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
                                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                                     <div>
                                         <h3 className="text-2xl font-black text-white tracking-tighter uppercase">{symbol} SENTIMENT DISTRIBUTION</h3>
-                                        <p className="text-slate-600 text-xs font-heavy uppercase tracking-widest mt-1">Volumetric Resistance & Support</p>
+                                        <p className="text-slate-600 text-xs font-heavy uppercase tracking-widest mt-1">Volumetric Resistance &amp; Support{spot > 0 && <span className="ml-3 text-amber-500/70">&middot; ATM {spot.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>}</p>
                                     </div>
                                     <div className="flex gap-6">
                                         <div className="flex items-center gap-2">
