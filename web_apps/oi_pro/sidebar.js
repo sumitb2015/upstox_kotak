@@ -36,6 +36,11 @@
             svg: '<path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path>'
         },
         {
+            href: "/cumulative-prices",
+            title: "Cumulative Option Prices",
+            svg: '<path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path>'
+        },
+        {
             href: "/gex",
             title: "Net GEX Regime",
             svg: '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>'

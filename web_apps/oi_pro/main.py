@@ -638,6 +638,122 @@ async def websocket_endpoint(websocket: WebSocket):
         print(" [WS] Straddle WS Disconnected")
         manager.disconnect(websocket)
 
+@app.websocket("/ws/cumulative-prices")
+async def websocket_cumulative_prices(websocket: WebSocket):
+    await manager.connect(websocket)
+    print(" [WS] [CumulativePrices] New connection")
+
+    ce_keys = []
+    pe_keys = []
+    index_key = None
+
+    try:
+        while True:
+            try:
+                # Non-blocking receive: wait 1s for a message, then broadcast update
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
+                    msg = json.loads(data)
+                    if msg.get("action") == "subscribe":
+                        symbol = msg.get("symbol", "NIFTY").upper()
+                        expiry = msg.get("expiry")
+                        if symbol and expiry:
+                            print(f" [WS] [CumulativePrices] Subscribing {symbol} {expiry}...")
+                            await websocket.send_json({"type": "status", "status": "loading", "symbol": symbol})
+
+                            token = auth_get_token()
+                            index_key = SYMBOL_MAP.get(symbol)
+                            if not index_key:
+                                await websocket.send_json({"type": "error", "message": f"Unknown symbol: {symbol}"})
+                                continue
+
+                            df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
+                            if df is not None and not df.empty:
+                                ce_keys = [k for k in df['ce_key'].tolist() if k and isinstance(k, str)]
+                                pe_keys = [k for k in df['pe_key'].tolist() if k and isinstance(k, str)]
+
+                                # Subscribe all option keys to real-time streamer
+                                all_option_keys = ce_keys + pe_keys
+                                if streamer and all_option_keys:
+                                    try:
+                                        streamer.subscribe_market_data(all_option_keys, mode="ltpc")
+                                    except Exception as sub_err:
+                                        print(f" [WS] [CumulativePrices] Subscription error: {sub_err}")
+
+                                print(f" [WS] [CumulativePrices] {len(ce_keys)} CE + {len(pe_keys)} PE keys for {symbol}")
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "status": "ready",
+                                    "symbol": symbol,
+                                    "ce_count": len(ce_keys),
+                                    "pe_count": len(pe_keys)
+                                })
+                            else:
+                                await websocket.send_json({"type": "error", "message": "Could not fetch option chain."})
+                except asyncio.TimeoutError:
+                    pass  # 1-second elapsed — compute and broadcast
+
+                # Compute and send cumulative update
+                if (ce_keys or pe_keys) and streamer:
+                    ce_sum = 0.0
+                    pe_sum = 0.0
+                    ce_valid = 0
+                    pe_valid = 0
+                    spot = 0.0
+
+                    for k in ce_keys:
+                        f = streamer.get_latest_data(k)
+                        if f:
+                            ltp = f.get('ltp') or f.get('last_price') or 0
+                            if ltp > 0:
+                                ce_sum += ltp
+                                ce_valid += 1
+
+                    for k in pe_keys:
+                        f = streamer.get_latest_data(k)
+                        if f:
+                            ltp = f.get('ltp') or f.get('last_price') or 0
+                            if ltp > 0:
+                                pe_sum += ltp
+                                pe_valid += 1
+
+                    if index_key:
+                        idx_f = streamer.get_latest_data(index_key)
+                        if idx_f:
+                            spot = idx_f.get('ltp') or idx_f.get('last_price') or 0
+
+                    diff = round(ce_sum - pe_sum, 2)
+                    # CE > PE => more call premium => bearish (resistance)
+                    # PE > CE => more put premium => bullish (support)
+                    if diff > 50:
+                        sentiment = "Bearish"
+                    elif diff < -50:
+                        sentiment = "Bullish"
+                    else:
+                        sentiment = "Neutral"
+
+                    await websocket.send_json({
+                        "type": "cumulative_update",
+                        "ce_sum": round(ce_sum, 2),
+                        "pe_sum": round(pe_sum, 2),
+                        "diff": diff,
+                        "spot": round(spot, 2),
+                        "ce_count": ce_valid,
+                        "pe_count": pe_valid,
+                        "sentiment": sentiment,
+                        "timestamp": datetime.now().strftime("%H:%M:%S")
+                    })
+
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                print(f" [WS] [CumulativePrices] Loop Error: {e}")
+                import traceback; traceback.print_exc()
+                await asyncio.sleep(1)
+    finally:
+        manager.disconnect(websocket)
+        print(" [WS] [CumulativePrices] Disconnected")
+
 @app.on_event("startup")
 async def startup_event():
     global streamer, loop
@@ -1295,6 +1411,15 @@ async def serve_multi_strike_price_page():
     Serves the Multi-Strike Analysis page (Legacy route).
     """
     return await serve_multi_strike_page()
+
+@app.get("/cumulative-prices", response_class=HTMLResponse)
+async def serve_cumulative_prices_page():
+    """Serves the Cumulative Prices dashboard page."""
+    html_path = os.path.join(os.path.dirname(__file__), "cumulative_prices.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="cumulative_prices.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def serve_strategies_page():

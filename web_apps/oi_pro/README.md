@@ -12,6 +12,10 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 - **Functionality**: Aggregates Open Interest across multiple strikes (ATM ± N) to show overall market sentiment.
 - **Key Features**: Tracks cumulative CE vs. PE OI, Net OI Change, and PCR momentum. Uses yesterday's close as a baseline for intraday buildup.
 
+### 3. Cumulative Option Prices (`/cumulative-prices`)
+- **Functionality**: Real-time sum of all Call and Put option prices across the entire option chain.
+- **Key Features**: Dual-axis real-time chart tracking CE premiums vs PE premiums alongside the Index Spot price, and a smoothed CE-PE Difference chart with sentiment coloration.
+
 ### 3. Net GEX Regime Analysis (`/gex`)
 - **Functionality**: Visualizes total Gamma Exposure (GEX) and total Notional Exposure.
 - **Key Features**: "Traffic light" regime chart showing if the market is in a Positive GEX (Stable/Mean Reverting) or Negative GEX (Volatile/Trending) environment. Includes Flip Point calculation.
@@ -104,6 +108,7 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 
 - `/ws/market-watch`: Real-time price updates for Dashboard indices.
 - `/ws/straddle`: High-speed tick data for specific option instrument keys.
+- `/ws/cumulative-prices`: Dedicated feed pushing aggregated CE/PE sums and real-time difference values.
 - `/ws/price/{symbol}`: Dedicated live price feed for a specific underlying.
 
 ---
