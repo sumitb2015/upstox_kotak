@@ -4,11 +4,29 @@
  * Usage: Include <div id="sidebar-root"></div> in body, then <script src="/sidebar.js"></script>
  */
 (function () {
-    // Auth Check: Redirect to login if not authenticated
-    if (localStorage.getItem('oi_pro_auth') !== 'true' && window.location.pathname !== '/login') {
+    // Auth Check: Redirect to login if not authenticated via JWT
+    if (!localStorage.getItem('oi_pro_jwt') && window.location.pathname !== '/login') {
         window.location.href = '/login';
         return; // Stop execution
     }
+
+    function getJWTPayload() {
+        const token = localStorage.getItem('oi_pro_jwt');
+        if (!token) return null;
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    const payload = getJWTPayload();
+    const isAdmin = payload && payload.role === 'admin';
 
     const NAV_ITEMS = [
         {
@@ -92,6 +110,14 @@
             svg: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>'
         }
     ];
+
+    if (isAdmin) {
+        NAV_ITEMS.push({
+            href: "/users",
+            title: "User Management",
+            svg: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>'
+        });
+    }
 
     function renderSidebar() {
         const currentPath = window.location.pathname;
@@ -250,7 +276,7 @@
         if (logoutBtn) {
             logoutBtn.addEventListener('click', function (e) {
                 e.preventDefault();
-                localStorage.removeItem('oi_pro_auth');
+                localStorage.removeItem('oi_pro_jwt');
                 window.location.href = '/login';
             });
         }

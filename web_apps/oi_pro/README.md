@@ -72,6 +72,14 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 - **Functionality**: Persistent historical time-series of option Greeks for a specific strike.
 - **Key Features**: 5 charts — Delta, Gamma, Vega, Theta, and Implied Volatility. 8-card KPI strip with latest values and intraday change. Color-coded CE (solid) / PE (dashed) spline traces. Live pulse badge and informative empty-state.
 
+### 17. User Login (`/login`)
+- **Functionality**: Secure gateway to the analytics platform using JWT-based authentication.
+- **Key Features**: Persistent sessions via local storage, automatic redirection for unauthenticated users.
+
+### 18. User Management (`/users`)
+- **Functionality**: Administrator dashboard for managing platform accounts.
+- **Key Features**: View all users, add new accounts with specific roles, and delete users. Access is strictly restricted to 'admin' role accounts.
+
 ---
 
 ## 🚀 API Endpoints
@@ -99,6 +107,13 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - `GET /api/multi-strike-oi-data`: Parallel intraday OI history for multiple strikes.
 - `GET /api/multi-strike-price-data`: Parallel intraday Price history for multiple strikes.
 
+### Authentication & User Management
+- `POST /api/login`: Secure login endpoint returning a JWT including user role.
+- `GET /api/me`: Returns the current authenticated user's details.
+- `GET /api/users`: Admin-only endpoint to list all platform users.
+- `POST /api/users`: Admin-only endpoint to create new users.
+- `DELETE /api/users/{email}`: Admin-only endpoint to remove user accounts.
+
 ### Strategy Management
 - `GET /api/strategies`: Returns status and metadata for all registered strategies.
 - `POST /api/strategies/start/{id}`: Spawns a background `live.py` process.
@@ -123,7 +138,9 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 
 ## 🛠️ Technical Details
 - **Backend**: Python (FastAPI, Uvicorn)
+- **Security**: JWT-based Authentication, Bcrypt password hashing.
+- **Database**: SQLite (managed via Peewee ORM).
 - **Data Source**: Upstox API V3 (Market Feed & Quotation)
-- **Frontend**: Vanilla JS / HTML5 / CSS3 (using shared `sidebar.js`)
+- **Frontend**: Vanilla JS / HTML5 / CSS3 (using shared `sidebar.js` for dynamic RBAC navigation)
 - **Charts**: Plotly.js / Chart.js
 - **Middleware**: CORS enabled for cross-origin access.
