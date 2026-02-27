@@ -13,7 +13,8 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Real-Time Data**: Utilization of WebSockets for low-latency market data and order updates.
 - **Option & Future Strategies**: tailored logic for NIFTY, BANKNIFTY, and FINNIFTY instruments.
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
-- **OI Pro Analytics Dashboard**: Interactive web-based dashboard for real-time Open Interest (OI), PCR, and Greeks analysis.
+- **Secure OI Pro Dashboard**: Interactive analytics dashboard with JWT-based authentication and role-based access control (RBAC).
+  - **User Management**: Administrator dashboard for managing platform accounts directly from the web interface.
   - **Multi-Option Chart**: Build custom multi-leg option strategies and view net premium charts updating in real-time via WebSockets.
   - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts and custom strike selection.
   - **OI Buildup Heatmap**: NIFTY-focused heatmap tracking day-over-day OI buildup every minute. Loads full-day history from 9:15 AM on restart. Strikes auto-pin to current ATM ± 8 (50-pt intervals). Buildup classified as Long/Short Buildup, Short Covering, or Long Unwinding — all relative to previous session's baseline OI.
@@ -21,6 +22,7 @@ A robust, modular algorithmic trading framework designed for Indian stock market
   - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
   - **Greeks Exposure Analysis**: Real-time tracking of systemic Delta and Gamma exposure per strike.
   - **Net GEX Regime Analysis**: Identification of Market Volatility Regimes (Traffic Light logic) and the Zero Gamma Flip Point.
+- **Extensive Strategy Library**: Over 20+ detailed strategy implementations with comprehensive `README.md` guides covering entry/exit logic, risk management, and execution examples.
 
 ## 📂 Project Structure
 
@@ -83,6 +85,14 @@ PYTHONUTF8=1 python main.py
 # Example: Running the Nifty Breakout Strategy
 python strategies/directional/nifty_breakout/live.py
 ```
+
+## 🔒 Security & Backend
+
+The analytics dashboard is protected by a professional security layer:
+- **JWT Authentication**: Secure, token-based sessions with industry-standard JWT.
+- **Role-Based Access (RBAC)**: Distinct permissions for `admin` and `user` roles.
+- **Encrypted Storage**: Bcrypt hashing for all user credentials.
+- **Persistent Database**: SQLite-based user management.
 
 ## 📚 Documentation
 
