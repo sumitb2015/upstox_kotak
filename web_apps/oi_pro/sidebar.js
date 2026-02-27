@@ -4,8 +4,8 @@
  * Usage: Include <div id="sidebar-root"></div> in body, then <script src="/sidebar.js"></script>
  */
 (function () {
-    // Auth Check: Redirect to login if not authenticated
-    if (localStorage.getItem('oi_pro_auth') !== 'true' && window.location.pathname !== '/login') {
+    // Auth Check: Redirect to login if not authenticated via JWT
+    if (!localStorage.getItem('oi_pro_jwt') && window.location.pathname !== '/login') {
         window.location.href = '/login';
         return; // Stop execution
     }
@@ -250,7 +250,7 @@
         if (logoutBtn) {
             logoutBtn.addEventListener('click', function (e) {
                 e.preventDefault();
-                localStorage.removeItem('oi_pro_auth');
+                localStorage.removeItem('oi_pro_jwt');
                 window.location.href = '/login';
             });
         }

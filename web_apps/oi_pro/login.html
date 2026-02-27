@@ -854,22 +854,41 @@
                 document.getElementById('btn-spinner').classList.remove('hidden');
                 btn.disabled = true;
 
-                setTimeout(() => {
-                    if (email === 'admin@oipro.com' && password === 'OIPro@123') {
-                        localStorage.setItem('oi_pro_auth', 'true');
+                // Send login request to FastAPI backend
+                const formData = new URLSearchParams();
+                formData.append('username', email);
+                formData.append('password', password);
+
+                fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Invalid credentials. Access denied.');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Save JWT token
+                        localStorage.setItem('oi_pro_jwt', data.access_token);
+
                         document.getElementById('login-form').classList.add('hidden');
                         errorDiv.classList.add('hidden');
                         document.getElementById('login-success').classList.remove('hidden');
-                        setTimeout(() => { window.location.href = '/'; }, 1200);
-                    } else {
+
+                        // Redirect to dashboard
+                        setTimeout(() => { window.location.href = '/'; }, 1000);
+                    })
+                    .catch(error => {
                         btn.disabled = false;
                         document.getElementById('btn-text').textContent = 'Access Workspace';
                         document.getElementById('btn-arrow').classList.remove('hidden');
                         document.getElementById('btn-spinner').classList.add('hidden');
-                        errorText.textContent = 'Invalid credentials. Access denied.';
+                        errorText.textContent = error.message;
                         errorDiv.classList.remove('hidden');
-                    }
-                }, 1400);
+                    });
             }
 
             document.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });

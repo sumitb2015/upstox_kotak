@@ -19,6 +19,9 @@ import psutil
 from pathlib import Path
 import re
 
+# Import custom authentication module
+from auth import router as auth_router, init_db
+
 # Add project root to path for lib imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -326,6 +329,9 @@ class StrategyManager:
 strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
+
+# Register auth routes
+app.include_router(auth_router)
 
 # --- PoP & Premium Analytics ---
 from fastapi.concurrency import run_in_threadpool
@@ -1174,6 +1180,13 @@ async def poll_delta_heatmap():
 async def startup_event():
     """Initialize background tasks and load state from disk."""
     print("START [CORE] Dashboard Server Starting...")
+    try:
+        # Initialize the authentication database
+        init_db()
+        print("[AUTH] Database initialized")
+    except Exception as e:
+        print(f"[AUTH] Failed to init DB: {e}")
+
     try:
         # 1. Recover persistent state
         await load_todays_data()
