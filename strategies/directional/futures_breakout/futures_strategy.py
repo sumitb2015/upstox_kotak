@@ -1,6 +1,23 @@
 """
-Futures Breakout Strategy
-Logic: Sell OTM options when Nifty Futures breaks strike levels with volume confirmation.
+Futures Strike Breakout Strategy - Live Execution
+------------------------------------------------
+Sells OTM options when Nifty Futures breaks key strike levels with volume confirmation.
+
+Strategy Logic Summary:
+1. Signal Detection (CORE):
+   - Level Monitoring: Monitors Nifty Futures price relative to 50-point strike levels.
+   - Breakout: Price crosses a strike level with a 5-minute candle close.
+   - Confirmation: Volume spike > 1.5x of previous 5-candle average + VWAP/EMA alignment.
+
+2. Strategy Execution (KOTAK):
+   - Bullish Breakout: Sell OTM Put (ATM-150).
+   - Bearish Breakdown: Sell OTM Call (ATM+150).
+
+3. Risk Management (CORE):
+   - SL: 30 point move in underlying against position.
+   - Target: 50% decay of option premium.
+   - Trailing: Tighten SL to Breakeven after 1:1 RR.
+   - Time Exit: Hard square-off at 15:15 PM.
 """
 
 import sys

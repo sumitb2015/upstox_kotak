@@ -646,6 +646,10 @@ async def websocket_cumulative_prices(websocket: WebSocket):
     ce_keys = []
     pe_keys = []
     index_key = None
+    symbol = "NIFTY"  # track current symbol for threshold lookup
+    # Session-open baseline for % change calculation (set on first valid tick)
+    ce_open = None
+    pe_open = None
 
     try:
         while True:
@@ -672,7 +676,7 @@ async def websocket_cumulative_prices(websocket: WebSocket):
                                 ce_keys = [k for k in df['ce_key'].tolist() if k and isinstance(k, str)]
                                 pe_keys = [k for k in df['pe_key'].tolist() if k and isinstance(k, str)]
 
-                                # Subscribe all option keys to real-time streamer
+                                # Subscribe all option keys + the index key to real-time streamer
                                 all_option_keys = ce_keys + pe_keys
                                 if streamer and all_option_keys:
                                     try:
@@ -680,7 +684,17 @@ async def websocket_cumulative_prices(websocket: WebSocket):
                                     except Exception as sub_err:
                                         print(f" [WS] [CumulativePrices] Subscription error: {sub_err}")
 
+                                # Also subscribe the index key so Spot price is always available
+                                if streamer and index_key:
+                                    try:
+                                        streamer.subscribe_market_data([index_key], mode="ltpc")
+                                    except Exception as idx_err:
+                                        print(f" [WS] [CumulativePrices] Index key subscription error: {idx_err}")
+
                                 print(f" [WS] [CumulativePrices] {len(ce_keys)} CE + {len(pe_keys)} PE keys for {symbol}")
+                                # Reset open baseline whenever user re-subscribes
+                                ce_open = None
+                                pe_open = None
                                 await websocket.send_json({
                                     "type": "status",
                                     "status": "ready",
@@ -725,17 +739,40 @@ async def websocket_cumulative_prices(websocket: WebSocket):
                     diff = round(ce_sum - pe_sum, 2)
                     # CE > PE => more call premium => bearish (resistance)
                     # PE > CE => more put premium => bullish (support)
-                    if diff > 50:
+                    # Adaptive thresholds per symbol (premiums scale with index level)
+                    SENTIMENT_THRESHOLDS = {
+                        "NIFTY": 50, "BANKNIFTY": 150, "FINNIFTY": 40,
+                        "MIDCPNIFTY": 30, "SENSEX": 200
+                    }
+                    threshold = SENTIMENT_THRESHOLDS.get(symbol, 50)
+                    if diff > threshold:
                         sentiment = "Bearish"
-                    elif diff < -50:
+                    elif diff < -threshold:
                         sentiment = "Bullish"
                     else:
                         sentiment = "Neutral"
+
+                    # --- % Change from session open (set on first valid tick) ---
+                    if ce_sum > 0 and ce_open is None:
+                        ce_open = ce_sum
+                    if pe_sum > 0 and pe_open is None:
+                        pe_open = pe_sum
+
+                    ce_chg = round(((ce_sum - ce_open) / ce_open) * 100, 3) if ce_open else 0.0
+                    pe_chg = round(((pe_sum - pe_open) / pe_open) * 100, 3) if pe_open else 0.0
+
+                    # Per-strike average premiums (more meaningful than total sum)
+                    avg_ce = round(ce_sum / ce_valid, 2) if ce_valid > 0 else 0.0
+                    avg_pe = round(pe_sum / pe_valid, 2) if pe_valid > 0 else 0.0
 
                     await websocket.send_json({
                         "type": "cumulative_update",
                         "ce_sum": round(ce_sum, 2),
                         "pe_sum": round(pe_sum, 2),
+                        "ce_chg": ce_chg,       # % change from session open
+                        "pe_chg": pe_chg,       # % change from session open
+                        "avg_ce": avg_ce,        # avg CE premium per strike
+                        "avg_pe": avg_pe,        # avg PE premium per strike
                         "diff": diff,
                         "spot": round(spot, 2),
                         "ce_count": ce_valid,
@@ -1257,6 +1294,14 @@ def calculate_buildup(price_chg_pct, oi_chg_pct):
     if price_chg_pct > 0 and oi_chg_pct < 0: return "Short Covering"
     if price_chg_pct < 0 and oi_chg_pct < 0: return "Long Unwinding"
     return "Neutral"
+
+@app.get("/login", response_class=HTMLResponse)
+async def serve_login():
+    html_path = os.path.join(os.path.dirname(__file__), "login.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="Login page not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():

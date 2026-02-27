@@ -1,6 +1,21 @@
 """
 Option Scalper Strategy - Live Implementation
-Integrates Core Logic with Upstox Market Data and Kotak Execution.
+------------------------------------------
+High-frequency scalping based on Order Book Imbalance and Price Momentum.
+
+Strategy Logic Summary:
+1. Signal Detection (CORE):
+   - Market Depth: Monitors Bid/Ask quantity imbalance in the top 5 levels.
+   - Momentum: Uses 10-tick ROC (Rate of Change).
+   - Trigger: Depth imbalance > 2.5x + ROC alignment.
+
+2. Strategy Execution (KOTAK):
+   - Fast Market orders on OTM options.
+
+3. Risk Management (CORE):
+   - Fixed SL: 15% or 5 points.
+   - Target: 10% profit.
+   - Staleness: Exit if momentum stalls for > 30s.
 """
 
 import os

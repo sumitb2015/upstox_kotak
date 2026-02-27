@@ -4,6 +4,12 @@
  * Usage: Include <div id="sidebar-root"></div> in body, then <script src="/sidebar.js"></script>
  */
 (function () {
+    // Auth Check: Redirect to login if not authenticated
+    if (localStorage.getItem('oi_pro_auth') !== 'true' && window.location.pathname !== '/login') {
+        window.location.href = '/login';
+        return; // Stop execution
+    }
+
     const NAV_ITEMS = [
         {
             href: "/",
@@ -216,8 +222,18 @@
                 '</a>';
         }).join('\n');
 
+        const logoutHTML = '<a href="#" id="oi-pro-logout" class="nav-item inactive mt-auto" style="margin-top: auto; border-top: 1px solid rgba(51, 65, 85, 0.4); border-radius: 0; padding-top: 1.25rem;">' +
+            '<div class="nav-item-icon">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>' +
+            '</svg>' +
+            '</div>' +
+            '<span class="nav-label" style="color: #ef4444;">Logout</span>' +
+            '</a>';
+
         const navHTML = '<nav class="oi-pro-sidebar">' +
             itemsHTML +
+            logoutHTML +
             '</nav>';
 
         const root = document.getElementById('sidebar-root');
@@ -228,7 +244,18 @@
             div.innerHTML = navHTML;
             document.body.insertBefore(div.firstChild, document.body.firstChild);
         }
+
+        // Bind logout event
+        const logoutBtn = document.getElementById('oi-pro-logout');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                localStorage.removeItem('oi_pro_auth');
+                window.location.href = '/login';
+            });
+        }
     }
+
 
 
     // Run on DOM ready

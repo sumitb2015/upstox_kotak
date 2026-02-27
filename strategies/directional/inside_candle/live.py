@@ -1,6 +1,32 @@
+"""
+Inside Candle Breakout Strategy - Live Execution
+-----------------------------------------------
+This strategy captures high-momentum breakouts after consolidation (Inside Bar pattern).
+
+Strategy Logic Summary:
+1. Signal Detection (CORE):
+   - Timeframe: 5-minute candles.
+   - Pattern: High/Low of 'Baby' candle(s) stays inside 'Mother' candle range.
+   - Trigger: Nifty Spot price breaks Mother High (Bullish) or Mother Low (Bearish).
+
+2. Strategy Execution (KOTAK):
+   - Bullish Breakout: Sell ATM-100 Put (PE).
+   - Bearish Breakdown: Sell ATM+100 Call (CE).
+
+3. Risk Management (CORE/KOTAK):
+   - Spot SL: Exit if spot returns to Mother Low (for Bullish) or Mother High (for Bearish).
+   - Tiered TSL: 
+     - < 10% Profit: No trail or wide trail.
+     - > 10% Profit: Move TSL to Breakeven.
+     - > 20% Profit: Lock 10% profit (10% trail).
+     - > 40% Profit: Lock extra profit (5% trail).
+   - Time Exit: Hard square-off at 15:15 PM.
+"""
+
 import sys
 import os
 import time
+import logging
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -20,8 +46,17 @@ from strategies.directional.inside_candle.strategy_core import InsideCandleAnaly
 from kotak_api.lib.broker import BrokerClient
 from kotak_api.lib.order_manager import OrderManager
 
+# Logger Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
+logger = logging.getLogger("InsideCandleLive")
+
+def log_core(msg): logger.info(f"[CORE] {msg}")
+def log_upstox(msg): logger.info(f"[UPSTOX] {msg}")
+def log_kotak(msg): logger.info(f"[KOTAK] {msg}")
+
 class InsideCandleLive:
     def __init__(self, access_token, nse_data, dry_run=False):
+
         self.access_token = access_token
         self.nse_data = nse_data
         self.dry_run = dry_run
@@ -38,14 +73,14 @@ class InsideCandleLive:
         self.last_candle_time = None
         
     def initialize(self):
-        print("🚀 Initializing Inside Candle Live Strategy...")
+        log_core("Initializing Inside Candle Live Strategy...")
         try:
             self.kotak_broker = BrokerClient()
             self.kotak_broker.authenticate()
             self.kotak_order_manager = OrderManager(self.kotak_broker.client, dry_run=self.dry_run)
-            print("✅ Kotak Execution Engine Ready")
+            log_kotak("Kotak Execution Engine Ready")
         except Exception as e:
-            print(f"❌ Execution Init Failed: {e}")
+            logger.error(f"[KOTAK] Execution Init Failed: {e}")
             return False
             
         return True
@@ -79,7 +114,7 @@ class InsideCandleLive:
         trade_type = signal['type'] # BULLISH or BEARISH
         spot_sl = signal['sl']
         
-        print(f"⚡ Signal Triggered: {trade_type} @ Next {spot_ltp}")
+        log_core(f"Signal Triggered: {trade_type} @ Next {spot_ltp}")
         
         # 1. Determine Strike
         atm_strike = round(spot_ltp / 50) * 50
@@ -111,22 +146,22 @@ class InsideCandleLive:
         k_token, k_symbol = get_strike_token(self.kotak_broker, strike, option_type, expiry_dt)
         
         if not k_symbol:
-            print("❌ Could not resolve Kotak Symbol")
+            logger.error("[KOTAK] Could not resolve Kotak Symbol")
             return
 
         # 3. Place Order
         qty = self.config.LOT_SIZE
-        print(f"🛒 Placing Sell Order: {k_symbol} | Qty: {qty} | Type: {option_type}")
+        log_kotak(f"Placing Sell Order: {k_symbol} | Qty: {qty} | Type: {option_type}")
         
         order_id = self.kotak_order_manager.place_order(
             k_symbol, qty, "S", tag="INSIDE_BAR", product="MIS"
         )
         
         if not order_id:
-            print("❌ Order Placement Failed")
+            logger.error("[KOTAK] Order Placement Failed")
             return
             
-        print(f"✅ Order Placed Successfully. ID: {order_id}")
+        log_kotak(f"Order Placed Successfully. ID: {order_id}")
         
         # 4. Record Position
         # Need entry price for TSL
@@ -150,7 +185,7 @@ class InsideCandleLive:
                  entry_price = retry_q[opt_key].get('last_price', 0.0)
         
         if entry_price == 0:
-            print("❌ Start Price failed. Using rudimentary TSL base.")
+            log_core("Start Price failed. Using rudimentary TSL base.")
             # Use a dummy high value for Short? No, we short, so lowest matters.
             # If we assume we sold at 0, logic is broken.
             # Let's skip TSL until we get next price update? 
@@ -166,7 +201,7 @@ class InsideCandleLive:
             "qty": qty,
             "lowest_price": entry_price # For Short, lower is better
         }
-        print(f"✅ Position Active: {k_symbol} @ {entry_price} | Spot SL: {spot_sl}")
+        log_core(f"Position Active: {k_symbol} @ {entry_price} | Spot SL: {spot_sl}")
 
     def monitor_active_position(self, spot_ltp):
         if not self.active_position: return
@@ -177,13 +212,13 @@ class InsideCandleLive:
         if pos['type'] == "PE": # Bullish Trade, Short PE
             # Spot SL is Mother Low. If Spot Breaks BELOW Low -> Exit
             if spot_ltp < pos['spot_sl']:
-                print(f"🛑 Spot SL Hit! Nifty {spot_ltp} < {pos['spot_sl']}")
+                log_core(f"Spot SL Hit! Nifty {spot_ltp} < {pos['spot_sl']}")
                 self.exit_all()
                 return
         else: # Bearish Trade, Short CE
             # Spot SL is Mother High. If Spot Breaks ABOVE High -> Exit
             if spot_ltp > pos['spot_sl']:
-                print(f"🛑 Spot SL Hit! Nifty {spot_ltp} > {pos['spot_sl']}")
+                log_core(f"Spot SL Hit! Nifty {spot_ltp} > {pos['spot_sl']}")
                 self.exit_all()
                 return
 
@@ -227,17 +262,17 @@ class InsideCandleLive:
             
         # Trigger Check
         if opt_ltp > tsl_price:
-             print(f"📉 Trailing SL Hit! Price {opt_ltp} > TSL {tsl_price:.2f} (Gap: {current_gap*100}%)")
-             print(f"   Stats: Entry {entry_val} | Low {low_val} | MaxProfit {max_profit_pct*100:.1f}%")
+             log_core(f"Trailing SL Hit! Price {opt_ltp} > TSL {tsl_price:.2f} (Gap: {current_gap*100}%)")
+             log_core(f"   Stats: Entry {entry_val} | Low {low_val} | MaxProfit {max_profit_pct*100:.1f}%")
              self.exit_all()
              return
              
     def exit_all(self):
         if not self.active_position: return
         pos = self.active_position
-        print(f"🏁 Exiting {pos['symbol']}...")
+        log_kotak(f"Exiting {pos['symbol']}...")
         oid = self.kotak_order_manager.place_order(pos['symbol'], pos['qty'], "B", tag="SL_EXIT", product="MIS")
-        if oid: print(f"✅ Exit Order Placed: {oid}")
+        if oid: log_kotak(f"Exit Order Placed: {oid}")
         self.active_position = None
         # Reset analyzer state to allow fresh patterns? 
         # Strategy rules didn't specify re-entry same day, but generally yes.
@@ -246,20 +281,20 @@ class InsideCandleLive:
     def run(self):
         if not self.initialize(): return
         
-        print("⏳ Waiting for market data...")
+        log_upstox("Waiting for market data...")
         
         while True:
             try:
                 # 0. Global Kill Switch Check
                 if os.path.exists("c:/algo/upstox/.STOP_TRADING"):
-                    print("🛑 Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
+                    log_core("Global Kill Switch Detected (.STOP_TRADING). Stopping Strategy.")
                     self.exit_all()
                     break
 
                 # Time check
                 now = datetime.now()
                 if now.time() > self.config.EXIT_TIME:
-                    print("⏰ Market Closing time. Exiting.")
+                    log_core("Market Closing time. Exiting.")
                     if self.active_position: self.exit_all()
                     break
                     
@@ -267,7 +302,7 @@ class InsideCandleLive:
                 df = self.fetch_spot_candles()
                 if df is None or len(df) < 2:
                     if now.second % 30 == 0:
-                        print(f"⏳ Waiting for sufficient candles (Got: {len(df) if df is not None else 0})...")
+                        log_upstox(f"Waiting for sufficient candles (Got: {len(df) if df is not None else 0})...")
                     time.sleep(1)
                     continue
                     
@@ -279,7 +314,7 @@ class InsideCandleLive:
                 # Check Entry Time Window
                 if now.time() < self.config.ENTRY_START_TIME:
                      if now.second % 30 == 0:
-                         print(f"⏳ Waiting for Start Time {self.config.ENTRY_START_TIME}...")
+                         log_core(f"Waiting for Start Time {self.config.ENTRY_START_TIME}...")
                      time.sleep(1)
                      continue
                 
@@ -289,7 +324,7 @@ class InsideCandleLive:
                     # Run Pattern Detection
                     is_inside = self.analyzer.detect_pattern(df)
                     if is_inside:
-                        print(f"👀 Watching for Breakout...")
+                        log_core("Inside Bar Pattern Detected. Watching for Breakout...")
                 
                 # 3. Check Signal / Monitor
                 if self.active_position:
@@ -303,10 +338,10 @@ class InsideCandleLive:
                 time.sleep(5) # 1s poll might be too fast, 5s is fine
                 
             except KeyboardInterrupt:
-                print("🛑 Stopping...")
+                log_core("Stopping Strategy...")
                 break
             except Exception as e:
-                print(f"Error: {e}")
+                logger.error(f"[CORE] Error in main loop: {e}")
                 time.sleep(5)
 
 if __name__ == "__main__":
