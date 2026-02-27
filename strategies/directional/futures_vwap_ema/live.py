@@ -123,7 +123,7 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
         # Download NSE Data (silent)
         self.nse_data = download_nse_market_data()
         if self.nse_data is None or self.nse_data.empty:
-            print("❌ Failed to download NSE data")
+            logger.error("[UPSTOX] Failed to download NSE data")
             return False
         
         # Get Nifty Futures Instrument Key (silent)
@@ -132,7 +132,7 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
             nse_data=self.nse_data
         )
         if not self.futures_instrument_key:
-            print("❌ Failed to find Nifty Futures instrument")
+            logger.error(f"[UPSTOX] Failed to find {self.config['underlying']} Futures instrument")
             return False
             
         # Get lot size/multiplier and strike step from instrument metadata
@@ -255,7 +255,7 @@ class FuturesVWAPEMALive(FuturesVWAPEMACore):
             self.log("⚠️ Failed to load historical data - indicators will need warmup time")
             self.historical_data = pd.DataFrame()
         
-        print("✅ Ready\n")
+        self.log("Ready\n")
         return True
     
     def log(self, message: str):

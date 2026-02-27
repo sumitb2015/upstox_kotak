@@ -105,43 +105,46 @@
                     });
             }, [symbol]);
 
-            // Auto-Refresh Logic (60s)
+            // Auto-Refresh Logic (30s) — also updates spotPrice so ATM window stays current
             useEffect(() => {
-                const interval = setInterval(() => {
-                    if (expiry) {
-                        setLoading(true);
-                        fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
-                            .then(res => res.json())
-                            .then(res => {
-                                if (res.status === "success") {
-                                    const normalized = (res.data || []).map(d => ({
-                                        ...d,
-                                        strike: d.strike_price
-                                    }));
-                                    setData(normalized);
-                                    setLastUpdated(new Date());
+                const doFetch = () => {
+                    if (!expiry) return;
+                    setLoading(true);
+                    fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
+                        .then(res => res.json())
+                        .then(res => {
+                            if (res.status === "success") {
+                                const normalized = (res.data || []).map(d => ({
+                                    ...d,
+                                    strike: d.strike_price
+                                }));
+                                setData(normalized);
+                                setLastUpdated(new Date());
+                                // ✅ Always update spot so ATM range & KPIs stay current
+                                if (res.metadata && res.metadata.spot) {
+                                    setSpotPrice(res.metadata.spot);
                                 }
-                                setLoading(false);
-                            })
-                            .catch(err => {
-                                console.error(err);
-                                setLoading(false);
-                            });
-                    }
-                }, 60000);
+                            }
+                            setLoading(false);
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            setLoading(false);
+                        });
+                };
 
+                const interval = setInterval(doFetch, 30000); // 30s refresh
                 return () => clearInterval(interval);
             }, [symbol, expiry]);
 
-            // Fetch Option Chain Data (Initial)
-            useEffect(() => {
+            // Fetch Option Chain Data (Initial) + Manual Refresh
+            const fetchData = React.useCallback(() => {
                 if (!expiry) return;
                 setLoading(true);
                 fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.status === "success") {
-                            // Normalize data key: strike_price -> strike
                             const normalized = (res.data || []).map(d => ({
                                 ...d,
                                 strike: d.strike_price
@@ -159,6 +162,8 @@
                         setLoading(false);
                     });
             }, [symbol, expiry]);
+
+            useEffect(() => { fetchData(); }, [symbol, expiry]);
 
             // Build Charts
             useEffect(() => {
@@ -408,6 +413,14 @@
                                 >
                                     {orientation === 'v' ? '⟳' : '⟲'}
                                 </button>
+
+                                <button
+                                    onClick={fetchData}
+                                    className="glass w-10 h-10 flex items-center justify-center rounded-xl hover:bg-blue-500/20 text-slate-400 hover:text-blue-400 transition-all font-bold"
+                                    title="Refresh Now"
+                                >
+                                    {loading ? '⏳' : '↺'}
+                                </button>
                             </div>
                         </div>
 
@@ -419,8 +432,16 @@
 
                             const topCeOI = [...fd].sort((a, b) => (b.ce_oi || 0) - (a.ce_oi || 0))[0];
                             const topPeOI = [...fd].sort((a, b) => (b.pe_oi || 0) - (a.pe_oi || 0))[0];
-                            const topCeChg = [...fd].sort((a, b) => (b.ce_oi_chg || 0) - (a.ce_oi_chg || 0))[0];
-                            const topPeChg = [...fd].sort((a, b) => (b.pe_oi_chg || 0) - (a.pe_oi_chg || 0))[0];
+                            // Max CE/PE Change: take highest POSITIVE change (new buildup)
+                            // Negative change (unwinding) is tracked separately in the chart as blue bars
+                            const ceBuildups = fd.filter(d => (d.ce_oi_chg || 0) > 0);
+                            const peBuildups = fd.filter(d => (d.pe_oi_chg || 0) > 0);
+                            const topCeChg = ceBuildups.length > 0
+                                ? ceBuildups.sort((a, b) => b.ce_oi_chg - a.ce_oi_chg)[0]
+                                : [...fd].sort((a, b) => (b.ce_oi_chg || 0) - (a.ce_oi_chg || 0))[0];
+                            const topPeChg = peBuildups.length > 0
+                                ? peBuildups.sort((a, b) => b.pe_oi_chg - a.pe_oi_chg)[0]
+                                : [...fd].sort((a, b) => (b.pe_oi_chg || 0) - (a.pe_oi_chg || 0))[0];
 
                             const totCeOI = fd.reduce((s, d) => s + (d.ce_oi || 0), 0);
                             const totPeOI = fd.reduce((s, d) => s + (d.pe_oi || 0), 0);
@@ -434,8 +455,8 @@
                             const cards = [
                                 { label: 'Max CE OI', value: topCeOI?.strike?.toLocaleString('en-IN') ?? '---', sub: fmtOI(topCeOI?.ce_oi || 0), color: '#ef4444', hint: 'Resistance' },
                                 { label: 'Max PE OI', value: topPeOI?.strike?.toLocaleString('en-IN') ?? '---', sub: fmtOI(topPeOI?.pe_oi || 0), color: '#10b981', hint: 'Support' },
-                                { label: 'Max CE Chg', value: topCeChg?.strike?.toLocaleString('en-IN') ?? '---', sub: (topCeChg?.ce_oi_chg || 0) > 0 ? '+' + fmtOI(topCeChg?.ce_oi_chg || 0) : fmtOI(topCeChg?.ce_oi_chg || 0), color: '#f87171', hint: 'Short Build' },
-                                { label: 'Max PE Chg', value: topPeChg?.strike?.toLocaleString('en-IN') ?? '---', sub: (topPeChg?.pe_oi_chg || 0) > 0 ? '+' + fmtOI(topPeChg?.pe_oi_chg || 0) : fmtOI(topPeChg?.pe_oi_chg || 0), color: '#34d399', hint: 'Long Build' },
+                                { label: 'Max CE Chg', value: topCeChg?.strike?.toLocaleString('en-IN') ?? '---', sub: (topCeChg?.ce_oi_chg || 0) > 0 ? '+' + fmtOI(topCeChg?.ce_oi_chg || 0) : fmtOI(topCeChg?.ce_oi_chg || 0), color: '#f87171', hint: 'CE Buildup' },
+                                { label: 'Max PE Chg', value: topPeChg?.strike?.toLocaleString('en-IN') ?? '---', sub: (topPeChg?.pe_oi_chg || 0) > 0 ? '+' + fmtOI(topPeChg?.pe_oi_chg || 0) : fmtOI(topPeChg?.pe_oi_chg || 0), color: '#34d399', hint: 'PE Buildup' },
                                 { label: 'PCR (OI)', value: pcr, sub: `CE ${fmtOI(totCeOI)} · PE ${fmtOI(totPeOI)}`, color: pcrColor, hint: '' },
                                 { label: 'Sentiment', value: sentiment, sub: `ATM \u00b1${strikeRange} strikes`, color: sentColor, hint: '' },
                             ];

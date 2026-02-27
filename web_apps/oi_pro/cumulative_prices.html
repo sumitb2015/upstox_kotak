@@ -17,8 +17,6 @@
             --ce: #f87171;
             --pe: #34d399;
             --spot: #fbbf24;
-            --diff-pos: #f87171;
-            --diff-neg: #34d399;
         }
 
         * {
@@ -33,7 +31,6 @@
             overflow-x: hidden;
         }
 
-        /* Glass card */
         .card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -45,7 +42,6 @@
             border-radius: 28px;
         }
 
-        /* Select override */
         select {
             appearance: none;
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
@@ -54,7 +50,6 @@
             background-size: 0.9rem;
         }
 
-        /* Animated status dot */
         .live-dot {
             width: 7px;
             height: 7px;
@@ -78,7 +73,6 @@
             }
         }
 
-        /* Sentiment badge */
         .badge-bullish {
             background: rgba(52, 211, 153, 0.12);
             color: #34d399;
@@ -97,7 +91,6 @@
             border: 1px solid rgba(148, 163, 184, 0.3);
         }
 
-        /* Loading shimmer */
         @keyframes shimmer {
             0% {
                 background-position: -400px 0;
@@ -114,17 +107,31 @@
             animation: shimmer 1.5s infinite;
         }
 
-        /* Trend indicator (tiny sparklines in KPI) */
         .kpi-value {
-            font-size: 1.75rem;
+            font-size: 1.6rem;
             font-weight: 900;
             line-height: 1;
             letter-spacing: -0.04em;
         }
 
-        /* Chart container */
+        .kpi-sm {
+            font-size: 1.2rem;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -0.03em;
+        }
+
         .chart-wrap {
             width: 100%;
+        }
+
+        /* Chart section headers */
+        .chart-label {
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #475569;
         }
     </style>
 </head>
@@ -138,19 +145,22 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"];
-        const MAX_POINTS = 390; // 1 pt/sec * 6h
+        const MAX_POINTS = 23400; // 1 tick/sec * 6.5hr full trading session
 
-        // ─── Plotly helpers ──────────────────────────────────────────────────────────
-        const commonLayout = {
+        // ─── Plotly base layout ──────────────────────────────────────────────────────
+        const baseLayout = {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            margin: { t: 10, b: 50, l: 60, r: 70 },
+            margin: { t: 8, b: 45, l: 58, r: 60 },
             font: { family: 'Inter', color: '#64748b', size: 11 },
-            xaxis: { gridcolor: '#1e293b', tickfont: { color: '#64748b', size: 10 }, showgrid: true },
+            xaxis: {
+                gridcolor: '#1e293b', tickfont: { color: '#64748b', size: 10 },
+                showgrid: true, type: 'category', nticks: 12
+            },
             hovermode: 'x unified',
-            hoverlabel: { bgcolor: '#0f172a', bordercolor: '#1e293b', font: { color: '#e2e8f0', family: 'Inter' } },
+            hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: '#e2e8f0', family: 'Inter', size: 12 } },
             showlegend: true,
-            legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', x: 0, y: -0.15 },
+            legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', x: 0, y: -0.18 },
         };
 
         // ─── Main Component ──────────────────────────────────────────────────────────
@@ -158,39 +168,38 @@
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
-            const [wsStatus, setWsStatus] = useState("idle"); // idle|loading|ready|error
+            const [wsStatus, setWsStatus] = useState("idle");
             const [kpi, setKpi] = useState({});
             const [optInfo, setOptInfo] = useState({ ce_count: 0, pe_count: 0 });
             const ws = useRef(null);
-            const history = useRef({ times: [], ce: [], pe: [], diff: [], spot: [] });
 
-            // Format helper
-            const fmt = (v, dec = 2) => v != null ? Number(v).toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : '---';
+            // Extended history: tracks raw sums, % change, avg premium, diff, spot
+            const history = useRef({ times: [], ce: [], pe: [], ce_chg: [], pe_chg: [], avg_ce: [], avg_pe: [], diff: [], spot: [] });
+
+            const fmt = (v, d = 2) => v != null ? Number(v).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d }) : '---';
+            const fmtK = (v) => {
+                if (v == null) return '---';
+                if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'k';
+                return v.toFixed(0);
+            };
 
             // ── Fetch expiries ────────────────────────────────────────────────────────
             useEffect(() => {
                 fetch(`/api/expiries?symbol=${symbol}`)
                     .then(r => r.json())
                     .then(d => {
-                        if (d.expiries?.length) {
-                            setExpiries(d.expiries);
-                            setExpiry(d.expiries[0]);
-                        }
+                        if (d.expiries?.length) { setExpiries(d.expiries); setExpiry(d.expiries[0]); }
                     }).catch(console.error);
             }, [symbol]);
 
             // ── WebSocket ─────────────────────────────────────────────────────────────
             useEffect(() => {
                 if (!expiry) return;
-
-                // Reset history
-                history.current = { times: [], ce: [], pe: [], diff: [], spot: [] };
-                setWsStatus("idle");
-                setKpi({});
+                history.current = { times: [], ce: [], pe: [], ce_chg: [], pe_chg: [], avg_ce: [], avg_pe: [], diff: [], spot: [] };
+                setWsStatus("idle"); setKpi({});
 
                 const proto = location.protocol === "https:" ? "wss:" : "ws:";
-                const wsUrl = `${proto}//${location.host}/ws/cumulative-prices`;
-                const sock = new WebSocket(wsUrl);
+                const sock = new WebSocket(`${proto}//${location.host}/ws/cumulative-prices`);
                 ws.current = sock;
 
                 sock.onopen = () => {
@@ -203,43 +212,31 @@
 
                     if (msg.type === "status") {
                         setWsStatus(msg.status);
-                        if (msg.ce_count !== undefined) {
-                            setOptInfo({ ce_count: msg.ce_count, pe_count: msg.pe_count });
-                        }
+                        if (msg.ce_count !== undefined) setOptInfo({ ce_count: msg.ce_count, pe_count: msg.pe_count });
                     }
-
-                    if (msg.type === "error") {
-                        setWsStatus("error");
-                        console.error("WS error:", msg.message);
-                    }
+                    if (msg.type === "error") { setWsStatus("error"); }
 
                     if (msg.type === "cumulative_update") {
-                        // Always update KPI cards (so "live" numbers stay fresh)
                         setKpi(msg);
-
                         const h = history.current;
 
-                        // ── Sync guard: only append a new history point if prices changed ──
-                        // This keeps both charts perfectly in sync — neither will get a new
-                        // point unless there is an actual market price movement.
-                        const lastCe = h.ce.length > 0 ? h.ce[h.ce.length - 1] : null;
-                        const lastPe = h.pe.length > 0 ? h.pe[h.pe.length - 1] : null;
-                        const priceChanged = (msg.ce_sum !== lastCe) || (msg.pe_sum !== lastPe);
-
-                        if (priceChanged) {
+                        // Only append if something actually changed
+                        const lastChg = h.ce_chg.length > 0 ? h.ce_chg[h.ce_chg.length - 1] : null;
+                        if (msg.ce_chg !== lastChg) {
                             h.times.push(msg.timestamp);
-                            h.ce.push(msg.ce_sum);
-                            h.pe.push(msg.pe_sum);
-                            h.diff.push(msg.diff);
-                            h.spot.push(msg.spot);
+                            h.ce.push(msg.ce_sum ?? 0);
+                            h.pe.push(msg.pe_sum ?? 0);
+                            h.ce_chg.push(msg.ce_chg ?? 0);
+                            h.pe_chg.push(msg.pe_chg ?? 0);
+                            h.avg_ce.push(msg.avg_ce ?? 0);
+                            h.avg_pe.push(msg.avg_pe ?? 0);
+                            h.diff.push(msg.diff ?? 0);
+                            h.spot.push(msg.spot ?? 0);
 
-                            // Trim to max points
                             if (h.times.length > MAX_POINTS) {
-                                h.times.shift(); h.ce.shift(); h.pe.shift();
-                                h.diff.shift(); h.spot.shift();
+                                ['times', 'ce', 'pe', 'ce_chg', 'pe_chg', 'avg_ce', 'avg_pe', 'diff', 'spot'].forEach(k => h[k].shift());
                             }
 
-                            // Re-render both charts only when there is new data
                             renderCharts(h, symbol, msg.sentiment);
                         }
                     }
@@ -247,76 +244,152 @@
 
                 sock.onclose = () => setWsStatus(s => s === "ready" ? "idle" : s);
                 sock.onerror = () => setWsStatus("error");
-
                 return () => sock.close();
             }, [symbol, expiry]);
 
             // ── Render Charts ─────────────────────────────────────────────────────────
             const renderCharts = useCallback((h, sym, sentiment) => {
-                // Chart 1: CE + PE vs Spot
-                const c1_layout = {
-                    ...commonLayout,
-                    yaxis: { title: { text: 'Cumulative Price (₹)', font: { color: '#94a3b8', size: 10 } }, gridcolor: '#1e293b', tickfont: { color: '#94a3b8' }, zeroline: false },
-                    yaxis2: { title: { text: `${sym} LTP`, font: { color: '#fbbf24', size: 10 } }, overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#fbbf24' }, zeroline: false },
-                };
-                Plotly.react('chart-1', [
-                    { x: h.times, y: h.ce, name: 'Cumul CE', mode: 'lines', line: { color: '#f87171', width: 2 } },
-                    { x: h.times, y: h.pe, name: 'Cumul PE', mode: 'lines', line: { color: '#34d399', width: 2 } },
-                    { x: h.times, y: h.spot, name: `${sym} Price`, mode: 'lines', yaxis: 'y2', line: { color: '#fbbf24', width: 1.5, dash: 'dot' } },
-                ], c1_layout, { responsive: true, displayModeBar: false });
+                const T = [...h.times];
 
-                // Chart 2: CE - PE Difference (with fill + zone lines)
-                const diffColors = h.diff.map(v => v > 0 ? '#f87171' : '#34d399');
-                const absDiff = h.diff.map(Math.abs);
-                const dominated = h.diff.map(v => (v > 0 ? 'CE Dominant' : 'PE Dominant'));
-                const c2_layout = {
-                    ...commonLayout,
-                    yaxis: { title: { text: 'CE − PE (₹)', font: { color: '#94a3b8', size: 10 } }, gridcolor: '#1e293b', tickfont: { color: '#94a3b8' }, zeroline: true, zerolinecolor: '#334155', zerolinewidth: 1.5 },
-                    shapes: [{ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: '#475569', width: 1, dash: 'dash' } }]
-                };
-                // Split diff into positive (CE dominant) and negative (PE dominant) fills
+                // ── Chart 0 (Chart 1 display): Raw Cumulative CE vs PE ─────────────
+                // Y-axis is auto-ranged to the ce/pe data range so the gap is visible.
+                // A filled 'tonexty' band between the two lines shows magnitude at a glance.
+                Plotly.react('chart-raw', [
+                    // Lower trace (PE) — used as the 'bottom' edge of the fill band
+                    {
+                        x: T, y: [...h.pe],
+                        name: 'Cumul PE', mode: 'lines',
+                        line: { color: '#34d399', width: 2.5 },
+                        hovertemplate: '<b>%{x}</b><br>PE Total: ₹%{y:,.0f}<extra></extra>'
+                    },
+                    // Upper trace (CE) — fills down to PE to shade the spread
+                    {
+                        x: T, y: [...h.ce],
+                        name: 'Cumul CE', mode: 'lines',
+                        fill: 'tonexty',
+                        fillcolor: 'rgba(248,113,113,0.10)',
+                        line: { color: '#f87171', width: 2.5 },
+                        hovertemplate: '<b>%{x}</b><br>CE Total: ₹%{y:,.0f}<extra></extra>'
+                    }
+                ], {
+                    ...baseLayout,
+                    yaxis: {
+                        title: { text: 'Cumulative Premium (₹)', font: { color: '#94a3b8', size: 10 } },
+                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
+                        zeroline: false, autorange: true, rangemode: 'normal',
+                        tickformat: ',.0f'
+                    },
+                }, { responsive: true, displayModeBar: false });
+
+                // ── Chart 1 (% change) ────────────────────────────────────────────────
+                // Both CE & PE start at 0. Divergence shows which is rising faster.
+                const zeroLine = { type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: '#334155', width: 1.5, dash: 'dot' } };
+
+                Plotly.react('chart-pct', [
+                    {
+                        x: T, y: [...h.ce_chg],
+                        name: 'CE % Change', mode: 'lines',
+                        fill: 'tozeroy',
+                        fillcolor: 'rgba(248,113,113,0.08)',
+                        line: { color: '#f87171', width: 2, shape: 'spline', smoothing: 0.6 },
+                        hovertemplate: '<b>%{x}</b><br>CE: %{y:+.3f}%<extra></extra>'
+                    },
+                    {
+                        x: T, y: [...h.pe_chg],
+                        name: 'PE % Change', mode: 'lines',
+                        fill: 'tozeroy',
+                        fillcolor: 'rgba(52,211,153,0.08)',
+                        line: { color: '#34d399', width: 2, shape: 'spline', smoothing: 0.6 },
+                        hovertemplate: '<b>%{x}</b><br>PE: %{y:+.3f}%<extra></extra>'
+                    },
+                    {
+                        x: T, y: [...h.spot],
+                        name: `${sym} Spot`, mode: 'lines', yaxis: 'y2',
+                        line: { color: '#fbbf24', width: 1.5, dash: 'dot' },
+                        hovertemplate: `<b>%{x}</b><br>${sym}: ₹%{y:,.2f}<extra></extra>`
+                    }
+                ], {
+                    ...baseLayout,
+                    yaxis: {
+                        title: { text: '% Change from Open', font: { color: '#94a3b8', size: 10 } },
+                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
+                        ticksuffix: '%', zeroline: true, zerolinecolor: '#334155', zerolinewidth: 1.5,
+                        autorange: true
+                    },
+                    yaxis2: {
+                        title: { text: `${sym} LTP`, font: { color: '#fbbf24', size: 10 } },
+                        overlaying: 'y', side: 'right',
+                        gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#fbbf24' },
+                        autorange: true, zeroline: false
+                    },
+                    shapes: [zeroLine]
+                }, { responsive: true, displayModeBar: false });
+
+                // ── Chart 2: Avg Premium per Strike ──────────────────────────────────
+                // Shows average LTP per CE/PE strike — tracks market movement directly
+                Plotly.react('chart-avg', [
+                    {
+                        x: T, y: [...h.avg_ce],
+                        name: 'Avg CE Premium', mode: 'lines',
+                        line: { color: '#f87171', width: 2 },
+                        hovertemplate: '<b>%{x}</b><br>Avg CE: ₹%{y:,.2f}<extra></extra>'
+                    },
+                    {
+                        x: T, y: [...h.avg_pe],
+                        name: 'Avg PE Premium', mode: 'lines',
+                        line: { color: '#34d399', width: 2 },
+                        hovertemplate: '<b>%{x}</b><br>Avg PE: ₹%{y:,.2f}<extra></extra>'
+                    }
+                ], {
+                    ...baseLayout,
+                    yaxis: {
+                        title: { text: 'Avg LTP per Strike (₹)', font: { color: '#94a3b8', size: 10 } },
+                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
+                        zeroline: false, autorange: true, rangemode: 'normal'
+                    }
+                }, { responsive: true, displayModeBar: false });
+
+                // ── Chart 3: CE − PE Difference ──────────────────────────────────────
                 const posY = h.diff.map(v => v >= 0 ? v : 0);
                 const negY = h.diff.map(v => v < 0 ? v : 0);
 
-                Plotly.react('chart-2', [
-                    // Positive fill (CE dominant — red)
+                Plotly.react('chart-diff', [
                     {
-                        x: h.times, y: posY,
-                        name: 'CE Dominant',
-                        mode: 'lines',
-                        fill: 'tozeroy',
-                        fillcolor: 'rgba(248,113,113,0.15)',
-                        line: { color: 'rgba(248,113,113,0)', width: 0 },
+                        x: T, y: posY, name: 'CE Dom', mode: 'lines', fill: 'tozeroy',
+                        fillcolor: 'rgba(248,113,113,0.18)', line: { color: 'transparent', width: 0 },
                         hoverinfo: 'skip', showlegend: false
                     },
-                    // Negative fill (PE dominant — green)
                     {
-                        x: h.times, y: negY,
-                        name: 'PE Dominant',
-                        mode: 'lines',
-                        fill: 'tozeroy',
-                        fillcolor: 'rgba(52,211,153,0.15)',
-                        line: { color: 'rgba(52,211,153,0)', width: 0 },
+                        x: T, y: negY, name: 'PE Dom', mode: 'lines', fill: 'tozeroy',
+                        fillcolor: 'rgba(52,211,153,0.18)', line: { color: 'transparent', width: 0 },
                         hoverinfo: 'skip', showlegend: false
                     },
-                    // Main line
                     {
-                        x: h.times, y: h.diff,
-                        name: 'CE − PE',
-                        mode: 'lines',
+                        x: T, y: [...h.diff],
+                        name: 'CE − PE Total', mode: 'lines',
                         line: { color: '#a78bfa', width: 2.5, shape: 'spline', smoothing: 0.8 },
-                        hovertemplate: '<b>%{x}</b><br>CE − PE: ₹%{y:,.2f}<extra></extra>'
+                        hovertemplate: '<b>%{x}</b><br>CE − PE: ₹%{y:,.0f}<extra></extra>'
                     }
-                ], c2_layout, { responsive: true, displayModeBar: false });
+                ], {
+                    ...baseLayout,
+                    yaxis: {
+                        title: { text: 'CE − PE (₹)', font: { color: '#94a3b8', size: 10 } },
+                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
+                        zeroline: true, zerolinecolor: '#475569', zerolinewidth: 1.5,
+                        autorange: true
+                    },
+                    shapes: [{ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: '#475569', width: 1, dash: 'dash' } }]
+                }, { responsive: true, displayModeBar: false });
             }, []);
 
-            // ─── Status helpers ───────────────────────────────────────────────────────
+            // ─── Helpers ──────────────────────────────────────────────────────────────
             const statusColor = { idle: '#64748b', loading: '#fbbf24', ready: '#10b981', error: '#ef4444' };
             const statusText = { idle: 'Idle', loading: 'Loading…', ready: 'Live', error: 'Error' };
             const sentiment = kpi.sentiment || 'Neutral';
             const sentimentClass = sentiment === 'Bullish' ? 'badge-bullish' : sentiment === 'Bearish' ? 'badge-bearish' : 'badge-neutral';
-            const sentimentEmoji = sentiment === 'Bullish' ? '🟢' : sentiment === 'Bearish' ? '🔴' : '⚪';
             const diff = kpi.diff ?? 0;
+            const ceChg = kpi.ce_chg ?? 0;
+            const peChg = kpi.pe_chg ?? 0;
 
             return (
                 <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
@@ -334,18 +407,15 @@
                                     {wsStatus === 'ready' && <span className="live-dot"></span>}
                                 </div>
                                 <p style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
-                                    Real-time sum of all call &amp; put LTPs across the entire option chain
+                                    Real-time CE vs PE premium flow · % change · avg per strike
                                 </p>
                             </div>
 
                             <div className="flex flex-wrap gap-3 items-center">
-                                {/* Status badge */}
                                 <span className="text-[10px] font-bold px-3 py-1 rounded-full"
                                     style={{ color: statusColor[wsStatus], background: statusColor[wsStatus] + '18', border: `1px solid ${statusColor[wsStatus]}40` }}>
                                     {statusText[wsStatus]}
                                 </span>
-
-                                {/* Symbol selector */}
                                 <div className="card flex items-center gap-2 px-3 py-1.5">
                                     <span style={{ fontSize: 9, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Symbol</span>
                                     <select className="bg-transparent border-none text-xs font-black focus:ring-0 cursor-pointer pr-5"
@@ -353,8 +423,6 @@
                                         {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
                                     </select>
                                 </div>
-
-                                {/* Expiry selector */}
                                 <div className="card flex items-center gap-2 px-3 py-1.5">
                                     <span style={{ fontSize: 9, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Expiry</span>
                                     <select className="bg-transparent border-none text-slate-300 text-xs font-black focus:ring-0 cursor-pointer pr-5"
@@ -365,44 +433,39 @@
                             </div>
                         </div>
 
-                        {/* ── KPI Cards ── */}
-                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                        {/* ── KPI Cards — Row 1: Raw totals ── */}
+                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
 
-                            {/* CE Sum */}
-                            <div className="card p-5 flex flex-col gap-2" style={{ borderLeft: '3px solid #f87171' }}>
+                            <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #f87171' }}>
                                 <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Call Premium</p>
-                                <div className="kpi-value" style={{ color: '#f87171' }}>₹{fmt(kpi.ce_sum, 0)}</div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>{kpi.ce_count ?? '—'} CE strikes</p>
+                                <div className="kpi-value" style={{ color: '#f87171' }}>₹{fmtK(kpi.ce_sum)}</div>
+                                <p style={{ fontSize: 9, color: '#475569' }}>{kpi.ce_count ?? '—'} live CE strikes</p>
                             </div>
 
-                            {/* PE Sum */}
-                            <div className="card p-5 flex flex-col gap-2" style={{ borderLeft: '3px solid #34d399' }}>
+                            <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #34d399' }}>
                                 <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Put Premium</p>
-                                <div className="kpi-value" style={{ color: '#34d399' }}>₹{fmt(kpi.pe_sum, 0)}</div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>{kpi.pe_count ?? '—'} PE strikes</p>
+                                <div className="kpi-value" style={{ color: '#34d399' }}>₹{fmtK(kpi.pe_sum)}</div>
+                                <p style={{ fontSize: 9, color: '#475569' }}>{kpi.pe_count ?? '—'} live PE strikes</p>
                             </div>
 
-                            {/* Diff */}
-                            <div className={`card p-5 flex flex-col gap-2`} style={{ borderLeft: `3px solid ${diff >= 0 ? '#f87171' : '#34d399'}` }}>
+                            <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: `3px solid ${diff >= 0 ? '#f87171' : '#34d399'}` }}>
                                 <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>CE − PE Difference</p>
                                 <div className="kpi-value" style={{ color: diff >= 0 ? '#f87171' : '#34d399' }}>
-                                    {diff >= 0 ? '+' : ''}{fmt(diff, 0)}
+                                    {diff >= 0 ? '+' : ''}{fmtK(diff)}
                                 </div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>{diff > 0 ? 'Call premium dominant' : 'Put premium dominant'}</p>
+                                <p style={{ fontSize: 9, color: '#475569' }}>{diff > 0 ? 'Call dominant' : 'Put dominant'}</p>
                             </div>
 
-                            {/* Spot */}
-                            <div className="card p-5 flex flex-col gap-2" style={{ borderLeft: '3px solid #fbbf24' }}>
+                            <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #fbbf24' }}>
                                 <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{symbol} Spot</p>
                                 <div className="kpi-value" style={{ color: '#fbbf24' }}>₹{fmt(kpi.spot, 2)}</div>
                                 <p style={{ fontSize: 9, color: '#475569' }}>Index Last Price</p>
                             </div>
 
-                            {/* Sentiment */}
-                            <div className="card p-5 flex flex-col gap-2" style={{ borderLeft: '3px solid #818cf8' }}>
+                            <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #818cf8' }}>
                                 <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Market Sentiment</p>
-                                <div className="kpi-value" style={{ fontSize: '1.4rem', color: sentiment === 'Bullish' ? '#34d399' : sentiment === 'Bearish' ? '#f87171' : '#94a3b8' }}>
-                                    {sentimentEmoji} {sentiment}
+                                <div className="kpi-value" style={{ fontSize: '1.35rem', color: sentiment === 'Bullish' ? '#34d399' : sentiment === 'Bearish' ? '#f87171' : '#94a3b8' }}>
+                                    {sentiment === 'Bullish' ? '🟢' : sentiment === 'Bearish' ? '🔴' : '⚪'} {sentiment}
                                 </div>
                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full w-fit ${sentimentClass}`}>
                                     {sentiment === 'Bullish' ? 'PUT DOMINANT' : sentiment === 'Bearish' ? 'CALL DOMINANT' : 'BALANCED'}
@@ -410,12 +473,36 @@
                             </div>
                         </div>
 
-                        {/* ── Info Bar ── */}
+                        {/* ── KPI Cards — Row 2: % change + avg premium ── */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+                            <div className="card p-4 flex flex-col gap-1">
+                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>CE Δ from Open</p>
+                                <div className="kpi-sm" style={{ color: ceChg >= 0 ? '#f87171' : '#34d399' }}>
+                                    {ceChg >= 0 ? '▲' : '▼'} {Math.abs(ceChg).toFixed(3)}%
+                                </div>
+                            </div>
+                            <div className="card p-4 flex flex-col gap-1">
+                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>PE Δ from Open</p>
+                                <div className="kpi-sm" style={{ color: peChg >= 0 ? '#34d399' : '#f87171' }}>
+                                    {peChg >= 0 ? '▲' : '▼'} {Math.abs(peChg).toFixed(3)}%
+                                </div>
+                            </div>
+                            <div className="card p-4 flex flex-col gap-1">
+                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Avg CE per Strike</p>
+                                <div className="kpi-sm" style={{ color: '#f87171' }}>₹{fmt(kpi.avg_ce, 2)}</div>
+                            </div>
+                            <div className="card p-4 flex flex-col gap-1">
+                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Avg PE per Strike</p>
+                                <div className="kpi-sm" style={{ color: '#34d399' }}>₹{fmt(kpi.avg_pe, 2)}</div>
+                            </div>
+                        </div>
+
+                        {/* ── Chain Coverage bar ── */}
                         {optInfo.ce_count > 0 && (
-                            <div className="card mb-5 px-5 py-3 flex items-center gap-6 text-xs">
+                            <div className="card mb-5 px-5 py-2.5 flex items-center gap-6 text-xs">
                                 <span style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Chain Coverage</span>
-                                <span style={{ color: '#f87171' }}><strong>{optInfo.ce_count}</strong> CE legs tracked</span>
-                                <span style={{ color: '#34d399' }}><strong>{optInfo.pe_count}</strong> PE legs tracked</span>
+                                <span style={{ color: '#f87171' }}><strong>{optInfo.ce_count}</strong> CE legs</span>
+                                <span style={{ color: '#34d399' }}><strong>{optInfo.pe_count}</strong> PE legs</span>
                                 <span style={{ color: '#94a3b8' }}>Total: <strong>{optInfo.ce_count + optInfo.pe_count}</strong> options</span>
                                 <div className="ml-auto" style={{ color: '#475569', fontSize: 9 }}>Updates every 1s</div>
                             </div>
@@ -428,34 +515,75 @@
                                     <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full"></span>
                                     <span className="text-sm font-semibold">Fetching option chain &amp; subscribing to {symbol}…</span>
                                 </div>
-                                <p style={{ color: '#475569', fontSize: 11, marginTop: 8 }}>This takes 3-10 seconds. Please wait.</p>
+                                <p style={{ color: '#475569', fontSize: 11, marginTop: 8 }}>This takes 3–10 seconds. Please wait.</p>
                             </div>
                         )}
 
-                        {/* ── Chart 1: CE + PE vs Spot ── */}
+                        {/* ── Chart 1: Raw CE vs PE Cumulative ── */}
                         <div className="card card-lg p-6 mb-5">
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Cumulative CE &amp; PE Prices</h3>
-                                    <p style={{ fontSize: 10, color: '#475569' }}>Sum of all option LTPs vs underlying index</p>
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Cumulative CE vs PE Prices</h3>
+                                    <p style={{ fontSize: 10, color: '#475569' }}>Total option chain premium — CE above PE gap shows call dominance; narrowing gap is bullish</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
-                                    <span style={{ color: '#f87171' }}>■ Call</span>
-                                    <span style={{ color: '#34d399' }}>■ Put</span>
-                                    <span style={{ color: '#fbbf24' }}>· · Spot →</span>
+                                    <span style={{ color: '#f87171' }}>■ CE Total</span>
+                                    <span style={{ color: '#34d399' }}>■ PE Total</span>
+                                    <span style={{ color: 'rgba(248,113,113,0.4)', fontStyle: 'italic' }}>░ CE-PE gap</span>
                                 </div>
                             </div>
                             <div className="chart-wrap">
-                                <div id="chart-1" style={{ width: '100%', height: 380 }}></div>
+                                <div id="chart-raw" style={{ width: '100%', height: 320 }}></div>
                                 {wsStatus === 'idle' && (
-                                    <div className="shimmer w-full h-[380px] rounded-xl" style={{ marginTop: -380, position: 'relative', zIndex: 0 }}></div>
+                                    <div className="shimmer w-full h-[320px] rounded-xl" style={{ marginTop: -320, position: 'relative' }}></div>
                                 )}
                             </div>
                         </div>
 
-                        {/* ── Chart 2: CE - PE Difference ── */}
+                        {/* ── Chart 2: % Change from Session Open ── */}
+                        <div className="card card-lg p-6 mb-5">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">CE &amp; PE % Change from Open</h3>
+                                    <p style={{ fontSize: 10, color: '#475569' }}>Both start at 0 — divergence shows which premium is rising faster vs session start</p>
+                                </div>
+                                <div className="flex gap-4 text-[10px] font-bold">
+                                    <span style={{ color: '#f87171' }}>▲ CE</span>
+                                    <span style={{ color: '#34d399' }}>▲ PE</span>
+                                    <span style={{ color: '#fbbf24' }}>· · Spot</span>
+                                </div>
+                            </div>
+                            <div className="chart-wrap">
+                                <div id="chart-pct" style={{ width: '100%', height: 360 }}></div>
+                                {wsStatus === 'idle' && (
+                                    <div className="shimmer w-full h-[360px] rounded-xl" style={{ marginTop: -360, position: 'relative' }}></div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ── Chart 2: Avg Premium per Strike ── */}
+                        <div className="card card-lg p-6 mb-5">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Average Premium per Strike</h3>
+                                    <p style={{ fontSize: 10, color: '#475569' }}>Mean LTP across all active CE and PE strikes — tracks actual market price movement</p>
+                                </div>
+                                <div className="flex gap-4 text-[10px] font-bold">
+                                    <span style={{ color: '#f87171' }}>■ Avg CE</span>
+                                    <span style={{ color: '#34d399' }}>■ Avg PE</span>
+                                </div>
+                            </div>
+                            <div className="chart-wrap">
+                                <div id="chart-avg" style={{ width: '100%', height: 280 }}></div>
+                                {wsStatus === 'idle' && (
+                                    <div className="shimmer w-full h-[280px] rounded-xl" style={{ marginTop: -280, position: 'relative' }}></div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ── Chart 3: CE − PE Difference ── */}
                         <div className="card card-lg p-6">
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center justify-between mb-3">
                                 <div>
                                     <h3 className="text-sm font-black text-white uppercase tracking-tight">CE − PE Price Difference</h3>
                                     <p style={{ fontSize: 10, color: '#475569' }}>
@@ -465,13 +593,13 @@
                                     </p>
                                 </div>
                                 <span className={`text-[10px] font-bold px-3 py-1 rounded-full ${sentimentClass}`}>
-                                    {sentimentEmoji} {sentiment}
+                                    {sentiment === 'Bullish' ? '🟢' : sentiment === 'Bearish' ? '🔴' : '⚪'} {sentiment}
                                 </span>
                             </div>
                             <div className="chart-wrap">
-                                <div id="chart-2" style={{ width: '100%', height: 300 }}></div>
+                                <div id="chart-diff" style={{ width: '100%', height: 260 }}></div>
                                 {wsStatus === 'idle' && (
-                                    <div className="shimmer w-full h-[300px] rounded-xl" style={{ marginTop: -300, position: 'relative', zIndex: 0 }}></div>
+                                    <div className="shimmer w-full h-[260px] rounded-xl" style={{ marginTop: -260, position: 'relative' }}></div>
                                 )}
                             </div>
                         </div>

@@ -1,10 +1,24 @@
 """
-Synthetic Futures Scalper on Nifty
-Logic: 
-1. Trend Filter: VWAP (Price > VWAP = Bullish, Price < VWAP = Bearish)
-2. Signal: Breakout/Breakdown of CPR Levels (Pivot, TC, BC)
-3. Instrument: Synthetic Future (ATM CE + PE)
-4. Risk: 20pt SL, Target Next Pivot, Trailing 10pts
+Synthetic Future CPR Scalper - Live Execution
+--------------------------------------------
+Captures breakouts of Central Pivot Range (CPR) levels using Synthetic Futures.
+
+Strategy Logic Summary:
+1. Signal Detection (CORE):
+   - Trend Filter: VWAP (Price > VWAP = Bullish, Price < VWAP = Bearish).
+   - Signal: Breakout/Breakdown of CPR Levels (Pivot, TC, BC, R1-3, S1-3).
+   - Condition: Bullish Signal if Price > VWAP & breaks Resistance. Bearish if Price < VWAP & breaks Support.
+
+2. Strategy Execution (KOTAK):
+   - Instrument: Synthetic Future (ATM CE + PE).
+   - Long Synthetic: Buy ATM CE + Sell ATM PE.
+   - Short Synthetic: Buy ATM PE + Sell ATM CE.
+
+3. Risk Management (CORE):
+   - SL: 20 points on underlying price.
+   - Target: Next available Pivot/CPR level.
+   - Trailing: 10-point TSL once profit reaches 10 points.
+   - Time Exit: Hard square-off at 15:15 PM.
 """
 
 import sys
