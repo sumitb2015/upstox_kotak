@@ -163,18 +163,26 @@
                         if (msg.instrument_key === metadata.pe_key) pricesRef.current.pe = msg.ltp;
                         if (msg.instrument_key === metadata.index_key) setSpotPrice(msg.ltp || msg.last_price);
 
-                        // Only update if both legs have data (or at least valid LTPs from somewhere)
+                        // Update leg KPIs immediately if available in the message
+                        if (msg.instrument_key === metadata.ce_key || msg.instrument_key === metadata.pe_key) {
+                            setKpis(prev => ({
+                                ...prev,
+                                ce_ltp: (msg.instrument_key === metadata.ce_key) ? msg.ltp : prev.ce_ltp,
+                                pe_ltp: (msg.instrument_key === metadata.pe_key) ? msg.ltp : prev.pe_ltp
+                            }));
+                        }
+
+                        // Only update combined premium if both legs have data
                         if (pricesRef.current.ce > 0 && pricesRef.current.pe > 0) {
                             const newStraddle = pricesRef.current.ce + pricesRef.current.pe;
 
-                            // Update KPI immediately
+                            // Update combined KPI
                             setKpis(prev => ({
                                 ...prev,
                                 current: newStraddle.toFixed(2),
-                                // Recalculate change if open stored in metadata? For now just price
                             }));
 
-                            // Update Chart (Throttle: Update last point if same minute)
+                            // Update Chart
                             updateChart(newStraddle, msg.timestamp || Date.now());
                         }
                     } catch (e) {

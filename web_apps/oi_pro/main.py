@@ -798,7 +798,7 @@ async def websocket_cumulative_prices(websocket: WebSocket):
         print(" [WS] [CumulativePrices] Disconnected")
 
 @app.on_event("startup")
-async def startup_event():
+async def startup_event_ws():
     global streamer, loop
     loop = asyncio.get_event_loop()
     print(" Starting Upstox WebSocket Bridge...")
@@ -1487,6 +1487,17 @@ async def serve_strategies_page():
     html_path = os.path.join(os.path.dirname(__file__), "strategies.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="strategies.html not found")
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+
+@app.get("/users", response_class=HTMLResponse)
+async def serve_users_page():
+    """
+    Serves the User Management page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "users.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="users.html not found")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
@@ -2236,7 +2247,11 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                     "high": round(float(day_high), 2),
                     "low": round(float(day_low), 2),
                     "change": round(float(change), 2),
-                    "change_pct": round(float(change_pct), 2)
+                    "change_pct": round(float(change_pct), 2),
+                    "open": round(float(open_val), 2),
+                    "vwap": round(float(merged['vwap'].iloc[-1]), 2),
+                    "ce_ltp": round(float(merged['close_ce'].iloc[-1]), 2),
+                    "pe_ltp": round(float(merged['close_pe'].iloc[-1]), 2)
                 }
             },
             "data": chart_data
