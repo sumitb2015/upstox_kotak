@@ -41,12 +41,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db
 
 # --- Global Background Token Cache ---
-BACKGROUND_TOKEN_CACHE = {
-    "token": None,
-    "last_validated": None,
-    "expiry_seconds": 300  # Cache for 5 minutes
-}
+# Replaced with redis_wrapper.get_raw("token:admin")
 
+from lib.utils.redis_client import redis_wrapper
 from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr, calculate_max_pain
 from lib.api.market_data import get_full_option_chain, fetch_historical_data
 from lib.utils.instrument_utils import get_option_instrument_key
@@ -68,23 +65,19 @@ SYMBOL_MAP = {
 KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
 
 # Lookup for fetching LTP by symbol (Dynamic)
-TRADING_SYMBOL_LOOKUP = {}
+# Replaced with redis_wrapper.set_raw("symbol_lookup:...", ...)
 
 # --- Global Cache for Greeks History ---
-# Structure: {(symbol, expiry): pd.DataFrame}
-# Columns: [timestamp, strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi, ...]
-GREEKS_HISTORY_CACHE: Dict[tuple, pd.DataFrame] = {}
-DELTA_HEATMAP_CACHE: Dict[tuple, List[dict]] = {}
+# Replaced with Redis lists: greeks_chain:* and heatmap:*
 GREEKS_LOCK = asyncio.Lock()
 HEATMAP_LOCK = asyncio.Lock()
 LAST_CACHE_RESET_DATE = datetime.now().date()
 
 # --- Global Cache for Previous Closes (Indices) ---
-PREV_CLOSES: Dict[str, float] = {}
+# Replaced with redis_wrapper.hset_json("PREV_CLOSES", ...)
 
 # --- Baseline OI for Heatmap (fetched once at startup, static for the day) ---
-# Structure: {(symbol, expiry, strike_float): {"ce_prev_oi": x, "pe_prev_oi": x, "ce_close": x, "pe_close": x}}
-BASELINE_OI: Dict[tuple, dict] = {}
+# Replaced with redis_wrapper.hset_json("BASELINE_OI", ...)
 
 def tail_file(filename, lines=100):
     """Efficiently get the last N lines of a file by seeking to the end."""
@@ -217,7 +210,7 @@ class StrategyManager:
                     
                     for sym, qty in raw_positions.items():
                         ltp = None
-                        key = TRADING_SYMBOL_LOOKUP.get(sym)
+                        key = redis_wrapper.get_raw(f"symbol_lookup:{sym}")
                         if key and 'streamer' in globals() and streamer:
                             data = streamer.get_latest_data(key)
                             if data:
@@ -840,10 +833,9 @@ class ConnectionManager:
             close = message.get('close') or message.get('ohlc', {}).get('close')
             
             # Fallback to pre-fetched close if live feed misses it
-            if not close or close == 0:
-                close = PREV_CLOSES.get(symbol, 0.0)
-
-            if close:
+            if symbol in ['NIFTY', 'BANKNIFTY']:
+                close = float(redis_wrapper.hget_json("PREV_CLOSES", symbol) or 0.0)
+                if close > 0:
                  ltp = dashboard_msg['prices'][symbol]['ltp']
                  if ltp and close > 0:
                      dashboard_msg['prices'][symbol]['chg'] = round(((ltp - close) / close) * 100, 2)
@@ -1121,9 +1113,9 @@ async def startup_event_ws():
                         prev_close = hist_df.iloc[-2]['close']
                     else:
                         prev_close = last_row['close']
-                        
-                    PREV_CLOSES[sym] = prev_close
-                    print(f"    {sym}: Prev Close = {prev_close}")
+                    if prev_close > 0:
+                        redis_wrapper.hset_json("PREV_CLOSES", sym, prev_close)
+                        print(f"    {sym}: Prev Close = {prev_close}")
                 else:
                     print(f"    {sym}: No historical data found")
             except HTTPException as he:
@@ -1152,7 +1144,7 @@ async def startup_event_ws():
         print(f" Failed to initialize Upstox Streamer: {e}")
 
 async def prefetch_option_master():
-    """Fetches option chains for all indices to populate TRADING_SYMBOL_LOOKUP."""
+    """Fetches option chains for all indices to populate symbol_lookup in Redis."""  
     print(" [Dashboard] Prefetching Option Master for LTP Lookup...")
     try:
         token = await get_access_token()
@@ -1181,10 +1173,10 @@ async def prefetch_option_master():
                             
                             if strike:
                                 if ce_k:
-                                    TRADING_SYMBOL_LOOKUP[f"CE {int(strike)}"] = ce_k
+                                    redis_wrapper.set_raw(f"symbol_lookup:CE {int(strike)}", ce_k)
                                     count += 1
                                 if pe_k:
-                                    TRADING_SYMBOL_LOOKUP[f"PE {int(strike)}"] = pe_k
+                                    redis_wrapper.set_raw(f"symbol_lookup:PE {int(strike)}", pe_k)
                                     count += 1
 
                 print(f"   Mapped {count} options for {symbol}")
@@ -1200,97 +1192,9 @@ async def prefetch_option_master():
 
 async def load_todays_data():
     """
-    Loads today's NIFTY Greeks snapshots from CSV into DELTA_HEATMAP_CACHE.
-    This ensures that if the server is restarted mid-day, the full day
-    history from 9:15 AM is available immediately.
+    Skipping memory cache load. Data is persisted to CSV and Redis by the poller.
     """
-    print("[CORE] Loading today's NIFTY data from CSV...")
-    try:
-        token = await get_access_token()
-        if not token:
-            print("[CORE] [Warning] No access token available for load_todays_data. Skipping.")
-            return
-        from lib.utils.greeks_helper import LOT_SIZE_MAP
-        today = datetime.now().date()
-        file_path = greeks_storage._get_file_path("NIFTY", today)
-        if not file_path.exists():
-            print(f"[CORE] No CSV found for today ({file_path.name}). Starting fresh.")
-            return
-
-        print(f"[CORE] Reading {file_path.name}...")
-        df = pd.read_csv(file_path)
-        if df.empty:
-            print("[CORE] CSV is empty.")
-            return
-
-        # Parse timestamps, drop any corrupted rows
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-        df = df.dropna(subset=['timestamp'])
-        if df.empty:
-            print("[CORE] No valid rows after timestamp parsing.")
-            return
-
-        lot_size = LOT_SIZE_MAP.get("NIFTY", 75)
-        GREEKS_HISTORY_CACHE_LOCAL = {}
-
-        for expiry, exp_group in df.groupby('expiry'):
-            # Normalize expiry key: "YYYY-MM-DD" -> "YYYY-MM-DD 00:00:00"
-            exp_str = str(expiry).strip()
-            if len(exp_str) == 10:
-                exp_str += " 00:00:00"
-
-            cache_key = ("NIFTY", exp_str)
-            GREEKS_HISTORY_CACHE[cache_key] = exp_group.copy()
-
-            # Reconstruct per-minute snapshots for the heatmap
-            snapshots = []
-            df_copy = exp_group.copy()
-            df_copy['time_key'] = df_copy['timestamp'].dt.strftime("%H:%M")
-
-            for time_key, time_group in df_copy.groupby('time_key'):
-                spot = float(time_group['spot_price'].iloc[0])
-
-                # Filter to ATM +/- 8 strikes
-                all_snaps_strikes = sorted(time_group['strike_price'].unique())
-                if all_snaps_strikes:
-                    atm = min(all_snaps_strikes, key=lambda s: abs(s - spot))
-                    atm_idx = all_snaps_strikes.index(atm)
-                    selected = set(all_snaps_strikes[max(0, atm_idx - 8) : atm_idx + 9])
-                    time_group = time_group[time_group['strike_price'].isin(selected)]
-
-                strike_deltas = []
-                for _, row in time_group.iterrows():
-                    ce_oi = float(row.get('ce_oi', 0) or 0)
-                    pe_oi = float(row.get('pe_oi', 0) or 0)
-                    ce_d  = float(row.get('ce_delta', 0) or 0)
-                    pe_d  = float(row.get('pe_delta', 0) or 0)
-                    net_d = (ce_d * ce_oi * lot_size) + (pe_d * pe_oi * lot_size)
-                    strike_deltas.append({
-                        "strike":     float(row.get('strike_price', 0)),
-                        "net_delta":  round(net_d, 0),
-                        "ce_oi":      ce_oi,
-                        "pe_oi":      pe_oi,
-                        "ce_ltp":     float(row.get('ce_ltp', 0) or 0),
-                        "pe_ltp":     float(row.get('pe_ltp', 0) or 0),
-                        "ce_prev_oi": float(row.get('ce_prev_oi', 0) or 0),
-                        "pe_prev_oi": float(row.get('pe_prev_oi', 0) or 0),
-                        "ce_close":   float(row.get('ce_close', 0) or 0),
-                        "pe_close":   float(row.get('pe_close', 0) or 0),
-                    })
-
-                snapshots.append({"timestamp": time_key, "spot": spot, "strikes": strike_deltas})
-
-            # Keep max 400 snapshots (covers full 09:15-15:30 trading day)
-            async with HEATMAP_LOCK:
-                DELTA_HEATMAP_CACHE[cache_key] = snapshots[-400:]
-            print(f"[CORE] NIFTY {exp_str}: Loaded {len(DELTA_HEATMAP_CACHE[cache_key])} intervals from CSV.")
-
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        import traceback
-        print(f"[CORE] load_todays_data failed: {e}")
-        print(traceback.format_exc())
+    pass
 
 async def fetch_baseline_oi():
     """
@@ -1301,7 +1205,6 @@ async def fetch_baseline_oi():
     are always relative to the previous session's closing OI regardless of
     when the server was started or restarted during the trading day.
     """
-    global BASELINE_OI
     print("IN [CORE] [Baseline OI] Fetching previous session OI...")
     try:
         token = await get_access_token()
@@ -1325,18 +1228,19 @@ async def fetch_baseline_oi():
             count = 0
             for _, row in df.iterrows():
                 strike = float(row.get('strike_price', 0))
-                key = (symbol.upper(), expiry, strike)
-                BASELINE_OI[key] = {
+                key = f"{symbol.upper()}:{expiry}:{strike}"
+                baseline_data = {
                     "ce_prev_oi": float(row.get('ce_prev_oi', 0) or 0),
                     "pe_prev_oi": float(row.get('pe_prev_oi', 0) or 0),
                     "ce_close":   float(row.get('ce_close', 0) or 0),
                     "pe_close":   float(row.get('pe_close', 0) or 0),
                 }
+                redis_wrapper.hset_json("BASELINE_OI", key, baseline_data)
                 count += 1
 
             print(f"    [Baseline OI] {symbol} {expiry}: Stored {count} strikes")
 
-        print(f" [CORE] [Baseline OI] Done. Total keys: {len(BASELINE_OI)}")
+        print(f" [CORE] [Baseline OI] Done.")
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1366,11 +1270,9 @@ async def unified_background_poller():
             today = datetime.now().date()
             if today > LAST_CACHE_RESET_DATE:
                 print(f" [CORE] New day detected ({today}). Resetting all caches.")
-                GREEKS_HISTORY_CACHE.clear()
-                async with HEATMAP_LOCK:
-                    DELTA_HEATMAP_CACHE.clear()
-                async with GREEKS_LOCK:
-                    GREEKS_HISTORY_CACHE.clear()
+                keys = redis_wrapper.keys("greeks_chain:*") + redis_wrapper.keys("heatmap:*")
+                for k in keys:
+                    redis_wrapper.client.delete(k)
                 LAST_CACHE_RESET_DATE = today
 
             token = await get_access_token()
@@ -1414,11 +1316,7 @@ async def unified_background_poller():
                 df_gex = calculate_gex_for_chain(df.copy(), symbol)
                 snapshot_df = prepare_snapshot(df_gex)
                 
-                cache_key = (symbol, expiry)
-                if cache_key not in GREEKS_HISTORY_CACHE:
-                    GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
-                else:
-                    GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+                # Replaced memory dictionary with direct push to Redis via greeks_storage.save_snapshot
                 
                 # Store to CSV (Thread-pooled to prevent blocking)
                 try:
@@ -1465,12 +1363,8 @@ async def unified_background_poller():
                         "strikes": strike_deltas,
                     }
 
-                    hm_cache_key = ("NIFTY", expiry)
-                    async with HEATMAP_LOCK:
-                        if hm_cache_key not in DELTA_HEATMAP_CACHE:
-                            DELTA_HEATMAP_CACHE[hm_cache_key] = []
-                        DELTA_HEATMAP_CACHE[hm_cache_key].append(heatmap_snap)
-                        DELTA_HEATMAP_CACHE[hm_cache_key] = DELTA_HEATMAP_CACHE[hm_cache_key][-400:]
+                    hm_cache_key = f"heatmap:NIFTY:{expiry}:{datetime.now().date()}"
+                    redis_wrapper.push_json_list(hm_cache_key, heatmap_snap, max_len=400)
                     is_nifty_heatmap_updated = True
 
                 # Small jitter to prevent API burst
@@ -1618,10 +1512,9 @@ async def get_access_token(user: User = None):
     # --- Case 2: Background Task (User-Powered Polling) ---
     else:
         # Check global cache first
-        now = datetime.utcnow()
-        if BACKGROUND_TOKEN_CACHE["token"] and BACKGROUND_TOKEN_CACHE["last_validated"]:
-            if (now - BACKGROUND_TOKEN_CACHE["last_validated"]).total_seconds() < BACKGROUND_TOKEN_CACHE["expiry_seconds"]:
-                return BACKGROUND_TOKEN_CACHE["token"]
+        cached_token = redis_wrapper.get_raw("token:admin")
+        if cached_token:
+            return cached_token
 
         try:
             # Look for ANY user token generated today
@@ -1637,8 +1530,8 @@ async def get_access_token(user: User = None):
                 is_valid = await run_in_threadpool(validate_token, token)
                 if is_valid:
                     print(f" [CORE] [Auth] [Background] Using token from active user: {broker.user.email}")
-                    BACKGROUND_TOKEN_CACHE["token"] = token
-                    BACKGROUND_TOKEN_CACHE["last_validated"] = now
+                    if token:
+                        redis_wrapper.set_raw("token:admin", token, ex=300)
                     return token
                 else:
                     print(f" [CORE] [Auth] [Background] Token for {broker.user.email} invalid. Clearing.")
@@ -1663,9 +1556,8 @@ async def get_access_token(user: User = None):
             return None
     
     # Cache the .env token as well if we're in background mode
-    if not user:
-        BACKGROUND_TOKEN_CACHE["token"] = token
-        BACKGROUND_TOKEN_CACHE["last_validated"] = datetime.utcnow()
+    if token and not user:
+        redis_wrapper.set_raw("token:admin", token, ex=300)
         
     return token
 
@@ -2135,13 +2027,7 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
         snapshot_df['timestamp'] = timestamp
         
         # Update Global Cache
-        cache_key = (symbol, expiry)
-        async with GREEKS_LOCK:
-            if cache_key not in GREEKS_HISTORY_CACHE:
-                GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
-            else:
-                # Append new snapshot
-                GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+        # Replaced memory dictionary with direct push to Redis via greeks_storage.save_snapshot
         
         # Persistent storage (CSV) (Thread-pooled)
         try:
@@ -2149,8 +2035,7 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
         except Exception as storage_err:
             print(f" [Greeks API] Storage error: {storage_err}")
                 
-        print(f" [Greeks API] Cache updated. Total rows for {symbol}: {len(GREEKS_HISTORY_CACHE[cache_key])}")
-        
+        print(f" [Greeks API] Storage complete for {symbol}")
         # 3. Prepare Response (Return LATEST snapshot for the chart)
         # Clean NaNs/Infs
         snapshot_df = snapshot_df.replace([float('inf'), float('-inf')], 0).fillna(0)
@@ -2183,13 +2068,11 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
 
 @app.get("/api/debug-cache")
 async def debug_cache(current_user: User = Depends(get_current_user)):
-    async with HEATMAP_LOCK:
-        heatmap_stats = {str(k): len(v) for k, v in DELTA_HEATMAP_CACHE.items()}
-    async with GREEKS_LOCK:
-        history_stats = {str(k): len(v) for k, v in GREEKS_HISTORY_CACHE.items()}
+    heatmap_stats = len(redis_wrapper.keys("heatmap:*"))
+    history_stats = len(redis_wrapper.keys("greeks_chain:*"))
     return {
-        "heatmap": heatmap_stats,
-        "history": history_stats
+        "heatmap_keys": heatmap_stats,
+        "history_keys": history_stats
     }
 
 @app.get("/api/gex-history")
@@ -2209,11 +2092,18 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None, current_use
             # Normalize: frontend sends '2026-02-24T00:00:00', poller stores '2026-02-24 00:00:00'
             expiry = str(expiry).replace('T', ' ')
             
-        cache_key = (symbol.upper(), expiry)
-        async with GREEKS_LOCK:
-            df_history = GREEKS_HISTORY_CACHE.get(cache_key)
-            if df_history is not None:
-                 df_history = df_history.copy() # Return a copy for thread-safety during processing
+        redis_key = f"greeks_chain:{symbol.upper()}:{expiry}:{datetime.now().date()}"
+        cached_list = redis_wrapper.get_json_list(redis_key)
+        
+        df_history = None
+        if cached_list:
+            all_records = []
+            for snapshot_records in cached_list:
+                all_records.extend(snapshot_records)
+            if all_records:
+                df_history = pd.DataFrame(all_records)
+                # Convert string timestamp back to datetime equivalent if necessary, but we can do it via pandas
+                df_history['timestamp'] = pd.to_datetime(df_history['timestamp'])
         
         if df_history is None or df_history.empty:
             return {"status": "success", "data": []}
@@ -2266,10 +2156,11 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             expiry = str(expiry).replace('T', ' ')
 
         cache_key = (symbol.upper(), expiry)
-        async with HEATMAP_LOCK:
-            intervals = DELTA_HEATMAP_CACHE.get(cache_key, [])
-            if intervals:
-                intervals = list(intervals) # Copy for thread-safety during slicing/processing
+        redis_cache_key = f"heatmap:{symbol.upper()}:{expiry}:{datetime.now().date()}"
+        intervals = redis_wrapper.get_json_list(redis_cache_key)
+        
+        if intervals:
+            intervals = list(intervals) # Copy for thread-safety during slicing/processing
 
         # Apply sampling based on resolution
         if resolution > 1:
@@ -2286,9 +2177,8 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
         latest = intervals[-1]
         spot   = latest['spot']
         open_spot  = intervals[0]['spot']
-        prev_close = PREV_CLOSES.get(symbol.upper(), open_spot)
-
-        # Compute displayed strikes mathematically from current spot.
+        prev_close = float(redis_wrapper.hget_json("PREV_CLOSES", symbol.upper()) or open_spot)
+        day_chg = spot - prev_close
         # Round spot to nearest 50-point interval -> ATM, then show ATM ± 8 strikes.
         # This gives exactly 17 rows no matter where spot was earlier in the day.
         strike_step = 50  # NIFTY strikes are at 50-point intervals
@@ -2309,8 +2199,9 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             
             #  Baseline lookup  fetched once at startup from the live option chain 
             # BASELINE_OI is the single source of truth for day-start (9:15 AM) comparisons.
-            baseline_key = (symbol.upper(), expiry, strike)
-            baseline = BASELINE_OI.get(baseline_key, {})
+            baseline_key = f"{symbol.upper()}:{expiry}:{strike}"
+            baseline = redis_wrapper.hget_json("BASELINE_OI", baseline_key) or {}
+            
             valid_ce_prev_oi = baseline.get("ce_prev_oi", 0) or 0
             valid_pe_prev_oi = baseline.get("pe_prev_oi", 0) or 0
             valid_ce_close   = baseline.get("ce_close", 0) or 0

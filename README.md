@@ -47,6 +47,7 @@ c:/algo/upstox/
 ### Prerequisites
 - Python 3.10+
 - Upstox / Kotak API Credentials
+- Redis Server (Optional, but highly recommended for optimal Dashboard performance)
 
 ### Installation
 
@@ -62,8 +63,9 @@ c:/algo/upstox/
    ```
 
 3. **Configuration**
-   - Ensure you have your API credentials ready.
+   - Ensure you have your API credentials ready in a `.env` file.
    - Configure your strategy settings in the respective `config.py` files within the `strategies/` directory.
+   - (Optional) Configure `REDIS_PASSWORD` in `.env` if exposing your Redis instance to production.
 
 ### Running the OI Pro Dashboard
 

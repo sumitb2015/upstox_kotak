@@ -72,10 +72,10 @@ wcwidth
 websocket-client
 websockets
 wsproto
-pandas_ta
+pandas-ta-classic
 matplotlib
 fastapi
 uvicorn
-passlib[bcrypt]
+passlib
 python-multipart
 bcrypt

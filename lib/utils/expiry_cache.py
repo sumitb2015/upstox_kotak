@@ -24,6 +24,7 @@ from calendar import monthrange
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from lib.api.option_chain import get_expiries
+from lib.utils.redis_client import redis_wrapper
 
 
 def get_data_dir() -> str:
@@ -52,6 +53,11 @@ def is_cache_stale(instrument: str = "NIFTY", year: Optional[int] = None, max_ag
     if year is None:
         year = datetime.now().year
     
+    # Check Redis first
+    redis_key = f"expiry_cache:{instrument.lower()}:{year}"
+    if redis_wrapper.get_json(redis_key):
+        return False
+        
     data_dir = get_data_dir()
     filename = f"{instrument.lower()}_expiries_{year}.csv"
     filepath = os.path.join(data_dir, filename)
@@ -178,6 +184,11 @@ def fetch_and_cache_expiries(access_token: str, instrument: str = "NIFTY", year:
         df.to_csv(filepath, index=False)
         print(f"✅ Cached {len(df)} expiries to {filepath}")
         print(f"   Weekly: {len(df[df['type'] == 'weekly'])}, Monthly: {len(df[df['type'] == 'monthly'])}")
+        
+        # Save to Redis (cache for 1 day = 86400 seconds)
+        redis_key = f"expiry_cache:{instrument.lower()}:{year}"
+        redis_wrapper.set_json(redis_key, df.to_dict('records'), ex=86400)
+        
     except Exception as e:
         print(f"⚠️ Failed to save cache: {e}")
     
@@ -186,18 +197,18 @@ def fetch_and_cache_expiries(access_token: str, instrument: str = "NIFTY", year:
 
 def load_expiries_from_cache(instrument: str = "NIFTY", year: Optional[int] = None) -> Optional[pd.DataFrame]:
     """
-    Load expiries from cached CSV file.
-    
-    Args:
-        instrument: Instrument name (default: "NIFTY")
-        year: Year to load (default: current year)
-        
-    Returns:
-        DataFrame with expiry data or None if cache doesn't exist
+    Load expiries from cached CSV file. Applies Redis caching overlay.
     """
     if year is None:
         year = datetime.now().year
     
+    # Try Redis first
+    redis_key = f"expiry_cache:{instrument.lower()}:{year}"
+    cached_data = redis_wrapper.get_json(redis_key)
+    if cached_data:
+        print(f"📂 Loaded {len(cached_data)} expiries from Redis cache: {redis_key}")
+        return pd.DataFrame(cached_data)
+        
     data_dir = get_data_dir()
     filename = f"{instrument.lower()}_expiries_{year}.csv"
     filepath = os.path.join(data_dir, filename)
@@ -208,6 +219,10 @@ def load_expiries_from_cache(instrument: str = "NIFTY", year: Optional[int] = No
     try:
         df = pd.read_csv(filepath)
         print(f"📂 Loaded {len(df)} expiries from cache: {filename}")
+        
+        # Populate Redis if we loaded from CSV manually
+        redis_wrapper.set_json(redis_key, df.to_dict('records'), ex=86400)
+        
         return df
     except Exception as e:
         print(f"⚠️ Error loading cache: {e}")
