@@ -188,8 +188,9 @@ def perform_authentication():
     
     # Selenium setup
     options = webdriver.ChromeOptions()
-    # options.add_argument("--no-sandbox")
-    # options.add_argument('--headless')  # uncomment if you want headless
+    options.add_argument("--no-sandbox")
+    options.add_argument('--headless')  # uncomment if you want headless
+    options.add_argument('--disable-dev-shm-usage')
     driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 10)
     
