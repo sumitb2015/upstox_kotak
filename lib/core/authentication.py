@@ -145,8 +145,10 @@ def get_access_token(auto_refresh=True):
             save_access_token(new_token)
             return new_token
     except Exception as e:
-        print(f"❌ Auto-refresh failed: {e}")
-        traceback.print_exc()
+        # Silencing traceback for background auto-refresh to maintain clean startup logs.
+        # Developer can still see the error message below.
+        print(f"❌ Auto-refresh failed (likely missing .env in production): {e}")
+        # traceback.print_exc()
         
     return None
 

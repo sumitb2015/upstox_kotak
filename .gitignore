@@ -5,6 +5,8 @@ accessToken.txt
 lib/core/accessToken.txt
 credentials.json
 *.db
+*.db-shm
+*.db-wal
 secrets.yaml
 
 # Virtual Environment
