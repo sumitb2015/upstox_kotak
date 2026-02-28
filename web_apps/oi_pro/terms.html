@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service — OI Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #02080f;
+            color: #f1f5f9;
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Aurora BG ── */
+        .aurora-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .aurora-bg .orb1 {
+            position: absolute;
+            top: -25%;
+            left: -15%;
+            width: 75vw;
+            height: 75vw;
+            max-width: 780px;
+            max-height: 780px;
+            background: radial-gradient(ellipse, rgba(16, 185, 129, 0.11) 0%, transparent 65%);
+            animation: driftA 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes driftA {
+            from {
+                transform: translate(0, 0) scale(1)
+            }
+
+            to {
+                transform: translate(5%, 4%) scale(1.08)
+            }
+        }
+
+        /* ── Glass UI ── */
+        .glass {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .wordmark {
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* ── Header ── */
+        .page-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5rem;
+            background: rgba(2, 8, 15, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 100;
+            padding: 0 1.5rem;
+        }
+
+        .header-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-link {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #94a3b8;
+            transition: color 0.2s;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .nav-link:hover {
+            color: white;
+        }
+
+        /* ── Footer ── */
+        .page-footer {
+            background: #010409;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 4rem 1.5rem;
+            margin-top: auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .footer-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 4rem;
+        }
+
+        @media (min-width: 768px) {
+            .footer-content {
+                grid-template-columns: 2fr 1fr 1fr;
+            }
+        }
+
+        /* ── Typography ── */
+        .policy-container h1 {
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(to bottom, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .policy-container h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 3rem;
+            margin-bottom: 1rem;
+            color: #10b981;
+        }
+
+        .policy-container p {
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #94a3b8;
+            margin-bottom: 1.5rem;
+        }
+
+        .policy-container ul {
+            list-style: disc;
+            margin-left: 1.5rem;
+            color: #94a3b8;
+            margin-bottom: 1.5rem;
+        }
+
+        .policy-container li {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Background -->
+    <div class="aurora-bg">
+        <div class="orb1"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="page-header">
+        <div class="header-content">
+            <a href="/login.html" class="header-logo flex items-center gap-3 decoration-none">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                    </svg>
+                </div>
+                <span class="wordmark text-2xl">OI Pro</span>
+            </a>
+            <nav class="header-nav hidden md:flex items-center">
+                <a href="/pricing.html" class="nav-link">Pricing</a>
+                <a href="#" class="nav-link">Knowledge base</a>
+                <a href="/contact.html" class="nav-link">Contact Us</a>
+                <a href="/privacy.html" class="nav-link">Legals</a>
+            </nav>
+            <div>
+                <a href="/login.html"
+                    class="text-sm font-semibold text-slate-400 hover:text-white transition-colors">Sign In</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="relative z-10 pt-32 pb-24 px-6 max-w-4xl mx-auto">
+        <div class="policy-container">
+            <h1>Terms of Service</h1>
+            <p>Last updated: February 27, 2026</p>
+
+            <p>Welcome to OI Pro. By accessing or using our platform, you agree to be bound by these Terms of Service.
+                Please read them carefully.</p>
+
+            <h2>1. Acceptance of Terms</h2>
+            <p>By creating an account or accessing the platform, you agree to these Terms and our Privacy Policy. If you
+                do not agree, you must not use our services.</p>
+
+            <h2>2. User Conduct</h2>
+            <p>You agree to use the platform only for lawful purposes and in accordance with institutional trading
+                standards. You are responsible for maintaining the confidentiality of your account credentials.</p>
+            <ul>
+                <li>No unauthorized scraping or automated data extraction without explicit permission.</li>
+                <li>No sharing of account credentials with third parties.</li>
+                <li>No interference with the platform’s security or functionality.</li>
+            </ul>
+
+            <h2>3. Platform Access & Data</h2>
+            <p>OI Pro provides real-time and historical options analytics. We strive for maximum accuracy, but data is
+                provided "as is" and should not be considered financial advice.</p>
+            <ul>
+                <li>Market data is sourced from institutional feeds (Upstox/Kotak APIs).</li>
+                <li>Service availability may vary due to exchange hours or maintenance.</li>
+                <li>We reserve the right to modify features or subscription tiers at any time.</li>
+            </ul>
+
+            <h2>4. Limitation of Liability</h2>
+            <p>Trading in derivatives involves significant risk. OI Pro and its operators shall not be liable for any
+                losses incurred while trading based on the analytics provided on this platform.</p>
+
+            <h2>5. Subscription & Refunds</h2>
+            <p>Subscription fees are billed according to your selected plan. Refund eligibility is governed by our
+                specific refund policy outlined during the checkout process.</p>
+
+            <h2>6. Governing Law</h2>
+            <p>These terms shall be governed by and construed in accordance with the laws of India, without regard to
+                its conflict of law provisions.</p>
+
+            <h2>7. Contact Information</h2>
+            <p>Questions about the Terms of Service should be sent to us at legal@oipro.com.</p>
+        </div>
+    </main>
+
+    <footer class="page-footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h2 class="wordmark text-2xl font-black mb-4">OI Pro</h2>
+                <p class="text-slate-500 text-sm leading-relaxed max-w-xs">Institutional-grade derivatives intelligence
+                    for active traders. Feel the pulse of the market with live data and deep analytics.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-8">
+                <div>
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Resources</h3>
+                    <ul class="space-y-4 text-sm font-medium text-slate-400 list-none ml-0">
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Documentation</a></li>
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Trading API</a></li>
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Strategic Guide</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Company</h3>
+                    <ul class="space-y-4 text-sm font-medium text-slate-400 list-none ml-0">
+                        <li><a href="/privacy.html" class="hover:text-emerald-400 transition-colors">Privacy Policy</a>
+                        </li>
+                        <li><a href="/terms.html" class="text-emerald-400 transition-colors">Terms Guide</a></li>
+                        <li><a href="/contact.html" class="hover:text-emerald-400 transition-colors">Contact Support</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="max-w-7xl mx-auto mt-20 pt-8 border-t border-white/5 text-xs text-slate-600">
+            &copy; 2026 OI Pro Analytics. All rights reserved.
+        </div>
+    </footer>
+</body>
+
+</html>

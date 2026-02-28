@@ -75,10 +75,15 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 ### 17. User Login (`/login`)
 - **Functionality**: Secure gateway to the analytics platform using JWT-based authentication.
 - **Key Features**: Persistent sessions via local storage, automatic redirection for unauthenticated users.
+- **Default Credentials**: `admin@oipro.com` / `OIPro@123` (Administrator)
 
 ### 18. User Management (`/users`)
 - **Functionality**: Administrator dashboard for managing platform accounts.
 - **Key Features**: View all users, add new accounts with specific roles, and delete users. Access is strictly restricted to 'admin' role accounts.
+
+### 19. Broker Management (`/brokers`)
+- **Functionality**: Centralized interface for managing broker API credentials and generating daily access tokens.
+- **Key Features**: Add, edit, and delete broker credentials (masked API Keys/Secrets). Features an interactive popup-based OAuth token generation flow for Upstox without leaving the dashboard.
 
 ---
 

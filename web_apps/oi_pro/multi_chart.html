@@ -134,7 +134,7 @@
             // ---------- Expiry fetch ----------
             useEffect(() => {
                 setLegs([]); setStrikesByExpiry({}); setChartData([]); setNetPremium(null);
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(r => r.json())
                     .then(d => {
                         if (d.expiries?.length) {
@@ -158,7 +158,7 @@
                     return { ...prev, [expiry]: null };
                 });
                 try {
-                    const res = await fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=100`);
+                    const res = await fetchWithAuth(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=100`);
                     const result = await res.json();
                     if (result.status === "success" && result.data) {
                         const strikes = result.data.map(d => d.strike_price).filter(Boolean).sort((a, b) => a - b);
@@ -206,7 +206,7 @@
                 return Promise.all(currentLegs.map(async leg => {
                     if (!leg.strike || !leg.expiry) return { ...leg, instrumentKey: null, initialLtp: null };
                     try {
-                        const res = await fetch(`/api/option-chain?symbol=${symbol}&expiry=${leg.expiry}&count=100`);
+                        const res = await fetchWithAuth(`/api/option-chain?symbol=${symbol}&expiry=${leg.expiry}&count=100`);
                         const result = await res.json();
                         if (result.status === "success" && result.data) {
                             const row = result.data.find(r => String(r.strike_price) === String(leg.strike));
@@ -236,7 +236,7 @@
                 activeLegs.forEach(l => { keyMap[l.instrumentKey] = l.id; });
 
                 const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const ws = new WebSocket(`${protocol}//${location.host}/ws/straddle`);
+                const ws = new WebSocket(window.getWsUrlWithAuth(`${protocol}//${location.host}/ws/straddle`));
                 wsRef.current = ws;
 
                 ws.onopen = () => {
@@ -360,7 +360,7 @@
                         direction: l.action.toUpperCase(),
                         lot: l.lot || 1
                     }));
-                    const res = await fetch('/api/multi-strike-history', {
+                    const res = await fetchWithAuth('/api/multi-strike-history', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)

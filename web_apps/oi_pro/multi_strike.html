@@ -97,7 +97,7 @@
 
             // 1. Fetch Expiries
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.expiries && res.expiries.length > 0) {
@@ -111,7 +111,7 @@
             // 2. Fetch Available Strikes
             useEffect(() => {
                 if (!expiry) return;
-                fetch(`/api/pcr-data?symbol=${symbol}&expiry=${expiry}`)
+                fetchWithAuth(`/api/pcr-data?symbol=${symbol}&expiry=${expiry}`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.data) {
@@ -139,8 +139,8 @@
                     const strList = strikes.join(',');
                     // Parallel fetching
                     const [oiRes, priceRes] = await Promise.all([
-                        fetch(`/api/multi-strike-oi-data?symbol=${symbol}&expiry=${expiry}&strikes=${strList}`),
-                        fetch(`/api/multi-strike-price-data?symbol=${symbol}&expiry=${expiry}&strikes=${strList}`)
+                        fetchWithAuth(`/api/multi-strike-oi-data?symbol=${symbol}&expiry=${expiry}&strikes=${strList}`),
+                        fetchWithAuth(`/api/multi-strike-price-data?symbol=${symbol}&expiry=${expiry}&strikes=${strList}`)
                     ]);
 
                     const oiResult = await oiRes.json();

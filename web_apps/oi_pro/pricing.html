@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS Pricing — OI Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #02080f;
+            color: #f1f5f9;
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Aurora BG ── */
+        .aurora-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .aurora-bg .orb1 {
+            position: absolute;
+            top: -25%;
+            left: -15%;
+            width: 75vw;
+            height: 75vw;
+            max-width: 780px;
+            max-height: 780px;
+            background: radial-gradient(ellipse, rgba(16, 185, 129, 0.11) 0%, transparent 65%);
+            animation: driftA 20s ease-in-out infinite alternate;
+        }
+
+        .aurora-bg .orb2 {
+            position: absolute;
+            bottom: -20%;
+            right: -10%;
+            width: 65vw;
+            height: 65vw;
+            max-width: 680px;
+            max-height: 680px;
+            background: radial-gradient(ellipse, rgba(56, 189, 248, 0.07) 0%, transparent 65%);
+            animation: driftB 25s ease-in-out infinite alternate;
+        }
+
+        .aurora-bg .orb3 {
+            position: absolute;
+            top: 40%;
+            left: 40%;
+            width: 40vw;
+            height: 40vw;
+            max-width: 400px;
+            max-height: 400px;
+            background: radial-gradient(ellipse, rgba(139, 92, 246, 0.05) 0%, transparent 60%);
+            animation: driftC 30s ease-in-out infinite alternate;
+        }
+
+        @keyframes driftA {
+            from {
+                transform: translate(0, 0) scale(1)
+            }
+
+            to {
+                transform: translate(5%, 4%) scale(1.08)
+            }
+        }
+
+        @keyframes driftB {
+            from {
+                transform: translate(0, 0) scale(1)
+            }
+
+            to {
+                transform: translate(-4%, -5%) scale(1.06)
+            }
+        }
+
+        @keyframes driftC {
+            from {
+                transform: translate(0, 0) scale(1)
+            }
+
+            to {
+                transform: translate(3%, -3%) scale(1.1)
+            }
+        }
+
+        /* ── Dot Grid ── */
+        .dot-grid {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: radial-gradient(circle, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+            background-size: 28px 28px;
+            mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 0%, transparent 100%);
+            -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 0%, transparent 100%);
+        }
+
+        /* ── Glass ── */
+        .glass {
+            background: rgba(8, 15, 30, 0.7);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+        }
+
+        /* ── Animated wordmark ── */
+        .wordmark {
+            background: linear-gradient(100deg, #10b981 0%, #34d399 35%, #a7f3d0 50%, #34d399 65%, #10b981 100%);
+            background-size: 250% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 5s linear infinite;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 100% 0
+            }
+
+            100% {
+                background-position: -100% 0
+            }
+        }
+
+        /* ── CTA Button ── */
+        .btn-cta {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: #020812;
+            font-weight: 800;
+            border: none;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            width: 100%;
+            padding: 1rem;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 24px rgba(16, 185, 129, 0.22);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-cta::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.13) 0%, transparent 55%);
+        }
+
+        .btn-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 32px rgba(16, 185, 129, 0.38);
+        }
+
+        .btn-cta:active {
+            transform: scale(0.98);
+        }
+
+        .btn-ghost {
+            background: rgba(255, 255, 255, 0.05);
+            color: #94a3b8;
+            font-weight: 600;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 0.75rem;
+            cursor: pointer;
+            padding: 1rem 1.5rem;
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.09);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        /* ── Header Styles ── */
+        .page-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            background: rgba(2, 8, 15, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            height: 64px;
+            display: flex;
+            align-items: center;
+        }
+
+        .header-content {
+            width: 100%;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-logo {
+            font-size: 1.25rem;
+            font-weight: 900;
+            letter-spacing: -0.025em;
+            color: #fff;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .nav-link {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #94a3b8;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: #10b981;
+        }
+
+        /* ── Pricing Toggle ── */
+        .toggle-group {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 9999px;
+            padding: 4px;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .toggle-btn {
+            padding: 6px 20px;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.active {
+            background: #10b981;
+            color: #020812;
+        }
+
+        /* ── Feature Table ── */
+        .comparison-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 1.25rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            text-align: center;
+        }
+
+        .comparison-table th {
+            font-weight: 700;
+            color: #f1f5f9;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+        }
+
+        .comparison-table td:first-child {
+            text-align: left;
+            font-weight: 500;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        /* ── FAQ Accordion ── */
+        .faq-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            margin-bottom: 1rem;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .faq-question {
+            padding: 1.5rem;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+            color: #f1f5f9;
+        }
+
+        .faq-answer {
+            max-height: 0;
+            padding: 0 1.5rem;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            color: #94a3b8;
+            line-height: 1.6;
+            font-size: 0.95rem;
+        }
+
+        .faq-item.active {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .faq-item.active .faq-answer {
+            max-height: 300px;
+            padding-bottom: 1.5rem;
+        }
+
+        .faq-icon {
+            transition: transform 0.3s;
+        }
+
+        .faq-item.active .faq-icon {
+            transform: rotate(180deg);
+        }
+
+        /* ── Footer ── */
+        .page-footer {
+            background: #010409;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 5rem 1.5rem;
+            margin-top: auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .footer-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 4rem;
+        }
+
+        @media (min-width: 768px) {
+            .footer-content {
+                grid-template-columns: 2fr 1fr 1fr;
+            }
+        }
+
+        /* ── Animations ── */
+        .fade-up {
+            animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        .delay-1 {
+            animation-delay: 0.15s;
+        }
+
+        .delay-2 {
+            animation-delay: 0.3s;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Background -->
+    <div class="aurora-bg">
+        <div class="orb1"></div>
+        <div class="orb2"></div>
+        <div class="orb3"></div>
+    </div>
+    <div class="dot-grid"></div>
+
+    <!-- Header -->
+    <header class="page-header">
+        <div class="header-content">
+            <a href="/login.html" class="header-logo">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                    </svg>
+                </div>
+                <span class="wordmark">OI Pro</span>
+            </a>
+            <nav class="header-nav hidden md:flex">
+                <a href="/pricing.html" class="nav-link text-white font-bold">Pricing</a>
+                <a href="#" class="nav-link">Knowledge base</a>
+                <a href="/contact.html" class="nav-link">Contact Us</a>
+                <a href="/privacy.html" class="nav-link">Legals</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                <a href="/login.html"
+                    class="text-sm font-semibold text-slate-400 hover:text-white transition-colors">Sign In</a>
+                <button class="btn-cta !w-auto !py-2 !px-4 !text-xs">Try for Free</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="relative z-10 pt-32 pb-24 px-6 overflow-hidden">
+        <!-- Hero Section -->
+        <section class="max-w-4xl mx-auto text-center mb-16 fade-up">
+            <h1 class="text-5xl md:text-7xl font-black tracking-tight mb-6 wordmark">Choose Your Trading Edge</h1>
+            <p class="text-xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+                Powerful Options Analytics. Real-Time Data. Smarter Decisions. Get institutional-grade tools used by pro
+                traders.
+            </p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
+                <button class="btn-cta !w-auto !px-8 h-14 text-lg">Start Free 5-Day Trial</button>
+                <div class="text-xs text-slate-500 font-medium">No credit card required</div>
+            </div>
+        </section>
+
+        <!-- Pricing Toggle -->
+        <div class="flex flex-col items-center mb-12 fade-up delay-1">
+            <div class="flex items-center gap-4 mb-6">
+                <span class="text-sm font-bold text-slate-500 uppercase tracking-widest">Pricing Plan</span>
+                <div class="toggle-group" id="pricing-toggle">
+                    <div class="toggle-btn active" data-period="monthly">Monthly</div>
+                    <div class="toggle-btn" data-period="yearly">Yearly</div>
+                </div>
+            </div>
+            <div class="text-emerald-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Save 15% with yearly billing
+            </div>
+        </div>
+
+        <!-- Pricing Cards Section -->
+        <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-32 fade-up delay-2">
+            <!-- Card 1: Free Trial -->
+            <div
+                class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-white/10 transition-all duration-300 relative">
+                <div
+                    class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-white/5 text-slate-400">
+                    Try Before You Commit
+                </div>
+                <div class="mb-8">
+                    <h3 class="text-xl font-bold mb-1">Free Trial</h3>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-4xl font-black">₹0</span>
+                    </div>
+                    <p class="text-sm text-slate-500 mt-2 font-medium">5 Days Full Access</p>
+                </div>
+                <ul class="space-y-4 mb-10 text-sm text-slate-400 flex-1">
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        All Pro Charts
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Live WebSocket Feed
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Option Chain Analytics
+                    </li>
+                </ul>
+                <button class="btn-ghost !py-3">Start Free Trial</button>
+            </div>
+
+            <!-- Card 2: Basic -->
+            <div
+                class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-white/10 transition-all duration-300">
+                <div class="mb-8">
+                    <h3 class="text-xl font-bold mb-1">Basic</h3>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-4xl font-black price-val" data-monthly="399" data-yearly="339">₹399</span>
+                        <span class="text-slate-500 font-medium text-sm">/ mo</span>
+                    </div>
+                    <p class="text-sm text-slate-500 mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
+                    </p>
+                </div>
+                <ul class="space-y-4 mb-10 text-sm text-slate-400 flex-1">
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Essential OI Analysis
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Standard Greeks
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        3 Symbols Tracking
+                    </li>
+                </ul>
+                <button class="btn-ghost !py-3">Get Basic</button>
+            </div>
+
+            <!-- Card 3: Pro (Most Popular) -->
+            <div
+                class="glass p-8 rounded-[2rem] flex flex-col border-emerald-500/30 hover:border-emerald-500/50 shadow-[0_0_50px_rgba(16,185,129,0.1)] scale-105 relative transition-all duration-300">
+                <div
+                    class="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full text-emerald-950 shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                    Most Popular
+                </div>
+                <div class="mb-8">
+                    <h3 class="text-xl font-bold mb-1">Pro</h3>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-4xl font-black price-val" data-monthly="599" data-yearly="509">₹599</span>
+                        <span class="text-slate-500 font-medium text-sm">/ mo</span>
+                    </div>
+                    <p class="text-sm text-slate-500 mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
+                    </p>
+                </div>
+                <ul class="space-y-4 mb-10 text-sm text-slate-300 flex-1">
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Everything in Basic
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Advanced GEX Regime
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Strategy Backtester
+                    </li>
+                    <li class="flex items-center gap-3 font-bold text-white">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Unlimited Symbols
+                    </li>
+                </ul>
+                <button class="btn-cta !py-4 h-14 shadow-[0_20px_40px_rgba(16,185,129,0.3)]">Upgrade to Pro</button>
+            </div>
+
+            <!-- Card 4: Ultra -->
+            <div
+                class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-white/10 transition-all duration-300">
+                <div class="mb-8">
+                    <h3 class="text-xl font-bold mb-1">Ultra</h3>
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-4xl font-black price-val" data-monthly="999" data-yearly="849">₹999</span>
+                        <span class="text-slate-500 font-medium text-sm">/ mo</span>
+                    </div>
+                    <p class="text-sm text-slate-500 mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
+                    </p>
+                </div>
+                <ul class="space-y-4 mb-10 text-sm text-slate-400 flex-1">
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Institutional API Access
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Custom Strategy Bot
+                    </li>
+                    <li class="flex items-center gap-3">
+                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="3">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Priority Alpha Support
+                    </li>
+                </ul>
+                <button class="btn-ghost !py-3">Go Ultra</button>
+            </div>
+        </section>
+
+        <!-- Feature Comparison Table -->
+        <section class="max-w-5xl mx-auto mb-32 fade-up">
+            <h2 class="text-3xl font-black text-center mb-12 tracking-tight">Compare Features</h2>
+            <div class="glass rounded-3xl overflow-hidden border-white/[0.05]">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th class="!text-left !px-6">Feature</th>
+                            <th>Free</th>
+                            <th>Basic</th>
+                            <th>Pro</th>
+                            <th>Ultra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="!px-6">Live Option Chain</td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                        </tr>
+                        <tr>
+                            <td class="!px-6">Intraday OI Buildup</td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                        </tr>
+                        <tr>
+                            <td class="!px-6">Gamma Exposure (GEX)</td>
+                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                        </tr>
+                        <tr>
+                            <td class="!px-6">Webhooks & Alerts</td>
+                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg></td>
+                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                        </tr>
+                        <tr>
+                            <td class="!px-6">API Data Access</td>
+                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg></td>
+                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg></td>
+                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg></td>
+                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="3.5">
+                                    <polyline points="20 6 9 17 4 12" />
+                                </svg></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- FAQ Section -->
+        <section class="max-w-3xl mx-auto mb-32 fade-up">
+            <h2 class="text-3xl font-black text-center mb-12 tracking-tight">Frequently Asked Questions</h2>
+            <div class="space-y-4">
+                <div class="faq-item">
+                    <button class="faq-question">
+                        How does the 5-day free trial work?
+                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.5">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        The trial offers full access to all "Pro" plan features for 5 trading days. No credit card is
+                        required to start. After the period ends, you can choose to subscribe to any plan.
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        Can I cancel my subscription at any time?
+                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.5">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        Yes, you can cancel your subscription from your account dashboard instantly. You will retain
+                        access until the end of your current billing period.
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        What is your refund policy?
+                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.5">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        We offer a 7-day money-back guarantee if you are not satisfied with the platform, no questions
+                        asked.
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        Is there a discount for yearly billing?
+                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.5">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                    <div class="faq-answer">
+                        Yes! By choosing yearly billing, you save 15% compared to the monthly subscription rate.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final CTA -->
+        <section
+            class="max-w-5xl mx-auto text-center glass rounded-[3rem] p-16 border-white/[0.05] relative overflow-hidden fade-up">
+            <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent"></div>
+            <div class="relative z-10">
+                <h2 class="text-4xl md:text-5xl font-black mb-6 tracking-tight">Ready to Level Up Your Options Trading?
+                </h2>
+                <p class="text-lg text-slate-400 mb-10 max-w-xl mx-auto">Join thousands of professional traders using
+                    the industry standard for options intelligence.</p>
+                <button class="btn-cta !w-auto !px-12 h-16 text-xl mx-auto">Start Free 5-Day Trial Now</button>
+            </div>
+        </section>
+    </main>
+
+    <footer class="page-footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h2 class="wordmark text-2xl font-black mb-4">OI Pro</h2>
+                <p class="text-slate-500 text-sm leading-relaxed max-w-xs">Institutional-grade derivatives intelligence
+                    for active traders. Feel the pulse of the market with live data and deep analytics.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-8">
+                <div>
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Resources</h3>
+                    <ul class="space-y-4 text-sm font-medium text-slate-400">
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Documentation</a></li>
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Trading API</a></li>
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Strategic Guide</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Company</h3>
+                    <ul class="space-y-4 text-sm font-medium text-slate-400">
+                        <li><a href="/privacy.html" class="hover:text-emerald-400 transition-colors">Privacy Policy</a>
+                        </li>
+                        <li><a href="/terms.html" class="hover:text-emerald-400 transition-colors">Terms Guide</a></li>
+                        <li><a href="/contact.html" class="hover:text-emerald-400 transition-colors">Contact Support</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div
+            class="max-w-7xl mx-auto mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="text-xs text-slate-600">&copy; 2026 OI Pro Analytics. All rights reserved.</div>
+            <div class="flex gap-6">
+                <!-- Social Icons -->
+                <a href="#" class="text-slate-600 hover:text-emerald-400 transition-colors"><svg width="18" height="18"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
+                    </svg></a>
+                <a href="#" class="text-slate-600 hover:text-emerald-400 transition-colors"><svg width="18" height="18"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+                    </svg></a>
+                <a href="#" class="text-slate-600 hover:text-emerald-400 transition-colors"><svg width="18" height="18"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+                        <rect x="2" y="9" width="4" height="12" />
+                        <circle cx="4" cy="4" r="2" />
+                    </svg></a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Pricing Toggle Logic
+        const toggle = document.getElementById('pricing-toggle');
+        const priceVals = document.querySelectorAll('.price-val');
+        const billingTypes = document.querySelectorAll('.billing-type');
+
+        toggle.addEventListener('click', (e) => {
+            const btn = e.target.closest('.toggle-btn');
+            if (!btn) return;
+
+            // Update Toggle UI
+            toggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const period = btn.dataset.period;
+
+            // Update Prices
+            priceVals.forEach(val => {
+                const newPrice = val.getAttribute(`data-${period}`);
+                val.textContent = `₹${newPrice}`;
+            });
+
+            // Update Billing Type labels
+            billingTypes.forEach(label => {
+                label.textContent = period === 'monthly' ? 'Monthly' : 'Yearly';
+            });
+        });
+
+        // FAQ Toggle Logic
+        document.querySelectorAll('.faq-question').forEach(button => {
+            button.addEventListener('click', () => {
+                const item = button.parentElement;
+                const isActive = item.classList.contains('active');
+
+                // Close others
+                document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('active'));
+
+                if (!isActive) {
+                    item.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

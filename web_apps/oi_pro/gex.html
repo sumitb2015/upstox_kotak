@@ -100,7 +100,7 @@
 
             // Fetch Expiries
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.expiries && data.expiries.length > 0) {
@@ -114,7 +114,7 @@
             const fetchData = () => {
                 if (!expiry) return;
                 setLoading(true);
-                fetch(`/api/gex-history?symbol=${symbol}&expiry=${expiry}`)
+                fetchWithAuth(`/api/gex-history?symbol=${symbol}&expiry=${expiry}`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.status === "success") {

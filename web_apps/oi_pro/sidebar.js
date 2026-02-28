@@ -4,6 +4,7 @@
  * Usage: Include <div id="sidebar-root"></div> in body, then <script src="/sidebar.js"></script>
  */
 (function () {
+
     // Auth Check: Redirect to login if not authenticated via JWT
     if (!localStorage.getItem('oi_pro_jwt') && window.location.pathname !== '/login') {
         window.location.href = '/login';
@@ -27,6 +28,41 @@
 
     const payload = getJWTPayload();
     const isAdmin = payload && payload.role === 'admin';
+
+    // --- Global Auth Helpers ---
+    window.fetchWithAuth = async (url, options = {}) => {
+        const token = localStorage.getItem('oi_pro_jwt');
+        if (token) {
+            options.headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${token}`
+            };
+        }
+        const response = await fetch(url, options);
+        if (response.status === 401 && !url.includes('/api/login')) {
+            console.warn("Auth failed (401). Redirecting to login.");
+            localStorage.removeItem('oi_pro_jwt');
+            window.location.href = '/login';
+        }
+        return response;
+    };
+
+    window.getWsUrlWithAuth = (url) => {
+        const token = localStorage.getItem('oi_pro_jwt');
+        if (!token) return url;
+
+        let targetUrl = url;
+        if (!url.startsWith('ws:') && !url.startsWith('wss:')) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            // Ensure path starts with /
+            const path = url.startsWith('/') ? url : '/' + url;
+            targetUrl = `${protocol}//${host}${path}`;
+        }
+
+        const separator = targetUrl.includes('?') ? '&' : '?';
+        return `${targetUrl}${separator}token=${token}`;
+    };
 
     const NAV_ITEMS = [
         {
@@ -108,6 +144,11 @@
             href: "/strategies",
             title: "Strategy Command Center",
             svg: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>'
+        },
+        {
+            href: "/brokers",
+            title: "Brokers",
+            svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline>'
         }
     ];
 
@@ -226,6 +267,32 @@
                 .oi-pro-sidebar::-webkit-scrollbar { width: 4px; }
                 .oi-pro-sidebar::-webkit-scrollbar-track { background: transparent; }
                 .oi-pro-sidebar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+
+                /* Global Clock Styles */
+                #oi-pro-global-clock {
+                    position: fixed;
+                    top: 0;
+                    right: 2.5rem;
+                    background: rgba(15, 23, 42, 0.9);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border: 1px solid rgba(51, 65, 85, 0.6);
+                    border-top: none;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+                    color: #94a3b8;
+                    font-size: 0.725rem;
+                    font-weight: 600;
+                    letter-spacing: 0.5px;
+                    padding: 0.35rem 0.85rem 0.4rem 0.85rem;
+                    border-radius: 0 0 0.5rem 0.5rem;
+                    z-index: 9999;
+                    pointer-events: none;
+                    user-select: none;
+                    font-family: inherit;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                }
             `;
             document.head.appendChild(style);
         }
@@ -282,12 +349,45 @@
         }
     }
 
+    function initGlobalClock() {
+        if (document.getElementById('oi-pro-global-clock')) return;
+
+        const clockDiv = document.createElement('div');
+        clockDiv.id = 'oi-pro-global-clock';
+        // Add a small clock icon SVG internally
+        const iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+
+        document.body.appendChild(clockDiv);
+
+        function updateClock() {
+            const now = new Date();
+            const options = {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            const timeStr = now.toLocaleDateString('en-GB', options).replace(',', '');
+            clockDiv.innerHTML = iconSvg + '<span>' + timeStr + '</span>';
+        }
+
+        updateClock();
+        setInterval(updateClock, 1000);
+    }
+
+
 
 
     // Run on DOM ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', renderSidebar);
+        document.addEventListener('DOMContentLoaded', function () {
+            renderSidebar();
+            initGlobalClock();
+        });
     } else {
         renderSidebar();
+        initGlobalClock();
     }
 })();

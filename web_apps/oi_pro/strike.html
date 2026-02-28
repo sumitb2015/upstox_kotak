@@ -95,7 +95,7 @@
 
             // Fetch Expiries
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.expiries && data.expiries.length > 0) {
@@ -110,7 +110,7 @@
                 const doFetch = () => {
                     if (!expiry) return;
                     setLoading(true);
-                    fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
+                    fetchWithAuth(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
                         .then(res => res.json())
                         .then(res => {
                             if (res.status === "success") {
@@ -141,7 +141,7 @@
             const fetchData = React.useCallback(() => {
                 if (!expiry) return;
                 setLoading(true);
-                fetch(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
+                fetchWithAuth(`/api/option-chain?symbol=${symbol}&expiry=${expiry}&count=50`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.status === "success") {
@@ -349,7 +349,7 @@
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 pr-28">
                             <div>
                                 <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
                                     Strike Analysis
@@ -363,7 +363,7 @@
                                     )}
                                 </p>
                             </div>
-                            <div className="flex gap-4 items-center">
+                            <div className="flex gap-4 items-center pr-32">
                                 <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
                                     <p className="text-xs text-slate-400 uppercase tracking-wider">Spot Price</p>
                                     <p className="text-2xl font-bold text-white">{spotPrice}</p>

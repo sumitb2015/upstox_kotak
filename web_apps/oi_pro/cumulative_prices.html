@@ -185,7 +185,7 @@
 
             // ── Fetch expiries ────────────────────────────────────────────────────────
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(r => r.json())
                     .then(d => {
                         if (d.expiries?.length) { setExpiries(d.expiries); setExpiry(d.expiries[0]); }
@@ -199,7 +199,7 @@
                 setWsStatus("idle"); setKpi({});
 
                 const proto = location.protocol === "https:" ? "wss:" : "ws:";
-                const sock = new WebSocket(`${proto}//${location.host}/ws/cumulative-prices`);
+                const sock = new WebSocket(window.getWsUrlWithAuth(`${proto}//${location.host}/ws/cumulative-prices`));
                 ws.current = sock;
 
                 sock.onopen = () => {

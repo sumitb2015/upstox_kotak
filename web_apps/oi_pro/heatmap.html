@@ -304,7 +304,7 @@
 
             // Fetch expiries on symbol change
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(r => r.json())
                     .then(d => {
                         if (d.expiries?.length > 0) {
@@ -322,7 +322,7 @@
                 setError(null);
                 const resMin = Math.max(1, Math.floor(refreshInterval / 60000));
                 const url = `/api/delta-heatmap?symbol=${symbol}&expiry=${encodeURIComponent(expiry)}&resolution=${resMin}`;
-                fetch(url)
+                fetchWithAuth(url)
                     .then(r => r.json())
                     .then(d => {
                         if (d.status === "success") {
