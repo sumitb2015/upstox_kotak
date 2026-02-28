@@ -149,3 +149,7 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - **Frontend**: Vanilla JS / HTML5 / CSS3 (using shared `sidebar.js` for dynamic RBAC navigation)
 - **Charts**: Plotly.js / Chart.js
 - **Middleware**: CORS enabled for cross-origin access.
+
+### Recent Reliability Improvements
+- **Graceful Weekend Handling**: Endpoints for Option Chain, Straddle, and Strike data now return a successful 200 OK with empty metadata instead of 404/500 errors during non-trading hours. This ensures the dashboard UI remains stable even when indices have no active weekly contracts.
+- **NaN Serialization Fix**: All numeric outputs (Spot, PCR, Greeks) are sanitized for `NaN` and `Inf` values before JSON serialization to prevent frontend crashes on low-liquidity future expiries.

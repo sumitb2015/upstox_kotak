@@ -17,7 +17,16 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 # ── Database Setup ──
 db_path = os.path.join(os.path.dirname(__file__), "users.db")
-db = SqliteDatabase(db_path)
+db = SqliteDatabase(
+    db_path,
+    pragmas={
+        'journal_mode': 'wal',
+        'cache_size': -1024 * 64,
+        'synchronous': 0,
+        'foreign_keys': 1
+    },
+    timeout=30
+)
 
 class BaseModel(Model):
     class Meta:
@@ -98,7 +107,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+def verify_jwt(token: str) -> str:
+    """Verifies a JWT token standalone (useful for WebSockets). Returns email."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if not email:
+            raise ValueError("Token missing subject")
+        return email
+    except jwt.PyJWTError as e:
+        raise ValueError(f"Invalid token: {e}")
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
     """Dependency that validates a JWT token and returns the corresponding user."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -120,7 +140,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=400, detail="Inactive user")
     return user
 
-async def check_admin(current_user: User = Depends(get_current_user)):
+def check_admin(current_user: User = Depends(get_current_user)):
     """Dependency that ensures the authenticated user has an 'admin' role."""
     if current_user.role != "admin":
         raise HTTPException(
@@ -130,10 +150,20 @@ async def check_admin(current_user: User = Depends(get_current_user)):
     return current_user
 
 # ── Routes ──
+from fastapi.concurrency import run_in_threadpool
+
 @router.post("/api/login")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = get_user(form_data.username)
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    # Run DB query and password hashing in a threadpool to avoid blocking WebSocket loop
+    def _verify():
+        u = get_user(form_data.username)
+        if not u or not verify_password(form_data.password, u.hashed_password):
+            return None
+        return u
+        
+    user = await run_in_threadpool(_verify)
+    
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -149,16 +179,16 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer", "user": {"email": user.email, "role": user.role}}
 
 @router.get("/api/me")
-async def read_users_me(current_user: User = Depends(get_current_user)):
+def read_users_me(current_user: User = Depends(get_current_user)):
     return {"email": current_user.email, "role": current_user.role}
 
 @router.get("/api/users")
-async def list_users(admin: User = Depends(check_admin)):
+def list_users(admin: User = Depends(check_admin)):
     users = User.select().dicts()
     return [{"email": u["email"], "role": u["role"], "is_active": u["is_active"], "created_at": u["created_at"]} for u in users]
 
 @router.post("/api/users")
-async def admin_create_user(user_data: dict, admin: User = Depends(check_admin)):
+def admin_create_user(user_data: dict, admin: User = Depends(check_admin)):
     email = user_data.get("email")
     password = user_data.get("password")
     role = user_data.get("role", "user")
@@ -173,7 +203,7 @@ async def admin_create_user(user_data: dict, admin: User = Depends(check_admin))
     return {"email": user.email, "role": user.role, "status": "created"}
 
 @router.delete("/api/users/{email}")
-async def admin_delete_user(email: str, admin: User = Depends(check_admin)):
+def admin_delete_user(email: str, admin: User = Depends(check_admin)):
     if email == admin.email:
         raise HTTPException(status_code=400, detail="Cannot delete your own admin account")
         

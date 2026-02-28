@@ -32,11 +32,11 @@ import psutil
 from pathlib import Path
 import re
 
-# Import custom authentication module
-from auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential
-
 # Add project root to path for lib imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+# Import custom authentication module
+from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db
 
 from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr, calculate_max_pain
 from lib.api.market_data import get_full_option_chain, fetch_historical_data
@@ -95,6 +95,8 @@ def tail_file(filename, lines=100):
                     lines_found += 1
                 buffer.extend(char)
             return buffer[::-1].decode('utf-8', errors='replace')
+    except HTTPException as he:
+        raise he
     except Exception as e:
         return f"Error tailing log: {str(e)}"
 
@@ -262,6 +264,8 @@ class StrategyManager:
             self.processes[strategy_id] = proc
             self.start_times[strategy_id] = datetime.now()
             return {"status": "success", "pid": proc.pid}
+        except HTTPException as he:
+            raise he
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to start: {str(e)}")
 
@@ -282,6 +286,8 @@ class StrategyManager:
                         if proc.poll() is not None:
                             break
                         await asyncio.sleep(0.1)
+                except HTTPException as he:
+                    raise he
                 except Exception as e:
                     print(f"Error sending stop signal: {e}")
 
@@ -356,6 +362,21 @@ class StrategyManager:
 strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+
+@app.middleware("http")
+async def db_session_middleware(request: Request, call_next):
+    # Ensure fresh DB connection per request to prevent SQLite thread locks
+    db.connect(reuse_if_open=True)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        if not db.is_closed():
+            db.close()
 
 # Register auth routes
 app.include_router(auth_router)
@@ -450,6 +471,8 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
         print(f" [PoP API] Returning {len(points)} data points")
         return {"data": points}
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -504,6 +527,8 @@ async def get_strategy_config(strategy_id: str, current_user: User = Depends(get
             
         config_data = await run_in_threadpool(import_config)
         return {"config": config_data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
 
@@ -538,13 +563,15 @@ async def update_strategy_config(strategy_id: str, new_config: Dict, admin: User
             
         await run_in_threadpool(config_file.write_text, content)
         return {"status": "success", "message": "Configuration updated"}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
 
 # --- Broker Management API ---
 
 @app.get("/api/brokers")
-async def list_brokers(current_user: User = Depends(get_current_user)):
+def list_brokers(current_user: User = Depends(get_current_user)):
     """Returns the list of brokers for the current user."""
     brokers = BrokerCredential.select().where(BrokerCredential.user == current_user).dicts()
     return [{
@@ -561,7 +588,7 @@ async def list_brokers(current_user: User = Depends(get_current_user)):
     } for b in brokers]
 
 @app.post("/api/brokers")
-async def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)):
+def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)):
     """Creates or updates broker credentials for the current user."""
     broker_id = broker_data.get("id")
     broker_name = broker_data.get("broker_name", "Upstox")
@@ -603,7 +630,7 @@ async def add_broker(broker_data: dict, current_user: User = Depends(get_current
         return {"status": "success", "message": "Broker saved successfully", "id": broker.id}
 
 @app.delete("/api/brokers/{broker_id}")
-async def delete_broker(broker_id: int, current_user: User = Depends(get_current_user)):
+def delete_broker(broker_id: int, current_user: User = Depends(get_current_user)):
     """Deletes the specified broker credential."""
     try:
         broker = BrokerCredential.get((BrokerCredential.id == broker_id) & (BrokerCredential.user == current_user))
@@ -613,7 +640,7 @@ async def delete_broker(broker_id: int, current_user: User = Depends(get_current
         raise HTTPException(status_code=404, detail="Broker not found")
 
 @app.post("/api/brokers/generate-token/{broker_id}")
-async def generate_broker_token(broker_id: int, current_user: User = Depends(get_current_user)):
+def generate_broker_token(broker_id: int, current_user: User = Depends(get_current_user)):
     """
     Returns the Upstox Auth URL to initiate manual login.
     """
@@ -636,7 +663,7 @@ async def generate_broker_token(broker_id: int, current_user: User = Depends(get
         raise HTTPException(status_code=404, detail="Broker not found")
 
 @app.get("/api/brokers/callback/upstox")
-async def upstox_callback(request: Request, code: str, state: str):
+def upstox_callback(request: Request, code: str, state: str):
     """
     OAuth Callback for Upstox.
     Exchanges authorization code for access token.
@@ -704,6 +731,8 @@ async def upstox_callback(request: Request, code: str, state: str):
         """
         return HTMLResponse(content=success_html)
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         return HTMLResponse(content=f"<h2>Callback Error</h2><p>{str(e)}</p><pre>{traceback.format_exc()}</pre>", status_code=500)
@@ -750,6 +779,8 @@ class ConnectionManager:
         if streamer and streamer.market_streamer:
             try:
                 streamer.subscribe_market_data(normalized_keys)
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f" [WS] Error subscribing to keys {normalized_keys}: {e}")
 
@@ -769,6 +800,8 @@ class ConnectionManager:
             for connection in self.subscriptions[instrument_key]:
                 try:
                     await connection.send_json(message)
+                except HTTPException as he:
+                    raise he
                 except Exception as e:
                     print(f" [WS] Disconnecting broken pipe for {instrument_key}")
                     to_remove.append(connection)
@@ -832,7 +865,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
     # Manual token check for WS (FastAPI Depends can sometimes be tricky with WS handshakes in some clients)
     try:
         if token:
-            from auth import verify_jwt
+            from web_apps.oi_pro.auth import verify_jwt
             verify_jwt(token)
     except:
          await websocket.close(code=1008) # Policy Violation
@@ -865,7 +898,7 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
     # Manual token check
     try:
         if token:
-            from auth import verify_jwt
+            from web_apps.oi_pro.auth import verify_jwt
             verify_jwt(token)
     except:
          await websocket.close(code=1008)
@@ -1012,6 +1045,8 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
 
             except WebSocketDisconnect:
                 break
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f" [WS] [CumulativePrices] Loop Error: {e}")
                 import traceback; traceback.print_exc()
@@ -1075,6 +1110,8 @@ async def startup_event_ws():
                     print(f"    {sym}: Prev Close = {prev_close}")
                 else:
                     print(f"    {sym}: No historical data found")
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f"    {sym}: Failed to fetch history: {e}")
 
@@ -1093,6 +1130,8 @@ async def startup_event_ws():
         )
         print(" Upstox Streamer Connected & Listening")
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f" Failed to initialize Upstox Streamer: {e}")
 
@@ -1130,9 +1169,13 @@ async def prefetch_option_master():
                                     count += 1
 
                 print(f"   Mapped {count} options for {symbol}")
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f"    Failed to prefetch {symbol}: {e}")
                 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f" Prefetch failed: {e}")
 
@@ -1220,6 +1263,8 @@ async def load_todays_data():
                 DELTA_HEATMAP_CACHE[cache_key] = snapshots[-400:]
             print(f"[CORE] NIFTY {exp_str}: Loaded {len(DELTA_HEATMAP_CACHE[cache_key])} intervals from CSV.")
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         print(f"[CORE] load_todays_data failed: {e}")
@@ -1267,6 +1312,8 @@ async def fetch_baseline_oi():
             print(f"    [Baseline OI] {symbol} {expiry}: Stored {count} strikes")
 
         print(f" [CORE] [Baseline OI] Done. Total keys: {len(BASELINE_OI)}")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f" [CORE] [Baseline OI] Failed: {e}")
@@ -1391,6 +1438,8 @@ async def unified_background_poller():
                  pass
 
             await asyncio.sleep(60) 
+        except HTTPException as he:
+            raise he
         except Exception as e:
             import traceback
             print(f" [CORE] Unified Poller Error: {e}")
@@ -1405,6 +1454,8 @@ async def startup_event():
         # Initialize the authentication database
         init_db()
         print("[AUTH] Database initialized")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"[AUTH] Failed to init DB: {e}")
 
@@ -1420,6 +1471,8 @@ async def startup_event():
         asyncio.create_task(prefetch_option_master())
         asyncio.create_task(unified_background_poller())
         print("[CORE] Background processes initialized.")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"[CORE] Startup Failure: {e}")
 
@@ -1439,7 +1492,7 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
     # Manual token check
     try:
         if token:
-            from auth import verify_jwt
+            from web_apps.oi_pro.auth import verify_jwt
             verify_jwt(token)
     except:
          await websocket.close(code=1008)
@@ -1477,6 +1530,8 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Market Watch WS Error: {e}")
         manager.disconnect(websocket)
@@ -2009,6 +2064,8 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
             "data": snapshot_df.to_dict(orient="records")
         }
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2070,6 +2127,8 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None, current_use
             "metadata": {"symbol": symbol, "expiry": expiry},
             "data": history
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f"Error fetching GEX history: {e}")
@@ -2229,6 +2288,8 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             "max_pe_oi_chg_pct": max_pe_oi_chg_pct,
             "is_demo": False
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
@@ -2265,6 +2326,8 @@ async def get_strike_greeks_history(symbol: str = Query(..., description="Symbol
             "metadata": {"symbol": symbol, "expiry": expiry, "strike": strike},
             "data": data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Error fetching strike greeks history: {e}")
         return {"status": "error", "message": str(e)}
@@ -2351,6 +2414,8 @@ async def get_pcr_data(current_user: User = Depends(get_current_user),
         print(f" [CORE] [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
         return {"data": grid_data, "spot_price": spot_price}
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2420,6 +2485,8 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
             }
         }
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2432,7 +2499,7 @@ async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(
     # Manual token check
     try:
         if token:
-            from auth import verify_jwt
+            from web_apps.oi_pro.auth import verify_jwt
             verify_jwt(token)
     except:
          await websocket.close(code=1008)
@@ -2489,12 +2556,32 @@ async def fetch_option_chain(current_user: User = Depends(get_current_user),
     if not expiry:
         expiries = await run_in_threadpool(get_expiries, token, key)
         if not expiries:
-            raise HTTPException(status_code=404, detail="No expiries found")
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": None,
+                    "expiries": [],
+                    "spot": 0,
+                    "pcr": {"oi": 0, "vol": 0, "oi_chg": 0}
+                },
+                "data": []
+            }
         expiry = expiries[0]
 
     df = await run_in_threadpool(get_option_chain_dataframe, token, key, expiry)
     if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="Data not found")
+        return {
+            "status": "success",
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "expiries": expiries if 'expiries' in locals() else [],
+                "spot": 0,
+                "pcr": {"oi": 0, "vol": 0, "oi_chg": 0}
+            },
+            "data": []
+        }
 
     # Add Buildup and Analytics
     df['ce_chg_pct'] = ((df['ce_ltp'] - df['ce_close']) / df['ce_close'] * 100).replace([float('inf'), float('-inf')], 0).fillna(0)
@@ -2530,17 +2617,17 @@ async def fetch_option_chain(current_user: User = Depends(get_current_user),
         df_filtered = df_filtered.replace([float('inf'), float('-inf')], 0).fillna(0)
         data = df_filtered.to_dict(orient="records")
         pcr_meta = {
-            "oi": oi_pcr,
-            "vol": vol_pcr,
-            "oi_chg": oi_chg_pcr
+            "oi": float(oi_pcr) if not pd.isna(oi_pcr) else 0,
+            "vol": float(vol_pcr) if not pd.isna(vol_pcr) else 0,
+            "oi_chg": float(oi_chg_pcr) if not pd.isna(oi_chg_pcr) else 0
         }
     else:
         df = df.replace([float('inf'), float('-inf')], 0).fillna(0)
         data = df.to_dict(orient="records")
         pcr_meta = {
-            "oi": calculate_pcr(df),
-            "vol": calculate_volume_pcr(df),
-            "oi_chg": calculate_oi_change_pcr(df)
+            "oi": float(calculate_pcr(df)),
+            "vol": float(calculate_volume_pcr(df)),
+            "oi_chg": float(calculate_oi_change_pcr(df))
         }
 
     # Fetch all expiries for the metadata dropdown
@@ -2553,10 +2640,10 @@ async def fetch_option_chain(current_user: User = Depends(get_current_user),
             "symbol": symbol,
             "expiry": expiry,
             "expiries": expiries,
-            "spot": spot,
+            "spot": float(spot) if not pd.isna(spot) else 0,
             "pcr": pcr_meta
         },
-        "data": data
+        "data": df_filtered.replace([float('inf'), float('-inf')], 0).fillna(0).to_dict(orient="records")
     }
 
 @app.get("/api/straddle-data")
@@ -2616,7 +2703,21 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         pe_candles = await run_in_threadpool(get_intraday_data_v3, token, pe_key, "minute", 1)
         
         if not ce_candles or not pe_candles:
-            raise HTTPException(status_code=404, detail="Intraday data not found for one or more legs")
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "target_strike": target_strike,
+                    "ce_key": ce_key,
+                    "pe_key": pe_key,
+                    "index_key": key,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "kpis": {}
+                },
+                "data": []
+            }
             
         # 3. Merge and Calculate
         ce_df = pd.DataFrame(ce_candles)
@@ -2624,6 +2725,23 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         
         # Merge on timestamp
         merged = pd.merge(ce_df, pe_df, on='timestamp', suffixes=('_ce', '_pe'))
+        
+        if merged.empty:
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "target_strike": target_strike,
+                    "ce_key": ce_key,
+                    "pe_key": pe_key,
+                    "index_key": key,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "kpis": {}
+                },
+                "data": []
+            }
         
         # Combined Premium
         merged['combined_premium'] = merged['close_ce'] + merged['close_pe']
@@ -2677,6 +2795,8 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
             },
             "data": chart_data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2727,14 +2847,39 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
         ce_candles = await run_in_threadpool(get_intraday_data_v3, token, ce_key, "minute", 1)
         pe_candles = await run_in_threadpool(get_intraday_data_v3, token, pe_key, "minute", 1)
         
+        all_strikes = sorted(df['strike_price'].unique().tolist())
+        
         if not ce_candles or not pe_candles:
-            raise HTTPException(status_code=404, detail="Intraday data not found for legs")
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "target_strike": target_strike,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "latest": {}
+                },
+                "data": []
+            }
             
         # 3. Merge and formatting
         ce_df = pd.DataFrame(ce_candles).rename(columns={'close': 'ce_ltp', 'oi': 'ce_oi'})[['timestamp', 'ce_ltp', 'ce_oi']]
         pe_df = pd.DataFrame(pe_candles).rename(columns={'close': 'pe_ltp', 'oi': 'pe_oi'})[['timestamp', 'pe_ltp', 'pe_oi']]
         
         merged = pd.merge(ce_df, pe_df, on='timestamp', how='inner')
+        if merged.empty:
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "target_strike": target_strike,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "latest": {}
+                },
+                "data": []
+            }
+
         merged['timestamp'] = pd.to_datetime(merged['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
         # Calculate changes vs Yesterday Close if available in candles (using first candle as proxy for open)
@@ -2742,8 +2887,6 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
         
         chart_data = merged.to_dict(orient="records")
         latest = merged.iloc[-1] if not merged.empty else {}
-        
-        all_strikes = sorted(df['strike_price'].unique().tolist())
         
         return {
             "status": "success",
@@ -2762,6 +2905,8 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
             },
             "data": chart_data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2795,6 +2940,8 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
                 result = await run_in_threadpool(get_intraday_data_v3, token, leg.instrument_key, "minute", 1)
                 await asyncio.sleep(0.1) # Debounce
                 return {"leg": leg, "data": result}
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f"Error fetching {leg.instrument_key}: {e}")
                 return {"leg": leg, "data": None}
@@ -2938,7 +3085,18 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
         leg_results = results[:-1]
         
         if not index_candles:
-            raise HTTPException(status_code=404, detail="Index intraday data not found")
+            return {
+                "status": "success",
+                "data": [],
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "spot": spot,
+                    "atm": atm,
+                    "strikes_used": sorted(target_strikes),
+                    "kpis": {}
+                }
+            }
             
         index_df = pd.DataFrame(index_candles).rename(columns={'close': 'ltp'})[['timestamp', 'ltp']]
         index_df['timestamp'] = pd.to_datetime(index_df['timestamp'])
@@ -2984,7 +3142,18 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             ce_combined['ce_oi_total'] = ce_combined[oi_cols].sum(axis=1)
             ce_total_df = ce_combined[['timestamp', 'ce_oi_total']].rename(columns={'ce_oi_total': 'ce_oi'})
         else:
-            raise HTTPException(status_code=404, detail="No CE data found")
+            return {
+                "status": "success",
+                "data": [],
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "spot": spot,
+                    "atm": atm,
+                    "strikes_used": sorted(target_strikes),
+                    "kpis": {}
+                }
+            }
 
         # 2. Align PE Data
         if pe_dfs:
@@ -2996,7 +3165,18 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             pe_combined['pe_oi_total'] = pe_combined[oi_cols].sum(axis=1)
             pe_total_df = pe_combined[['timestamp', 'pe_oi_total']].rename(columns={'pe_oi_total': 'pe_oi'})
         else:
-            raise HTTPException(status_code=404, detail="No PE data found")
+            return {
+                "status": "success",
+                "data": [],
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "spot": spot,
+                    "atm": atm,
+                    "strikes_used": sorted(target_strikes),
+                    "kpis": {}
+                }
+            }
         
         # Merge all
         merged = pd.merge(ce_total_df, pe_total_df, on='timestamp', how='inner')
@@ -3047,6 +3227,8 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             },
             "data": chart_data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -3069,7 +3251,8 @@ async def get_full_chain(symbol: str, expiry: str, current_user: User = Depends(
         if df.empty:
              return {"chain": [], "spot": 0}
 
-        spot = df['underlying_spot'].iloc[0] if not df.empty else 0
+        _spot_raw = df['underlying_spot'].iloc[0] if not df.empty else 0
+        spot = float(_spot_raw) if not pd.isna(_spot_raw) else 0
 
         # --- Top 3 OI Logic ---
         # Sort by OI desc
@@ -3089,7 +3272,11 @@ async def get_full_chain(symbol: str, expiry: str, current_user: User = Depends(
         df['oi_rank'] = df.apply(check_top_oi, axis=1)
 
         # Convert to list of dicts for JSON
-        chain_data = df.to_dict(orient='records')
+        chain_data = df.replace([float('inf'), float('-inf')], 0).fillna(0).to_dict(orient='records')
+        
+        # Ensure no NaNs in lists
+        top_ce = [float(x) for x in top_ce if not pd.isna(x)]
+        top_pe = [float(x) for x in top_pe if not pd.isna(x)]
         
         return {
             "chain": chain_data,
@@ -3098,6 +3285,8 @@ async def get_full_chain(symbol: str, expiry: str, current_user: User = Depends(
             "top_pe": top_pe
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -3198,6 +3387,8 @@ async def get_multi_strike_oi_data(
             "data": merged.to_dict(orient="records")
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -3299,6 +3490,8 @@ async def get_multi_strike_price_data(
             "data": merged.to_dict(orient="records")
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
