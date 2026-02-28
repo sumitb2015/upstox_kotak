@@ -17,6 +17,12 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(current_dir, ".env")
 load_dotenv(env_path)
 
+# Token Validation Cache (to prevent excessive API calls)
+_TOKEN_VALIDATION_CACHE = {
+    "last_success_time": 0,
+    "cache_seconds": 900  # 15 minutes
+}
+
 
 def check_existing_token():
     """Check if access token file exists and contains a valid token"""
@@ -104,8 +110,19 @@ def get_access_token(auto_refresh=True):
     # 2. Try Env Var
     if not token:
         token = os.getenv("UPSTOX_ACCESS_TOKEN")
+            
+    # 3. Validate Token (with 15-min cache)
+    current_time = time.time()
+    
+    # If token exists and was validated recently, return it immediately to avoid API spam
+    last_val = _TOKEN_VALIDATION_CACHE["last_success_time"]
+    cache_dur = _TOKEN_VALIDATION_CACHE["cache_seconds"]
+    
+    if token and (current_time - last_val < cache_dur):
+        return token
         
     if token and validate_token(token):
+        _TOKEN_VALIDATION_CACHE["last_success_time"] = current_time
         return token
         
     if not auto_refresh:

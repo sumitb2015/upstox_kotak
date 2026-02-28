@@ -103,7 +103,7 @@
             }, []);
 
             const fetchStrategies = () => {
-                fetch('/api/strategies')
+                fetchWithAuth('/api/strategies')
                     .then(res => res.json())
                     .then(data => {
                         setStrategies(data.strategies);
@@ -113,19 +113,19 @@
             };
 
             const handleStart = (id) => {
-                fetch(`/api/strategies/start/${id}`, { method: 'POST' })
+                fetchWithAuth(`/api/strategies/start/${id}`, { method: 'POST' })
                     .then(res => res.json())
                     .then(() => fetchStrategies());
             };
 
             const handleStop = (id) => {
-                fetch(`/api/strategies/stop/${id}`, { method: 'POST' })
+                fetchWithAuth(`/api/strategies/stop/${id}`, { method: 'POST' })
                     .then(res => res.json())
                     .then(() => fetchStrategies());
             };
 
             const openConfig = (id) => {
-                fetch(`/api/strategies/config/${id}`)
+                fetchWithAuth(`/api/strategies/config/${id}`)
                     .then(res => res.json())
                     .then(data => {
                         setConfigModal({ show: true, strategyId: id, config: data.config });
@@ -134,7 +134,7 @@
 
             const saveConfig = () => {
                 setSavingConfig(true);
-                fetch(`/api/strategies/config/${configModal.strategyId}`, {
+                fetchWithAuth(`/api/strategies/config/${configModal.strategyId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(configModal.config)
@@ -164,7 +164,7 @@
             };
 
             const fetchLogs = (id) => {
-                fetch(`/api/strategies/logs/${id}`)
+                fetchWithAuth(`/api/strategies/logs/${id}`)
                     .then(res => res.json())
                     .then(data => {
                         setLogs(prev => ({ ...prev, [id]: data.logs }));

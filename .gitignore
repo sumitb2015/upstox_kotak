@@ -4,6 +4,8 @@
 accessToken.txt
 lib/core/accessToken.txt
 credentials.json
+*.db
+secrets.yaml
 
 # Virtual Environment
 venv/

@@ -93,14 +93,14 @@
             const [spotPrice, setSpotPrice] = useState(0);
             const [loading, setLoading] = useState(false);
             const [lastUpdated, setLastUpdated] = useState(null);
-            const [strikeRange, setStrikeRange] = useState(20);
-            const [refreshInterval, setRefreshInterval] = useState(5000); // Default 5s
+            const [strikeRange, setStrikeRange] = useState(10);
+            const [refreshInterval, setRefreshInterval] = useState(10000); // Default 10s
 
             // Fetch Expiries
             useEffect(() => {
                 const fetchExpiries = async () => {
                     try {
-                        const res = await fetch(`/api/expiries?symbol=${symbol}`);
+                        const res = await fetchWithAuth(`/api/expiries?symbol=${symbol}`);
                         const data = await res.json();
                         setExpiryList(data.expiries || []);
                         if (data.expiries && data.expiries.length > 0) {
@@ -118,7 +118,7 @@
                 if (!selectedExpiry) return;
                 setLoading(true);
                 try {
-                    const res = await fetch(`/api/option-chain/${symbol}?expiry=${selectedExpiry}`);
+                    const res = await fetchWithAuth(`/api/option-chain/${symbol}?expiry=${selectedExpiry}`);
                     const data = await res.json();
                     setChainData(data.chain || []);
                     setSpotPrice(data.spot || 0);
@@ -233,7 +233,7 @@
 
                     <div className="flex-1 pl-28 flex flex-col overflow-hidden" style={{ height: '100vh' }}>
                         {/* Header - fixed height compact bar */}
-                        <div className="flex-shrink-0 z-[60] bg-[#030712] border-b border-white/5 px-4 py-2 shadow-xl">
+                        <div className="flex-shrink-0 z-[60] bg-[#030712] border-b border-white/5 px-4 py-2 shadow-xl pr-28">
                             <div className="flex flex-row justify-between items-center gap-2 max-w-[1600px] mx-auto">
                                 <div className="flex items-center gap-3">
                                     <h1 className="text-lg font-black tracking-tighter bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
@@ -266,7 +266,7 @@
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-4 pr-32">
                                     <div className="flex flex-col items-end leading-tight">
                                         <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Spot Price</span>
                                         <span className="text-xl font-black font-mono tracking-tight text-white">

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us — OI Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #02080f;
+            color: #f1f5f9;
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Aurora BG ── */
+        .aurora-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .aurora-bg .orb1 {
+            position: absolute;
+            top: -25%;
+            left: -15%;
+            width: 75vw;
+            height: 75vw;
+            max-width: 780px;
+            max-height: 780px;
+            background: radial-gradient(ellipse, rgba(16, 185, 129, 0.11) 0%, transparent 65%);
+            animation: driftA 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes driftA {
+            from {
+                transform: translate(0, 0) scale(1)
+            }
+
+            to {
+                transform: translate(5%, 4%) scale(1.08)
+            }
+        }
+
+        /* ── Glass UI ── */
+        .glass-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.5rem;
+        }
+
+        .glass-input {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: white;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        .glass-input:focus {
+            border-color: #10b981;
+            background: rgba(15, 23, 42, 1);
+            box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+        }
+
+        .wordmark {
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* ── Header ── */
+        .page-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5rem;
+            background: rgba(2, 8, 15, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 100;
+            padding: 0 1.5rem;
+        }
+
+        .header-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-link {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #94a3b8;
+            transition: color 0.2s;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .nav-link:hover {
+            color: white;
+        }
+
+        /* ── Buttons ── */
+        .btn-primary {
+            background: #10b981;
+            color: #02080f;
+            font-weight: 700;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary:hover {
+            background: #34d399;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        /* ── Footer ── */
+        .page-footer {
+            background: #010409;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 4rem 1.5rem;
+            margin-top: auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .footer-content {
+            max-width: 1280px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 4rem;
+        }
+
+        @media (min-width: 768px) {
+            .footer-content {
+                grid-template-columns: 2fr 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Background -->
+    <div class="aurora-bg">
+        <div class="orb1"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="page-header">
+        <div class="header-content">
+            <a href="/login.html" class="header-logo flex items-center gap-3 decoration-none">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                    </svg>
+                </div>
+                <span class="wordmark text-2xl">OI Pro</span>
+            </a>
+            <nav class="header-nav hidden md:flex items-center">
+                <a href="/pricing.html" class="nav-link">Pricing</a>
+                <a href="#" class="nav-link">Knowledge base</a>
+                <a href="/contact.html" class="nav-link text-white font-bold">Contact Us</a>
+                <a href="/privacy.html" class="nav-link">Legals</a>
+            </nav>
+            <div>
+                <a href="/login.html"
+                    class="text-sm font-semibold text-slate-400 hover:text-white transition-colors">Sign In</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="relative z-10 pt-32 pb-24 px-6 max-w-6xl mx-auto">
+        <div class="grid lg:grid-cols-2 gap-16 items-start">
+
+            <!-- Left Side: Contact Info -->
+            <div class="fade-up">
+                <h1 class="text-5xl font-black mb-6 tracking-tight leading-tight">Get in Touch <br><span
+                        class="text-emerald-500">Support is Ready.</span></h1>
+                <p class="text-slate-400 text-lg mb-12 max-w-md">Have questions about institutional data, pricing, or
+                    custom strategies? Our team of derivatives experts is here to help you.</p>
+
+                <div class="space-y-8">
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z">
+                                </path>
+                                <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                        </div>
+                        <div>
+                            <h4 class="text-white font-bold mb-1">Email us</h4>
+                            <p class="text-slate-400">support@oipro.com</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-4">
+                        <div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                        </div>
+                        <div>
+                            <h4 class="text-white font-bold mb-1">Our Location</h4>
+                            <p class="text-slate-400">Pune, India</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Form Container -->
+        <div class="relative">
+            <!-- Success Message (Initially Hidden) -->
+            <div id="success-message"
+                class="absolute inset-0 z-20 glass-card p-8 lg:p-10 flex flex-col items-center justify-center text-center hidden">
+                <div class="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mb-6">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <h3 class="text-3xl font-black mb-4">Message Sent!</h3>
+                <p class="text-slate-400 text-lg leading-relaxed mb-8">Your query has been received by our support team.
+                    We've prioritize your request.</p>
+                <div class="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10 mb-8">
+                    <p class="text-emerald-400 font-medium">Expected response time: Within 1 working day.</p>
+                </div>
+                <button onclick="resetForm()"
+                    class="text-sm font-bold text-slate-500 hover:text-white transition-colors uppercase tracking-widest">Send
+                    another message</button>
+            </div>
+
+            <!-- Right Side: Form -->
+            <div id="form-container" class="glass-card p-8 lg:p-10 fade-up delay-1">
+                <h3 class="text-2xl font-bold mb-6">Drop a Query</h3>
+                <form id="contact-form" class="space-y-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Full
+                                Name</label>
+                            <input type="text" class="glass-input" placeholder="Your Name" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Email
+                                address</label>
+                            <input type="email" class="glass-input" placeholder="name@company.com" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label
+                            class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Subject</label>
+                        <select class="glass-input">
+                            <option>Technical Support</option>
+                            <option>Pricing Inquiry</option>
+                            <option>Strategy Consultation</option>
+                            <option>API Access</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Your
+                            Message</label>
+                        <textarea class="glass-input h-32 resize-none" placeholder="Tell us about your query..."
+                            required></textarea>
+                    </div>
+                    <button type="submit" class="btn-primary w-full shadow-lg">
+                        Submit Message
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="page-footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <h2 class="wordmark text-2xl font-black mb-4">OI Pro</h2>
+                <p class="text-slate-500 text-sm leading-relaxed max-w-xs">Institutional-grade derivatives intelligence
+                    for active traders. Feel the pulse of the market with live data and deep analytics.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-8">
+                <div>
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Resources</h3>
+                    <ul class="space-y-4 text-sm font-medium text-slate-400 list-none ml-0">
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Documentation</a></li>
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Trading API</a></li>
+                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Strategic Guide</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Company</h3>
+                    <ul class="space-y-4 text-sm font-medium text-slate-400 list-none ml-0">
+                        <li><a href="/privacy.html" class="hover:text-emerald-400 transition-colors">Privacy Policy</a>
+                        </li>
+                        <li><a href="/terms.html" class="hover:text-emerald-400 transition-colors">Terms Guide</a></li>
+                        <li><a href="/contact.html" class="text-emerald-400 transition-colors">Contact Us</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="max-w-7xl mx-auto mt-20 pt-8 border-t border-white/5 text-xs text-slate-600">
+            &copy; 2026 OI Pro Analytics. All rights reserved.
+        </div>
+    </footer>
+
+    <script>
+        const contactForm = document.getElementById('contact-form');
+        const formContainer = document.getElementById('form-container');
+        const successMessage = document.getElementById('success-message');
+
+        contactForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            // In a real application, you would send the data to a server here
+            // For now, we simulate the submission
+            const submitBtn = contactForm.querySelector('button[type="submit"]');
+            const originalBtnContent = submitBtn.innerHTML;
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Sending...
+            `;
+
+            setTimeout(() => {
+                formContainer.classList.add('hidden');
+                successMessage.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnContent;
+                contactForm.reset();
+            }, 1500);
+        });
+
+        function resetForm() {
+            successMessage.classList.add('hidden');
+            formContainer.classList.remove('hidden');
+        }
+    </script>
+</body>
+
+</html>

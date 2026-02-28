@@ -118,7 +118,7 @@
 
             // Fetch Expiries
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.expiries && data.expiries.length > 0) {
@@ -132,7 +132,7 @@
             useEffect(() => {
                 if (!expiry) return;
                 setLoading(true);
-                fetch(`/api/pop-data?symbol=${symbol}&expiry=${expiry}`)
+                fetchWithAuth(`/api/pop-data?symbol=${symbol}&expiry=${expiry}`)
                     .then(res => res.json())
                     .then(res => {
                         setData(res.data || []);
@@ -230,13 +230,13 @@
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 pr-28">
                             <div>
                                 <h1 className="text-3xl font-black text-white tracking-tight">Premium vs PoP</h1>
                                 <p className="text-slate-500 font-medium">Risk-Reward Analysis for Option Sellers</p>
                             </div>
 
-                            <div className="flex gap-4">
+                            <div className="flex gap-4 pr-32">
                                 <select
                                     value={symbol}
                                     onChange={e => setSymbol(e.target.value)}

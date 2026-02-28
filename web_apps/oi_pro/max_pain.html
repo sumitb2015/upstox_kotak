@@ -93,7 +93,7 @@
 
             // Fetch Expiries
             useEffect(() => {
-                fetch(`/api/expiries?symbol=${symbol}`)
+                fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.expiries && data.expiries.length > 0) {
@@ -107,7 +107,7 @@
             useEffect(() => {
                 if (!expiry) return;
                 setLoading(true);
-                fetch(`/api/max-pain-data?symbol=${symbol}&expiry=${expiry}`)
+                fetchWithAuth(`/api/max-pain-data?symbol=${symbol}&expiry=${expiry}`)
                     .then(res => res.json())
                     .then(res => {
                         if (res.status === "success") {
@@ -267,7 +267,7 @@
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}
-                        <div className="flex flex-col lg:flex-row gap-8 mb-8 items-start">
+                        <div className="flex flex-col lg:flex-row gap-8 mb-8 items-start pr-28">
                             <div className="flex-shrink-0">
                                 <h1 className="text-4xl font-black text-white tracking-tight flex items-center gap-3">
                                     MAX PAIN <span className="bg-emerald-500 text-white px-2 py-0.5 rounded text-xs font-black tracking-widest">LIVE</span>
@@ -297,7 +297,7 @@
                             </div>
 
                             {/* Max Pain Display */}
-                            <div className="glass px-5 py-3 rounded-2xl border-slate-800/60 shadow-lg flex items-center justify-between gap-6 min-w-[280px]">
+                            <div className="glass px-5 py-3 rounded-2xl border-slate-800/60 shadow-lg flex items-center justify-between gap-6 min-w-[280px] pr-32">
                                 <div>
                                     <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-0.5">Max Pain Strike</p>
                                     <div className="flex items-center gap-3">

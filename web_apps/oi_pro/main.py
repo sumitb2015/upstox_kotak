@@ -1,3 +1,15 @@
+"""
+OI Pro Analytics - Dashboard Server
+====================================
+Main entry point for the OI Pro web application.
+Handles real-time market data streaming, Greeks history polling, and strategy management.
+
+Authentication: JWT-based security with SQLite user store.
+API Base: /api
+WebSocket Paths: /ws/market-watch, /ws/straddle, /ws/cumulative-prices
+
+Author: OI Pro Team
+"""
 import sys
 import os
 import time
@@ -5,25 +17,26 @@ import time
 # Force UTF-8 output so Windows cp1252 doesn't crash on any emoji/unicode in logs
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional, Dict
-from pydantic import BaseModel
-from fastapi.responses import HTMLResponse
-import uvicorn
 import json
 import asyncio
+import requests
+from typing import Dict, List, Optional, Any
+from pydantic import BaseModel
+from fastapi.responses import HTMLResponse, RedirectResponse
+import uvicorn
 import subprocess
 import signal
 import psutil
 from pathlib import Path
 import re
 
-# Import custom authentication module
-from auth import router as auth_router, init_db
-
 # Add project root to path for lib imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+# Import custom authentication module
+from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db
 
 from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr, calculate_max_pain
 from lib.api.market_data import get_full_option_chain, fetch_historical_data
@@ -40,9 +53,6 @@ from datetime import datetime
 SYMBOL_MAP = {
     "NIFTY": "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
-    "FINNIFTY": "NSE_INDEX|Nifty Fin Service", 
-    "NIFTYIT": "NSE_INDEX|Nifty IT",
-    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
     "SENSEX": "BSE_INDEX|SENSEX"
 }
 # Reverse map for broadcasting
@@ -56,6 +66,8 @@ TRADING_SYMBOL_LOOKUP = {}
 # Columns: [timestamp, strike, ce_delta, pe_delta, ce_gamma, pe_gamma, ce_oi, pe_oi, ...]
 GREEKS_HISTORY_CACHE: Dict[tuple, pd.DataFrame] = {}
 DELTA_HEATMAP_CACHE: Dict[tuple, List[dict]] = {}
+GREEKS_LOCK = asyncio.Lock()
+HEATMAP_LOCK = asyncio.Lock()
 LAST_CACHE_RESET_DATE = datetime.now().date()
 
 # --- Global Cache for Previous Closes (Indices) ---
@@ -64,6 +76,29 @@ PREV_CLOSES: Dict[str, float] = {}
 # --- Baseline OI for Heatmap (fetched once at startup, static for the day) ---
 # Structure: {(symbol, expiry, strike_float): {"ce_prev_oi": x, "pe_prev_oi": x, "ce_close": x, "pe_close": x}}
 BASELINE_OI: Dict[tuple, dict] = {}
+
+def tail_file(filename, lines=100):
+    """Efficiently get the last N lines of a file by seeking to the end."""
+    try:
+        if not os.path.exists(filename):
+            return "Log file not found."
+        with open(filename, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            buffer = bytearray()
+            pointer = f.tell()
+            lines_found = 0
+            while pointer > 0 and lines_found <= lines:
+                pointer -= 1
+                f.seek(pointer)
+                char = f.read(1)
+                if char == b'\n':
+                    lines_found += 1
+                buffer.extend(char)
+            return buffer[::-1].decode('utf-8', errors='replace')
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        return f"Error tailing log: {str(e)}"
 
 
 # --- Strategy Management ---
@@ -113,9 +148,9 @@ class StrategyManager:
                 continue
         return False
 
-    def get_strategy_status(self, strategy_id: str) -> Dict:
+    async def get_strategy_status(self, strategy_id: str) -> Dict:
         """Checks if a strategy process is running and returns its metadata."""
-        is_running = self._check_is_running(strategy_id)
+        is_running = await run_in_threadpool(self._check_is_running, strategy_id)
         pid = None
         uptime = None
         
@@ -127,22 +162,23 @@ class StrategyManager:
             uptime = str(uptime_delta).split('.')[0] # HH:MM:SS
         elif is_running:
             # Running but handle lost, find PID via psutil again for display
-             for p in psutil.process_iter(['pid', 'cmdline']):
-                try:
-                    cmdline = p.info['cmdline']
-                    if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
-                        pid = p.info['pid']
-                        # Recover start time from process info
-                        try:
-                            create_time = datetime.fromtimestamp(p.create_time())
-                            self.start_times[strategy_id] = create_time
-                            uptime_delta = datetime.now() - create_time
-                            uptime = str(uptime_delta).split('.')[0]
-                        except:
-                            pass
-                        break
-                except:
-                    pass
+            def find_pid():
+                for p in psutil.process_iter(['pid', 'cmdline']):
+                    try:
+                        cmdline = p.info['cmdline']
+                        if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
+                            return p.info['pid'], datetime.fromtimestamp(p.create_time())
+                    except:
+                        pass
+                return None, None
+                
+            found_pid, create_time = await run_in_threadpool(find_pid)
+            if found_pid:
+                pid = found_pid
+                if create_time:
+                    self.start_times[strategy_id] = create_time
+                    uptime_delta = datetime.now() - create_time
+                    uptime = str(uptime_delta).split('.')[0]
 
         # Get PnL from state file if it exists AND strategy is running
         pnl = 0.0
@@ -152,37 +188,33 @@ class StrategyManager:
             info = STRATEGIES_INFO.get(strategy_id)
             if info:
                 state_file = info['path'] / "strategy_state.json"
-                if state_file.exists():
-                    try:
-                        with open(state_file, 'r') as f:
-                            state = json.load(f)
-                            pnl = state.get('pnl', 0.0) or state.get('total_pnl', 0.0)
-                            
-                            # Extract additional details
-                            state_details['entry_state'] = state.get('entry_state', 'UNKNOWN')
-                            state_details['total_qty'] = state.get('total_qty', 0)
-                            
-                            # Enhance positions with LTP if available
-                            raw_positions = state.get('active_positions', {})
-                            enhanced_positions = {}
-                            
-                            for sym, qty in raw_positions.items():
-                                ltp = None
-                                # 1. Try to get key from lookup
-                                key = TRADING_SYMBOL_LOOKUP.get(sym)
-                                
-                                # 2. If streamer available, get price
-                                if key and streamer:
-                                    data = streamer.get_latest_data(key)
-                                    if data:
-                                        ltp = data.get('ltp')
-                                        
-                                # 3. Fallback: Check if streamer has data by symbol (expensive iteration, skipping for now)
-                                enhanced_positions[sym] = {"qty": qty, "ltp": ltp}
-
-                            state_details['positions'] = enhanced_positions
-                    except:
-                        pass
+                
+                def read_state_file():
+                    if state_file.exists():
+                        try:
+                            with open(state_file, 'r') as f:
+                                return json.load(f)
+                        except:
+                            pass
+                    return None
+                    
+                state = await run_in_threadpool(read_state_file)
+                if state:
+                    pnl = state.get('pnl', 0.0) or state.get('total_pnl', 0.0)
+                    state_details['entry_state'] = state.get('entry_state', 'UNKNOWN')
+                    state_details['total_qty'] = state.get('total_qty', 0)
+                    raw_positions = state.get('active_positions', {})
+                    enhanced_positions = {}
+                    
+                    for sym, qty in raw_positions.items():
+                        ltp = None
+                        key = TRADING_SYMBOL_LOOKUP.get(sym)
+                        if key and 'streamer' in globals() and streamer:
+                            data = streamer.get_latest_data(key)
+                            if data:
+                                ltp = data.get('ltp')
+                        enhanced_positions[sym] = {"qty": qty, "ltp": ltp}
+                    state_details['positions'] = enhanced_positions
 
         return {
             "id": strategy_id,
@@ -193,7 +225,7 @@ class StrategyManager:
             "details": state_details
         }
 
-    def start_strategy(self, strategy_id: str):
+    async def start_strategy(self, strategy_id: str):
         """Starts a strategy live.py as a background process."""
         if strategy_id in self.processes and self.processes[strategy_id].poll() is None:
             raise HTTPException(status_code=400, detail="Strategy already running")
@@ -203,7 +235,7 @@ class StrategyManager:
              raise HTTPException(status_code=404, detail="Strategy not found")
              
         live_file = info['path'] / "live.py"
-        if not live_file.exists():
+        if not await run_in_threadpool(live_file.exists):
             raise HTTPException(status_code=404, detail="live.py not found")
             
         # Set PYTHONPATH to project root so imports work
@@ -213,7 +245,11 @@ class StrategyManager:
         try:
             # Create/Open log file (overwrite for fresh logs on new run)
             log_path = info['path'] / "strategy.log"
-            self.log_files[strategy_id] = open(log_path, "w")
+            
+            def open_log():
+                return open(log_path, "w")
+                
+            self.log_files[strategy_id] = await run_in_threadpool(open_log)
 
             # Run in a new process group so it doesn't die with main.py if needed
             # On Windows, we use creationflags
@@ -228,10 +264,12 @@ class StrategyManager:
             self.processes[strategy_id] = proc
             self.start_times[strategy_id] = datetime.now()
             return {"status": "success", "pid": proc.pid}
+        except HTTPException as he:
+            raise he
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to start: {str(e)}")
 
-    def stop_strategy(self, strategy_id: str):
+    async def stop_strategy(self, strategy_id: str):
         """Terminated a strategy process. Tries graceful stop via file signal first."""
         # 1. Check internal tracking
         proc = self.processes.get(strategy_id)
@@ -242,93 +280,103 @@ class StrategyManager:
             if info:
                 stop_signal_file = info['path'] / ".STOP"
                 try:
-                    stop_signal_file.touch()
+                    await run_in_threadpool(stop_signal_file.touch)
                     # Wait for strategy to pick it up and exit (max 5s)
                     for _ in range(50):
                         if proc.poll() is not None:
                             break
-                        time.sleep(0.1)
+                        await asyncio.sleep(0.1)
+                except HTTPException as he:
+                    raise he
                 except Exception as e:
                     print(f"Error sending stop signal: {e}")
 
             # B. Force Terminate if still running
             if proc.poll() is None:
-                try:
-                    p = psutil.Process(proc.pid)
-                    for child in p.children(recursive=True):
-                        child.terminate()
-                    p.terminate()
-                    p.wait(timeout=3)
-                except:
-                    if proc.poll() is None:
-                        proc.kill()
+                def kill_process():
+                    try:
+                        p = psutil.Process(proc.pid)
+                        for child in p.children(recursive=True):
+                            child.terminate()
+                        p.terminate()
+                        p.wait(timeout=3)
+                    except:
+                        if proc.poll() is None:
+                            proc.kill()
+                await run_in_threadpool(kill_process)
             
             # C. Cleanup
-            del self.processes[strategy_id]
-            if strategy_id in self.start_times:
-                del self.start_times[strategy_id]
+            if strategy_id in self.processes: del self.processes[strategy_id]
+            if strategy_id in self.start_times: del self.start_times[strategy_id]
             
             # Close log file handle if open
             if strategy_id in self.log_files:
                 try:
-                    self.log_files[strategy_id].close()
+                    await run_in_threadpool(self.log_files[strategy_id].close)
                 except:
                     pass
                 del self.log_files[strategy_id]
                 
             # Remove signal file if it still exists
-            if info and (info['path'] / ".STOP").exists():
-                try: (info['path'] / ".STOP").unlink()
-                except: pass
+            if info:
+                def cleanup_stop_file():
+                    if (info['path'] / ".STOP").exists():
+                        try: (info['path'] / ".STOP").unlink()
+                        except: pass
+                await run_in_threadpool(cleanup_stop_file)
 
             return {"status": "stopped"}
         
         # 2. Check psutil (for orphaned processes)
-        stopped = False
-        for p in psutil.process_iter(['pid', 'cmdline']):
-            try:
-                cmdline = p.info['cmdline']
-                if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
-                    p.terminate()
-                    stopped = True
-            except:
-                continue
+        def terminate_orphans():
+            stopped = False
+            for p in psutil.process_iter(['pid', 'cmdline']):
+                try:
+                    cmdline = p.info['cmdline']
+                    if cmdline and "live.py" in cmdline[-1] and strategy_id in "".join(cmdline):
+                        p.terminate()
+                        stopped = True
+                except:
+                    continue
+            return stopped
                 
-        if stopped:
+        if await run_in_threadpool(terminate_orphans):
             return {"status": "stopped"}
             
         raise HTTPException(status_code=400, detail="Strategy not running")
 
-    def get_strategy_logs(self, strategy_id: str, lines: int = 100) -> Dict:
-        """Reads the last N lines from the strategy log file."""
-        # Check if running first - if not, return empty/blank logs as requested
-        # Use the robust check that handles restarts
-        if not self._check_is_running(strategy_id):
-            return {"logs": []}
-
+    async def get_strategy_logs(self, strategy_id: str, lines: int = 100) -> Dict:
+        """Reads the last N lines from the strategy log file using efficient tailing."""
         info = STRATEGIES_INFO.get(strategy_id)
         if not info:
              raise HTTPException(status_code=404, detail="Strategy not found")
         
         log_file = info['path'] / "strategy.log"
-        if not log_file.exists():
-            return {"logs": ["No logs available yet."]}
-            
-        try:
-            # Simple implementation for tailing last N lines
-            # For very large files, this might be inefficient but sufficient for now
-            with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
-                # Read all lines and take last N
-                # Improved: using deque for memory efficiency if file is huge? 
-                # Or just simple list slicing for now as logs rotate or are small
-                content = f.readlines()
-                return {"logs": content[-lines:]}
-        except Exception as e:
-            return {"logs": [f"Error reading logs: {str(e)}"]}
+        content = await run_in_threadpool(tail_file, str(log_file), lines)
+        
+        return {
+            "strategy_id": strategy_id,
+            "logs": content
+        }
 
 strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+
+@app.middleware("http")
+async def db_session_middleware(request: Request, call_next):
+    # Ensure fresh DB connection per request to prevent SQLite thread locks
+    db.connect(reuse_if_open=True)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        if not db.is_closed():
+            db.close()
 
 # Register auth routes
 app.include_router(auth_router)
@@ -349,7 +397,8 @@ def calculate_theoretical_pop(delta: float, option_type: str) -> float:
     return round(pop, 1)
 
 @app.get("/api/pop-data")
-async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
+async def get_pop_data(current_user: User = Depends(get_current_user),
+                      symbol: str = Query(..., description="Symbol like NIFTY"), 
                       expiry: str = Query(..., description="Expiry Date")):
     """
     Get data for Premium vs PoP Scatter Plot.
@@ -360,7 +409,7 @@ async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY")
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = get_access_token()
+        token = await get_access_token()
         
         # Run blocking call in threadpool to prevent freezing the server
         print(f" [PoP API] Fetching option chain for {instrument_key}...")
@@ -422,6 +471,8 @@ async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY")
         print(f" [PoP API] Returning {len(points)} data points")
         return {"data": points}
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -430,11 +481,11 @@ async def get_pop_data(symbol: str = Query(..., description="Symbol like NIFTY")
 # --- Strategy Management API ---
 
 @app.get("/api/strategies")
-async def list_strategies():
+async def list_strategies(current_user: User = Depends(get_current_user)):
     """Returns status of all tracked strategies."""
     results = []
     for strategy_id in STRATEGIES_INFO:
-        status = strategy_manager.get_strategy_status(strategy_id)
+        status = await strategy_manager.get_strategy_status(strategy_id)
         info = STRATEGIES_INFO[strategy_id]
         results.append({
             **status,
@@ -444,39 +495,45 @@ async def list_strategies():
     return {"strategies": results}
 
 @app.post("/api/strategies/start/{strategy_id}")
-async def start_strategy(strategy_id: str):
-    return strategy_manager.start_strategy(strategy_id)
+async def start_strategy(strategy_id: str, admin: User = Depends(check_admin)):
+    return await strategy_manager.start_strategy(strategy_id)
 
 @app.post("/api/strategies/stop/{strategy_id}")
-async def stop_strategy(strategy_id: str):
-    return strategy_manager.stop_strategy(strategy_id)
+async def stop_strategy(strategy_id: str, admin: User = Depends(check_admin)):
+    return await strategy_manager.stop_strategy(strategy_id)
 
 @app.get("/api/strategies/logs/{strategy_id}")
-async def get_strategy_logs(strategy_id: str):
-    return strategy_manager.get_strategy_logs(strategy_id)
+async def get_strategy_logs(strategy_id: str, current_user: User = Depends(get_current_user)):
+    return await strategy_manager.get_strategy_logs(strategy_id)
 
 @app.get("/api/strategies/config/{strategy_id}")
-async def get_strategy_config(strategy_id: str):
+async def get_strategy_config(strategy_id: str, current_user: User = Depends(get_current_user)):
     """Parses config.py and returns the CONFIG dictionary."""
     info = STRATEGIES_INFO.get(strategy_id)
     if not info:
         raise HTTPException(status_code=404, detail="Strategy not found")
         
     config_file = info['path'] / "config.py"
-    if not config_file.exists():
+    if not await run_in_threadpool(config_file.exists):
         raise HTTPException(status_code=404, detail="config.py not found")
         
     try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("config", str(config_file))
-        config_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config_module)
-        return {"config": config_module.CONFIG}
+        def import_config():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("config", str(config_file))
+            config_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config_module)
+            return config_module.CONFIG
+            
+        config_data = await run_in_threadpool(import_config)
+        return {"config": config_data}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
 
 @app.post("/api/strategies/config/{strategy_id}")
-async def update_strategy_config(strategy_id: str, new_config: Dict):
+async def update_strategy_config(strategy_id: str, new_config: Dict, admin: User = Depends(check_admin)):
     """Updates specific keys in config.py using regex to preserve comments."""
     info = STRATEGIES_INFO.get(strategy_id)
     if not info:
@@ -487,7 +544,7 @@ async def update_strategy_config(strategy_id: str, new_config: Dict):
         raise HTTPException(status_code=404, detail="config.py not found")
         
     try:
-        content = config_file.read_text()
+        content = await run_in_threadpool(config_file.read_text)
         
         for key, value in new_config.items():
             if isinstance(value, str):
@@ -502,14 +559,183 @@ async def update_strategy_config(strategy_id: str, new_config: Dict):
             if match:
                  content = re.sub(pattern, rf"\g<1>{replacement_val}", content)
             else:
-                # If key not found in current content (maybe newly added or formatting different)
-                # We could append it but safer to only update existing
                 pass
             
-        config_file.write_text(content)
+        await run_in_threadpool(config_file.write_text, content)
         return {"status": "success", "message": "Configuration updated"}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
+
+# --- Broker Management API ---
+
+@app.get("/api/brokers")
+def list_brokers(current_user: User = Depends(get_current_user)):
+    """Returns the list of brokers for the current user."""
+    brokers = BrokerCredential.select().where(BrokerCredential.user == current_user).dicts()
+    return [{
+        "id": b["id"],
+        "broker_name": b["broker_name"],
+        "name_tag": b["name_tag"],
+        "api_key": "***" + b["api_key"][-4:] if b["api_key"] else None,
+        "api_secret": "***" + b["api_secret"][-4:] if b["api_secret"] else None,
+        "redirect_uri": b["redirect_uri"],
+        "status": b["status"],
+        "token_exists": True if b["access_token"] else False,
+        "last_token_at": b["last_token_at"].strftime("%d-%m-%Y, %H:%M") if b["last_token_at"] else "-",
+        "created_at": b["created_at"].strftime("%d-%m-%Y, %H:%M") if b["created_at"] else "-"
+    } for b in brokers]
+
+@app.post("/api/brokers")
+def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)):
+    """Creates or updates broker credentials for the current user."""
+    broker_id = broker_data.get("id")
+    broker_name = broker_data.get("broker_name", "Upstox")
+    name_tag = broker_data.get("name_tag")
+    api_key = broker_data.get("api_key")
+    api_secret = broker_data.get("api_secret")
+    redirect_uri = broker_data.get("redirect_uri")
+
+    if broker_id:
+        # Update existing
+        try:
+            broker = BrokerCredential.get((BrokerCredential.id == broker_id) & (BrokerCredential.user == current_user))
+            broker.name_tag = name_tag
+            broker.redirect_uri = redirect_uri
+            
+            # Update secrets only if they are not the masked placeholders
+            if api_key and not api_key.startswith("***"):
+                broker.api_key = api_key
+            if api_secret and not api_secret.startswith("***"):
+                broker.api_secret = api_secret
+                
+            broker.save()
+            return {"status": "success", "message": "Broker updated successfully", "id": broker.id}
+        except BrokerCredential.DoesNotExist:
+            raise HTTPException(status_code=404, detail="Broker not found")
+    else:
+        # Create new
+        if not api_key or not api_secret:
+            raise HTTPException(status_code=400, detail="API Key and API Secret are required")
+
+        broker = BrokerCredential.create(
+            user=current_user,
+            broker_name=broker_name,
+            name_tag=name_tag,
+            api_key=api_key,
+            api_secret=api_secret,
+            redirect_uri=redirect_uri
+        )
+        return {"status": "success", "message": "Broker saved successfully", "id": broker.id}
+
+@app.delete("/api/brokers/{broker_id}")
+def delete_broker(broker_id: int, current_user: User = Depends(get_current_user)):
+    """Deletes the specified broker credential."""
+    try:
+        broker = BrokerCredential.get((BrokerCredential.id == broker_id) & (BrokerCredential.user == current_user))
+        broker.delete_instance()
+        return {"status": "success", "message": "Broker deleted"}
+    except BrokerCredential.DoesNotExist:
+        raise HTTPException(status_code=404, detail="Broker not found")
+
+@app.post("/api/brokers/generate-token/{broker_id}")
+def generate_broker_token(broker_id: int, current_user: User = Depends(get_current_user)):
+    """
+    Returns the Upstox Auth URL to initiate manual login.
+    """
+    try:
+        broker = BrokerCredential.get((BrokerCredential.id == broker_id) & (BrokerCredential.user == current_user))
+        
+        # Construct Upstox Auth URL
+        # redirect_uri must match what's in Upstox Developer Portal
+        # We use state to pass broker_id for the callback to identify the entry
+        auth_url = (
+            f"https://api-v2.upstox.com/login/authorization/dialog"
+            f"?response_type=code"
+            f"&client_id={broker.api_key}"
+            f"&redirect_uri={requests.utils.quote(broker.redirect_uri or 'http://127.0.0.1:8001/api/brokers/callback/upstox')}"
+            f"&state={broker.id}"
+        )
+        
+        return {"status": "success", "auth_url": auth_url}
+    except BrokerCredential.DoesNotExist:
+        raise HTTPException(status_code=404, detail="Broker not found")
+
+@app.get("/api/brokers/callback/upstox")
+def upstox_callback(request: Request, code: str, state: str):
+    """
+    OAuth Callback for Upstox.
+    Exchanges authorization code for access token.
+    Supports both direct navigation (redirect) and popup fetch API (JSON response).
+    """
+    broker_id = state
+    try:
+        broker = BrokerCredential.get_by_id(broker_id)
+        
+        # Token Exchange
+        token_url = "https://api-v2.upstox.com/login/authorization/token"
+        headers = {
+            "accept": "application/json",
+            "Api-Version": "2.0",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        data = {
+            "code": code,
+            "client_id": broker.api_key,
+            "client_secret": broker.api_secret,
+            "redirect_uri": broker.redirect_uri or 'http://127.0.0.1:8001/api/brokers/callback/upstox',
+            "grant_type": "authorization_code",
+        }
+        
+        response = requests.post(token_url, headers=headers, data=data)
+        jsr = response.json()
+        
+        access_token = jsr.get("access_token")
+        if not access_token:
+            if "application/json" in request.headers.get("accept", ""):
+                return {"status": "error", "message": "Auth failed", "details": jsr}
+            return HTMLResponse(content=f"<h2>Auth Failed</h2><pre>{json.dumps(jsr, indent=2)}</pre>", status_code=400)
+            
+        # Update Broker entry
+        broker.access_token = access_token
+        broker.last_token_at = datetime.utcnow()
+        broker.status = "Active"
+        broker.save()
+        
+        # Return an HTML page that messages the parent and closes itself
+        success_html = """
+        <html>
+            <head>
+                <title>Authentication Successful</title>
+                <style>
+                    body { background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; }
+                    .spinner { border: 4px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 50%; border-left-color: #10b981; animation: spin 1s linear infinite; margin-bottom: 20px; }
+                    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                </style>
+            </head>
+            <body>
+                <div class="spinner"></div>
+                <h2>Authentication Successful!</h2>
+                <p style="color: #94a3b8;">Finalizing and closing window...</p>
+                <script>
+                    if (window.opener) {
+                        window.opener.postMessage('upstox_auth_success', '*');
+                        setTimeout(() => window.close(), 1000);
+                    } else {
+                        window.location.href = '/brokers?token_success=true';
+                    }
+                </script>
+            </body>
+        </html>
+        """
+        return HTMLResponse(content=success_html)
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        import traceback
+        return HTMLResponse(content=f"<h2>Callback Error</h2><p>{str(e)}</p><pre>{traceback.format_exc()}</pre>", status_code=500)
 
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
@@ -553,6 +779,8 @@ class ConnectionManager:
         if streamer and streamer.market_streamer:
             try:
                 streamer.subscribe_market_data(normalized_keys)
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f" [WS] Error subscribing to keys {normalized_keys}: {e}")
 
@@ -572,6 +800,8 @@ class ConnectionManager:
             for connection in self.subscriptions[instrument_key]:
                 try:
                     await connection.send_json(message)
+                except HTTPException as he:
+                    raise he
                 except Exception as e:
                     print(f" [WS] Disconnecting broken pipe for {instrument_key}")
                     to_remove.append(connection)
@@ -627,17 +857,32 @@ loop = None # Global event loop reference
 # --- WebSocket Endpoints ---
 
 @app.websocket("/ws/straddle")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
+    """
+    Consolidated WebSocket endpoint for real-time Straddle updates.
+    Client sends JSON subscribe request.
+    """
+    # Manual token check for WS (FastAPI Depends can sometimes be tricky with WS handshakes in some clients)
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt
+            verify_jwt(token)
+    except:
+         await websocket.close(code=1008) # Policy Violation
+         return
+
     await manager.connect(websocket)
     print(" [WS] New Straddle WS Connection")
     try:
         while True:
-            # We expect a message like {"action": "subscribe", "keys": ["NSE_FO|..."]}
+            # Flexible: accept text or json
             data = await websocket.receive_text()
             try:
                 msg = json.loads(data)
                 if msg.get("action") == "subscribe" and msg.get("keys"):
-                    await manager.subscribe(websocket, msg["keys"])
+                    # Normalize keys
+                    keys = [k.replace(':', '|') for k in msg.get("keys", [])]
+                    await manager.subscribe(websocket, keys)
             except json.JSONDecodeError:
                 print(f" [WS] Invalid JSON received: {data}")
     except WebSocketDisconnect:
@@ -645,7 +890,19 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 @app.websocket("/ws/cumulative-prices")
-async def websocket_cumulative_prices(websocket: WebSocket):
+async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(None)):
+    """
+    WebSocket endpoint for cumulative option prices.
+    Authenticates via token query parameter and broadcasts live price updates.
+    """
+    # Manual token check
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt
+            verify_jwt(token)
+    except:
+         await websocket.close(code=1008)
+         return
     await manager.connect(websocket)
     print(" [WS] [CumulativePrices] New connection")
 
@@ -671,7 +928,7 @@ async def websocket_cumulative_prices(websocket: WebSocket):
                             print(f" [WS] [CumulativePrices] Subscribing {symbol} {expiry}...")
                             await websocket.send_json({"type": "status", "status": "loading", "symbol": symbol})
 
-                            token = auth_get_token()
+                            token = await get_access_token()
                             index_key = SYMBOL_MAP.get(symbol)
                             if not index_key:
                                 await websocket.send_json({"type": "error", "message": f"Unknown symbol: {symbol}"})
@@ -747,8 +1004,7 @@ async def websocket_cumulative_prices(websocket: WebSocket):
                     # PE > CE => more put premium => bullish (support)
                     # Adaptive thresholds per symbol (premiums scale with index level)
                     SENTIMENT_THRESHOLDS = {
-                        "NIFTY": 50, "BANKNIFTY": 150, "FINNIFTY": 40,
-                        "MIDCPNIFTY": 30, "SENSEX": 200
+                        "NIFTY": 50, "BANKNIFTY": 150, "SENSEX": 200
                     }
                     threshold = SENTIMENT_THRESHOLDS.get(symbol, 50)
                     if diff > threshold:
@@ -789,6 +1045,8 @@ async def websocket_cumulative_prices(websocket: WebSocket):
 
             except WebSocketDisconnect:
                 break
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f" [WS] [CumulativePrices] Loop Error: {e}")
                 import traceback; traceback.print_exc()
@@ -799,12 +1057,16 @@ async def websocket_cumulative_prices(websocket: WebSocket):
 
 @app.on_event("startup")
 async def startup_event_ws():
+    """
+    Initializes the Upstox WebSocket bridge on application startup.
+    Sets up the market watch streamer and pre-fetches historical data for indices.
+    """
     global streamer, loop
     loop = asyncio.get_event_loop()
     print(" Starting Upstox WebSocket Bridge...")
     try:
         # Initialize streamer with access token
-        token = auth_get_token()
+        token = await get_access_token()
         streamer = UpstoxStreamer(token)
         
         # Define callback that bridges Thread -> Async
@@ -848,6 +1110,8 @@ async def startup_event_ws():
                     print(f"    {sym}: Prev Close = {prev_close}")
                 else:
                     print(f"    {sym}: No historical data found")
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f"    {sym}: Failed to fetch history: {e}")
 
@@ -855,7 +1119,8 @@ async def startup_event_ws():
         asyncio.create_task(prefetch_option_master())
         
         # --- Start Greeks Poller (1-min interval) ---
-        asyncio.create_task(poll_major_greeks())
+        # Note: redundant as unified_background_poller is started in startup_event
+        # asyncio.create_task(unified_background_poller())
 
         # Start Streamer
         streamer.connect_market_data(
@@ -865,6 +1130,8 @@ async def startup_event_ws():
         )
         print(" Upstox Streamer Connected & Listening")
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f" Failed to initialize Upstox Streamer: {e}")
 
@@ -872,7 +1139,7 @@ async def prefetch_option_master():
     """Fetches option chains for all indices to populate TRADING_SYMBOL_LOOKUP."""
     print(" [Dashboard] Prefetching Option Master for LTP Lookup...")
     try:
-        token = auth_get_token()
+        token = await get_access_token()
         
         for symbol, index_key in SYMBOL_MAP.items():
             try:
@@ -902,9 +1169,13 @@ async def prefetch_option_master():
                                     count += 1
 
                 print(f"   Mapped {count} options for {symbol}")
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f"    Failed to prefetch {symbol}: {e}")
                 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f" Prefetch failed: {e}")
 
@@ -916,6 +1187,7 @@ async def load_todays_data():
     """
     print("[CORE] Loading today's NIFTY data from CSV...")
     try:
+        token = await get_access_token()
         from lib.utils.greeks_helper import LOT_SIZE_MAP
         today = datetime.now().date()
         file_path = greeks_storage._get_file_path("NIFTY", today)
@@ -987,9 +1259,12 @@ async def load_todays_data():
                 snapshots.append({"timestamp": time_key, "spot": spot, "strikes": strike_deltas})
 
             # Keep max 400 snapshots (covers full 09:15-15:30 trading day)
-            DELTA_HEATMAP_CACHE[cache_key] = snapshots[-400:]
+            async with HEATMAP_LOCK:
+                DELTA_HEATMAP_CACHE[cache_key] = snapshots[-400:]
             print(f"[CORE] NIFTY {exp_str}: Loaded {len(DELTA_HEATMAP_CACHE[cache_key])} intervals from CSV.")
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         print(f"[CORE] load_todays_data failed: {e}")
@@ -1007,7 +1282,7 @@ async def fetch_baseline_oi():
     global BASELINE_OI
     print("IN [CORE] [Baseline OI] Fetching previous session OI...")
     try:
-        token = auth_get_token()
+        token = await get_access_token()
         for symbol in SYMBOL_MAP.keys():
             index_key = SYMBOL_MAP.get(symbol)
             if not index_key:
@@ -1037,142 +1312,137 @@ async def fetch_baseline_oi():
             print(f"    [Baseline OI] {symbol} {expiry}: Stored {count} strikes")
 
         print(f" [CORE] [Baseline OI] Done. Total keys: {len(BASELINE_OI)}")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f" [CORE] [Baseline OI] Failed: {e}")
 
-async def poll_major_greeks():
-
+async def unified_background_poller():
     """
-    Background task to poll all indices every 1 minute.
-    Populates GREEKS_HISTORY_CACHE and saves CSV snapshots.
+    Unified background task: 
+    1. Polls all indices for GEX/Greeks history.
+    2. Polls NIFTY specifically for the Delta Heatmap.
+    3. Handles daily cache rollover.
+    This consolidation reduces concurrent tasks and simplifies logging.
     """
-    print(" [CORE] [Greeks Poller] Background task started (1-min interval)")
+    print(" [CORE] Unified Background Poller started (1-min interval)")
     global LAST_CACHE_RESET_DATE
+    from lib.utils.greeks_helper import LOT_SIZE_MAP
+    
+    cycle_count = 0
     
     while True:
         try:
             # --- Daily Cache Reset ---
             today = datetime.now().date()
             if today > LAST_CACHE_RESET_DATE:
-                print(f" [CORE] New day detected ({today}). Resetting Greeks caches.")
+                print(f" [CORE] New day detected ({today}). Resetting all caches.")
                 GREEKS_HISTORY_CACHE.clear()
-                DELTA_HEATMAP_CACHE.clear()
+                async with HEATMAP_LOCK:
+                    DELTA_HEATMAP_CACHE.clear()
+                async with GREEKS_LOCK:
+                    GREEKS_HISTORY_CACHE.clear()
                 LAST_CACHE_RESET_DATE = today
 
-            token = auth_get_token()
+            token = await get_access_token()
+            cycle_count += 1
+            is_nifty_heatmap_updated = False
+            
+            # --- Symbol Polling Loop ---
             for symbol in SYMBOL_MAP.keys():
                 index_key = SYMBOL_MAP.get(symbol)
                 if not index_key: continue
                 
+                # Fetch expiries once per symbol/cycle
                 expiries = await run_in_threadpool(get_expiries, token, index_key)
                 if not expiries: continue
-                
                 expiry = str(expiries[0]) 
-                print(f" [Greeks Poller] Fetching {symbol} {expiry}...")
-                
+
+                # Fetch Option Chain Dataframe
                 df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
-                if df is not None and not df.empty:
-                    df = calculate_gex_for_chain(df, symbol)
-                    snapshot_df = prepare_snapshot(df)
-                    
-                    cache_key = (symbol, expiry)
-                    if cache_key not in GREEKS_HISTORY_CACHE:
-                        GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
-                    else:
-                        GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
-                    
-                    # Store to CSV
-                    try:
-                        greeks_storage.save_snapshot(symbol, expiry, snapshot_df)
-                    except Exception as storage_err:
-                        print(f" [Greeks Poller] Storage error: {storage_err}")
-            
+                if df is None or df.empty: continue
+
+                # 1. Greeks/GEX Processing (for all symbols)
+                df_gex = calculate_gex_for_chain(df.copy(), symbol)
+                snapshot_df = prepare_snapshot(df_gex)
+                
+                cache_key = (symbol, expiry)
+                if cache_key not in GREEKS_HISTORY_CACHE:
+                    GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
+                else:
+                    GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+                
+                # Store to CSV (Thread-pooled to prevent blocking)
+                try:
+                    await run_in_threadpool(greeks_storage.save_snapshot, symbol, expiry, snapshot_df)
+                except Exception as storage_err:
+                    print(f" [Poller] {symbol} Storage error: {storage_err}")
+
+                # 2. Delta Heatmap Processing (NIFTY Only)
+                if symbol == "NIFTY":
+                    lot_size = LOT_SIZE_MAP.get("NIFTY", 75)
+                    spot_price = float(df['spot_price'].iloc[0]) if 'spot_price' in df.columns else 0.0
+
+                    # Filter to ATM +/- 8 strikes
+                    df_heatmap = df.copy()
+                    if spot_price > 0 and 'strike_price' in df_heatmap.columns:
+                        all_strikes = sorted(df_heatmap['strike_price'].unique())
+                        atm = min(all_strikes, key=lambda s: abs(s - spot_price))
+                        idx = all_strikes.index(atm)
+                        df_heatmap = df_heatmap[df_heatmap['strike_price'].isin(all_strikes[max(0, idx - 8) : idx + 9])]
+
+                    strike_deltas = []
+                    for _, row in df_heatmap.iterrows():
+                        ce_oi = float(row.get('ce_oi', 0) or 0)
+                        pe_oi = float(row.get('pe_oi', 0) or 0)
+                        ce_d  = float(row.get('ce_delta', 0) or 0)
+                        pe_d  = float(row.get('pe_delta', 0) or 0)
+                        net_d = (ce_d * ce_oi * lot_size) + (pe_d * pe_oi * lot_size)
+                        strike_deltas.append({
+                            "strike":     float(row.get('strike_price', 0)),
+                            "net_delta":  round(net_d, 0),
+                            "ce_oi":      ce_oi,
+                            "pe_oi":      pe_oi,
+                            "ce_ltp":     float(row.get('ce_ltp', 0) or 0),
+                            "pe_ltp":     float(row.get('pe_ltp', 0) or 0),
+                            "ce_prev_oi": float(row.get('ce_prev_oi', 0) or 0),
+                            "pe_prev_oi": float(row.get('pe_prev_oi', 0) or 0),
+                            "ce_close":   float(row.get('ce_close', 0) or 0),
+                            "pe_close":   float(row.get('pe_close', 0) or 0),
+                        })
+
+                    heatmap_snap = {
+                        "timestamp": datetime.now().strftime("%H:%M"),
+                        "spot": spot_price,
+                        "strikes": strike_deltas,
+                    }
+
+                    hm_cache_key = ("NIFTY", expiry)
+                    async with HEATMAP_LOCK:
+                        if hm_cache_key not in DELTA_HEATMAP_CACHE:
+                            DELTA_HEATMAP_CACHE[hm_cache_key] = []
+                        DELTA_HEATMAP_CACHE[hm_cache_key].append(heatmap_snap)
+                        DELTA_HEATMAP_CACHE[hm_cache_key] = DELTA_HEATMAP_CACHE[hm_cache_key][-400:]
+                    is_nifty_heatmap_updated = True
+
+                # Small jitter to prevent API burst
+                await asyncio.sleep(0.5)
+
+            # --- Quiet Mode Logging (Every 5 cycles) ---
+            if cycle_count % 5 == 0:
+                print(f" [CORE] Poller Cycle {cycle_count} completed successfully at {datetime.now().strftime('%H:%M:%S')}")
+            elif is_nifty_heatmap_updated and cycle_count % 1 == 0:
+                 # Even quieter: just a single line if user wants to see movement, else comment out.
+                 # Let's keep it very quiet as requested.
+                 pass
+
             await asyncio.sleep(60) 
-        except Exception as e:
-            print(f" [Greeks Poller] Error: {e}")
-            await asyncio.sleep(30)
-
-async def poll_delta_heatmap():
-    """
-    Background task: polls NIFTY option chain every 1 minute and appends
-    a snapshot to DELTA_HEATMAP_CACHE. Handles midnight rollover.
-    """
-    print("[CORE] Delta Heatmap Poller started (NIFTY, 1-min interval)")
-    global LAST_CACHE_RESET_DATE
-    from lib.utils.greeks_helper import LOT_SIZE_MAP
-
-    nifty_key = SYMBOL_MAP["NIFTY"]
-    lot_size = LOT_SIZE_MAP.get("NIFTY", 75)
-
-    while True:
-        try:
-            # --- Daily cache rollover at midnight ---
-            today = datetime.now().date()
-            if today > LAST_CACHE_RESET_DATE:
-                DELTA_HEATMAP_CACHE.clear()
-                LAST_CACHE_RESET_DATE = today
-                print("[CORE] New trading day -- DELTA_HEATMAP_CACHE cleared.")
-
-            token = auth_get_token()
-            expiries = await run_in_threadpool(get_expiries, token, nifty_key)
-            if not expiries:
-                await asyncio.sleep(60)
-                continue
-            expiry = str(expiries[0])
-
-            df = await run_in_threadpool(get_option_chain_dataframe, token, nifty_key, expiry)
-            if df is None or df.empty:
-                await asyncio.sleep(60)
-                continue
-
-            spot_price = float(df['spot_price'].iloc[0]) if 'spot_price' in df.columns else 0.0
-
-            # Filter to ATM +/- 8 strikes
-            if spot_price > 0 and 'strike_price' in df.columns:
-                all_strikes = sorted(df['strike_price'].unique())
-                atm = min(all_strikes, key=lambda s: abs(s - spot_price))
-                idx = all_strikes.index(atm)
-                df = df[df['strike_price'].isin(all_strikes[max(0, idx - 8) : idx + 9])]
-
-            strike_deltas = []
-            for _, row in df.iterrows():
-                ce_oi = float(row.get('ce_oi', 0) or 0)
-                pe_oi = float(row.get('pe_oi', 0) or 0)
-                ce_d  = float(row.get('ce_delta', 0) or 0)
-                pe_d  = float(row.get('pe_delta', 0) or 0)
-                net_d = (ce_d * ce_oi * lot_size) + (pe_d * pe_oi * lot_size)
-                strike_deltas.append({
-                    "strike":     float(row.get('strike_price', 0)),
-                    "net_delta":  round(net_d, 0),
-                    "ce_oi":      ce_oi,
-                    "pe_oi":      pe_oi,
-                    "ce_ltp":     float(row.get('ce_ltp', 0) or 0),
-                    "pe_ltp":     float(row.get('pe_ltp', 0) or 0),
-                    "ce_prev_oi": float(row.get('ce_prev_oi', 0) or 0),
-                    "pe_prev_oi": float(row.get('pe_prev_oi', 0) or 0),
-                    "ce_close":   float(row.get('ce_close', 0) or 0),
-                    "pe_close":   float(row.get('pe_close', 0) or 0),
-                })
-
-            snapshot = {
-                "timestamp": datetime.now().strftime("%H:%M"),
-                "spot": spot_price,
-                "strikes": strike_deltas,
-            }
-
-            cache_key = ("NIFTY", expiry)
-            if cache_key not in DELTA_HEATMAP_CACHE:
-                DELTA_HEATMAP_CACHE[cache_key] = []
-            DELTA_HEATMAP_CACHE[cache_key].append(snapshot)
-            # Keep max 400 entries (one per minute, covers full 09:15-15:30 day)
-            DELTA_HEATMAP_CACHE[cache_key] = DELTA_HEATMAP_CACHE[cache_key][-400:]
-            print(f"[CORE] Heatmap snap: NIFTY {expiry} | {snapshot['timestamp']} | spot={spot_price} | intervals={len(DELTA_HEATMAP_CACHE[cache_key])}")
-
-            await asyncio.sleep(60)
+        except HTTPException as he:
+            raise he
         except Exception as e:
             import traceback
-            print(f"[CORE] poll_delta_heatmap error: {e}")
+            print(f" [CORE] Unified Poller Error: {e}")
             print(traceback.format_exc())
             await asyncio.sleep(30)
 
@@ -1184,6 +1454,8 @@ async def startup_event():
         # Initialize the authentication database
         init_db()
         print("[AUTH] Database initialized")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"[AUTH] Failed to init DB: {e}")
 
@@ -1197,9 +1469,10 @@ async def startup_event():
         # 3. Launch Background Pollers
         print("[CORE] Starting background tasks...")
         asyncio.create_task(prefetch_option_master())
-        # asyncio.create_task(poll_major_greeks())
-        asyncio.create_task(poll_delta_heatmap())
-        print("[CORE] All background tasks initialized.")
+        asyncio.create_task(unified_background_poller())
+        print("[CORE] Background processes initialized.")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"[CORE] Startup Failure: {e}")
 
@@ -1211,7 +1484,19 @@ async def shutdown_event():
         streamer.disconnect_all()
 
 @app.websocket("/ws/market-watch")
-async def websocket_market_watch(websocket: WebSocket):
+async def websocket_market_watch(websocket: WebSocket, token: str = Query(None)):
+    """
+    WebSocket endpoint for the dashboard market watch (LTP updates).
+    Authenticates via token and subscribes the user to real-time index updates.
+    """
+    # Manual token check
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt
+            verify_jwt(token)
+    except:
+         await websocket.close(code=1008)
+         return
     """
     WebSocket endpoint for Dashboard Indices (NIFTY, BANKNIFTY, etc.)
     Broadcasts in format: { type: "market_update", prices: { SYMBOL: { ltp: ..., chg: ... } } }
@@ -1245,42 +1530,14 @@ async def websocket_market_watch(websocket: WebSocket):
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Market Watch WS Error: {e}")
         manager.disconnect(websocket)
 
-@app.websocket("/ws/straddle")
-async def websocket_straddle(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time Straddle updates.
-    Client sends: {"action": "subscribe", "keys": ["NSE_FO|...", "NSE_FO|..."]}
-    Server sends: Stream of tick data for those keys.
-    """
-    await manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_json()
-            if data.get("action") == "subscribe":
-                # Normalize keys to use pipe separator to match streamer updates
-                keys = [k.replace(':', '|') for k in data.get("keys", [])]
-                if keys:
-                    print(f" [Straddle WS] Received subscribe request for: {keys}")
-                    await manager.subscribe(websocket, keys)
-                    print(f" [Straddle WS] Client subscribed. Active Subs: {list(manager.subscriptions.keys())}")
-                    
-                    # Send immediate latest data if available
-                    if streamer:
-                        for key in keys:
-                            latest = streamer.get_latest_data(key)
-                            if latest:
-                                await websocket.send_json(latest)
-                                
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        print(" Client disconnected")
-    except Exception as e:
-        print(f"WebSocket Error: {e}")
-        manager.disconnect(websocket)
+# Duplicate consolidated (see line 647)
+pass
 
 # CORS Configuration for React Frontend
 app.add_middleware(
@@ -1291,12 +1548,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_access_token():
+async def get_access_token():
     """
     Returns a valid access token using the core authentication library.
-    Automatically handles validation and refresh if credentials are in .env.
+    Offloads the synchronous validation/refresh to a thread pool.
     """
-    token = auth_get_token(auto_refresh=True)
+    from starlette.concurrency import run_in_threadpool
+    token = await run_in_threadpool(auth_get_token, auto_refresh=True)
     if not token:
         raise HTTPException(status_code=500, detail="Failed to retrieve or refresh access token. Please check .env credentials.")
     return token
@@ -1310,35 +1568,62 @@ def calculate_buildup(price_chg_pct, oi_chg_pct):
 
 @app.get("/login", response_class=HTMLResponse)
 async def serve_login():
+    """Serves the login page (index.html, but intended as a login barrier)."""
     html_path = os.path.join(os.path.dirname(__file__), "login.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="Login page not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+    
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/login.html", response_class=HTMLResponse)
+async def serve_login_html():
+    """Serves the actual login.html file."""
+    return await serve_login()
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
+    """Serves the main dashboard (index.html)."""
     html_path = os.path.join(os.path.dirname(__file__), "index.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="Index.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/pop", response_class=HTMLResponse)
 async def serve_pop_page():
     html_path = os.path.join(os.path.dirname(__file__), "pop.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="pop.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/pcr", response_class=HTMLResponse)
 async def serve_pcr_page():
     html_path = os.path.join(os.path.dirname(__file__), "pcr.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="pcr.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/multi", response_class=HTMLResponse)
 async def serve_multi_chart_page():
@@ -1349,8 +1634,13 @@ async def serve_multi_chart_page():
     html_path = os.path.join(os.path.dirname(__file__), "multi_chart.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="multi_chart.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/straddle", response_class=HTMLResponse)
 async def serve_straddle_page():
@@ -1360,8 +1650,13 @@ async def serve_straddle_page():
     html_path = os.path.join(os.path.dirname(__file__), "straddle.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="straddle.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/cumulative", response_class=HTMLResponse)
 async def serve_cumulative_page():
@@ -1372,8 +1667,13 @@ async def serve_cumulative_page():
     if not os.path.exists(html_path):
         # Create it later or error out
         raise HTTPException(status_code=404, detail="cumulative_oi.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/strike", response_class=HTMLResponse)
 async def serve_strike_page():
@@ -1383,8 +1683,13 @@ async def serve_strike_page():
     html_path = os.path.join(os.path.dirname(__file__), "strike.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="strike.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/greeks", response_class=HTMLResponse)
 async def serve_greeks_page():
@@ -1394,8 +1699,13 @@ async def serve_greeks_page():
     html_path = os.path.join(os.path.dirname(__file__), "greeks.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="greeks.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/strike-greeks", response_class=HTMLResponse)
 async def serve_strike_greeks_page():
@@ -1405,8 +1715,13 @@ async def serve_strike_greeks_page():
     html_path = os.path.join(os.path.dirname(__file__), "strike_greeks.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="strike_greeks.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 from fastapi.responses import Response
 
@@ -1419,8 +1734,13 @@ async def serve_sidebar_js():
     js_path = os.path.join(os.path.dirname(__file__), "sidebar.js")
     if not os.path.exists(js_path):
         raise HTTPException(status_code=404, detail="sidebar.js not found")
-    with open(js_path, "r", encoding="utf-8") as f:
-        return Response(content=f.read(), media_type="application/javascript")
+
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    content = await run_in_threadpool(read_file, js_path)
+    return Response(content=content, media_type="application/javascript")
 
 
 @app.get("/gex", response_class=HTMLResponse)
@@ -1431,8 +1751,13 @@ async def serve_gex_page():
     html_path = os.path.join(os.path.dirname(__file__), "gex.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="gex.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/max-pain", response_class=HTMLResponse)
 async def serve_max_pain_page():
@@ -1442,8 +1767,13 @@ async def serve_max_pain_page():
     html_path = os.path.join(os.path.dirname(__file__), "max_pain.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="max_pain.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/multi-strike", response_class=HTMLResponse)
 async def serve_multi_strike_page():
@@ -1453,8 +1783,13 @@ async def serve_multi_strike_page():
     html_path = os.path.join(os.path.dirname(__file__), "multi_strike.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="multi_strike.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/multi-strike-oi", response_class=HTMLResponse)
 async def serve_multi_strike_oi_page():
@@ -1476,8 +1811,13 @@ async def serve_cumulative_prices_page():
     html_path = os.path.join(os.path.dirname(__file__), "cumulative_prices.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="cumulative_prices.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def serve_strategies_page():
@@ -1487,8 +1827,13 @@ async def serve_strategies_page():
     html_path = os.path.join(os.path.dirname(__file__), "strategies.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="strategies.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/users", response_class=HTMLResponse)
 async def serve_users_page():
@@ -1498,8 +1843,13 @@ async def serve_users_page():
     html_path = os.path.join(os.path.dirname(__file__), "users.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="users.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
 @app.get("/option-chain", response_class=HTMLResponse)
 async def serve_option_chain_page():
@@ -1509,12 +1859,123 @@ async def serve_option_chain_page():
     html_path = os.path.join(os.path.dirname(__file__), "option_chain.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="option_chain.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def serve_privacy_page():
+    """
+    Serves the Privacy Policy page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "privacy.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="privacy.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/privacy.html", response_class=HTMLResponse)
+async def serve_privacy_page_html():
+    return await serve_privacy_page()
+
+@app.get("/pricing", response_class=HTMLResponse)
+async def serve_pricing_page():
+    """
+    Serves the Pricing page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "pricing.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="pricing.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/pricing.html", response_class=HTMLResponse)
+async def serve_pricing_page_html():
+    return await serve_pricing_page()
+
+@app.get("/terms", response_class=HTMLResponse)
+async def serve_terms_page():
+    """
+    Serves the Terms and Conditions page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "terms.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="terms.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/terms.html", response_class=HTMLResponse)
+async def serve_terms_page_html():
+    return await serve_terms_page()
+
+async def serve_static_page(filename):
+    """Generic helper to serve HTML files from the current directory."""
+    html_path = os.path.join(os.path.dirname(__file__), filename)
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail=f"{filename} not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/brokers", response_class=HTMLResponse)
+async def serve_brokers_page():
+    return await serve_static_page("brokers.html")
+
+@app.get("/contact", response_class=HTMLResponse)
+async def serve_contact_page():
+    return await serve_static_page("contact.html")
+
+@app.get("/contact.html", response_class=HTMLResponse)
+async def serve_contact_page_html():
+    return await serve_contact_page()
+
+@app.get("/heatmap", response_class=HTMLResponse)
+async def serve_heatmap_page():
+    """
+    Serves the Heatmap page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "heatmap.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="heatmap.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/heatmap.html", response_class=HTMLResponse)
+async def serve_heatmap_page_html():
+    return await serve_heatmap_page()
 
 @app.get("/api/greeks-data")
-async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
-                         expiry: str = Query(..., description="Expiry Date")):
+async def get_greeks_data(current_user: User = Depends(get_current_user),
+                        symbol: str = Query(..., description="Symbol like NIFTY"), 
+                        expiry: str = Query(..., description="Expiry Date")):
     """
     Get Greeks (Delta, Gamma) data per strike.
     Appends new data to a global cache history.
@@ -1525,7 +1986,7 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = get_access_token()
+        token = await get_access_token()
         
         # 1. Fetch Option Chain
         print(f" [Greeks API] Fetching option chain for {instrument_key}...")
@@ -1565,15 +2026,16 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
         
         # Update Global Cache
         cache_key = (symbol, expiry)
-        if cache_key not in GREEKS_HISTORY_CACHE:
-            GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
-        else:
-            # Append new snapshot
-            GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
+        async with GREEKS_LOCK:
+            if cache_key not in GREEKS_HISTORY_CACHE:
+                GREEKS_HISTORY_CACHE[cache_key] = snapshot_df
+            else:
+                # Append new snapshot
+                GREEKS_HISTORY_CACHE[cache_key] = pd.concat([GREEKS_HISTORY_CACHE[cache_key], snapshot_df], ignore_index=True)
         
-        # Persistent storage (CSV)
+        # Persistent storage (CSV) (Thread-pooled)
         try:
-            greeks_storage.save_snapshot(symbol, expiry, snapshot_df)
+            await run_in_threadpool(greeks_storage.save_snapshot, symbol, expiry, snapshot_df)
         except Exception as storage_err:
             print(f" [Greeks API] Storage error: {storage_err}")
                 
@@ -1602,26 +2064,32 @@ async def get_greeks_data(symbol: str = Query(..., description="Symbol like NIFT
             "data": snapshot_df.to_dict(orient="records")
         }
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/debug-cache")
-async def debug_cache():
+async def debug_cache(current_user: User = Depends(get_current_user)):
+    async with HEATMAP_LOCK:
+        heatmap_stats = {str(k): len(v) for k, v in DELTA_HEATMAP_CACHE.items()}
+    async with GREEKS_LOCK:
+        history_stats = {str(k): len(v) for k, v in GREEKS_HISTORY_CACHE.items()}
     return {
-        "heatmap": {str(k): len(v) for k, v in DELTA_HEATMAP_CACHE.items()},
-        "history": {str(k): len(v) for k, v in GREEKS_HISTORY_CACHE.items()}
+        "heatmap": heatmap_stats,
+        "history": history_stats
     }
 
 @app.get("/api/gex-history")
-async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
+async def get_gex_history(symbol: str = "NIFTY", expiry: str = None, current_user: User = Depends(get_current_user)):
     """
     Returns time-series data for Net GEX and Spot Price.
     Used for the Net GEX regime traffic light chart.
     """
     try:
-        token = auth_get_token()
+        token = await get_access_token()
         index_key = SYMBOL_MAP.get(symbol.upper())
         if not expiry:
             expiries = await run_in_threadpool(get_expiries, token, index_key)
@@ -1632,7 +2100,10 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
             expiry = str(expiry).replace('T', ' ')
             
         cache_key = (symbol.upper(), expiry)
-        df_history = GREEKS_HISTORY_CACHE.get(cache_key)
+        async with GREEKS_LOCK:
+            df_history = GREEKS_HISTORY_CACHE.get(cache_key)
+            if df_history is not None:
+                 df_history = df_history.copy() # Return a copy for thread-safety during processing
         
         if df_history is None or df_history.empty:
             return {"status": "success", "data": []}
@@ -1656,22 +2127,17 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None):
             "metadata": {"symbol": symbol, "expiry": expiry},
             "data": history
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback; traceback.print_exc()
         print(f"Error fetching GEX history: {e}")
         return {"status": "error", "message": str(e)}
 
-@app.get("/heatmap", response_class=HTMLResponse)
-async def serve_heatmap_page():
-    """Serves the Exposure Change Heatmap page."""
-    html_path = os.path.join(os.path.dirname(__file__), "heatmap.html")
-    if not os.path.exists(html_path):
-        raise HTTPException(status_code=404, detail="heatmap.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
+# Duplicate heatmap handler removed (already defined at line 1701)
 
 @app.get("/api/delta-heatmap")
-async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolution: int = 1):
+async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolution: int = 1, current_user: User = Depends(get_current_user)):
     """
     Returns the cached Net Delta heatmap snapshots.
     Supports sampling via the 'resolution' parameter (e.g. resolution=3 returns every 3rd snapshot).
@@ -1681,7 +2147,7 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
         if not index_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
 
-        token = auth_get_token()
+        token = await get_access_token()
         if not expiry:
             expiries = await run_in_threadpool(get_expiries, token, index_key)
             if not expiries: return {"status": "error", "message": "No expiries"}
@@ -1690,7 +2156,10 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             expiry = str(expiry).replace('T', ' ')
 
         cache_key = (symbol.upper(), expiry)
-        intervals = DELTA_HEATMAP_CACHE.get(cache_key, [])
+        async with HEATMAP_LOCK:
+            intervals = DELTA_HEATMAP_CACHE.get(cache_key, [])
+            if intervals:
+                intervals = list(intervals) # Copy for thread-safety during slicing/processing
 
         # Apply sampling based on resolution
         if resolution > 1:
@@ -1819,6 +2288,8 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             "max_pe_oi_chg_pct": max_pe_oi_chg_pct,
             "is_demo": False
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
@@ -1855,12 +2326,15 @@ async def get_strike_greeks_history(symbol: str = Query(..., description="Symbol
             "metadata": {"symbol": symbol, "expiry": expiry, "strike": strike},
             "data": data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Error fetching strike greeks history: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/pcr-data")
-async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
+async def get_pcr_data(current_user: User = Depends(get_current_user),
+                      symbol: str = Query(..., description="Symbol like NIFTY"), 
                       expiry: str = Query(..., description="Expiry Date")):
     """
     Get data for PCR by Strike Grid.
@@ -1872,7 +2346,7 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = get_access_token()
+        token = await get_access_token()
         
         print(f" [UPSTOX] [PCR API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
@@ -1940,6 +2414,8 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
         print(f" [CORE] [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
         return {"data": grid_data, "spot_price": spot_price}
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1947,7 +2423,8 @@ async def get_pcr_data(symbol: str = Query(..., description="Symbol like NIFTY")
 
 @app.get("/api/max-pain-data")
 async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NIFTY"), 
-                           expiry: str = Query(..., description="Expiry Date")):
+                          expiry: str = Query(..., description="Expiry Date"),
+                          current_user: User = Depends(get_current_user)):
     """
     Get Max Pain and Volatility Smile data.
     Returns:
@@ -1962,7 +2439,7 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = get_access_token()
+        token = await get_access_token()
         
         print(f" [Max Pain API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
@@ -2008,6 +2485,8 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
             }
         }
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2016,12 +2495,20 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
 # NOTE: SYMBOL_MAP is defined at the top of the file (line ~29). This duplicate has been removed.
 
 @app.websocket("/ws/price/{symbol}")
-async def websocket_endpoint(websocket: WebSocket, symbol: str):
+async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(None)):
+    # Manual token check
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt
+            verify_jwt(token)
+    except:
+         await websocket.close(code=1008)
+         return
     global streamer
     await manager.connect(websocket)
     
     if streamer is None:
-        token = get_access_token()
+        token = await get_access_token()
         streamer = UpstoxStreamer(token)
         streamer.connect_market_data(
             instrument_keys=list(SYMBOL_MAP.values()),
@@ -2041,16 +2528,17 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
 
 @app.get("/api/expiries")
 async def fetch_expiries(symbol: str = "NIFTY"):
-    token = get_access_token()
+    token = await get_access_token()
     key = SYMBOL_MAP.get(symbol.upper())
     if not key:
         raise HTTPException(status_code=400, detail="Invalid symbol")
     
-    expiries = get_expiries(token, key)
+    expiries = await run_in_threadpool(get_expiries, token, key)
     return {"status": "success", "expiries": expiries}
 
 @app.get("/api/option-chain")
-async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None, count: int = 6):
+async def fetch_option_chain(current_user: User = Depends(get_current_user), 
+                             symbol: str = "NIFTY", expiry: str = None, count: int = 6):
     """
     Fetch option chain data and return analytics.
     
@@ -2060,20 +2548,40 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None, count: i
         count: Number of strikes to return around ATM (default: 6). 
                Use a higher number (e.g., 50) for full analysis pages.
     """
-    token = get_access_token()
+    token = await get_access_token()
     key = SYMBOL_MAP.get(symbol.upper())
     if not key:
         raise HTTPException(status_code=400, detail="Invalid symbol")
     
     if not expiry:
-        expiries = get_expiries(token, key)
+        expiries = await run_in_threadpool(get_expiries, token, key)
         if not expiries:
-            raise HTTPException(status_code=404, detail="No expiries found")
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": None,
+                    "expiries": [],
+                    "spot": 0,
+                    "pcr": {"oi": 0, "vol": 0, "oi_chg": 0}
+                },
+                "data": []
+            }
         expiry = expiries[0]
 
     df = await run_in_threadpool(get_option_chain_dataframe, token, key, expiry)
     if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="Data not found")
+        return {
+            "status": "success",
+            "metadata": {
+                "symbol": symbol,
+                "expiry": expiry,
+                "expiries": expiries if 'expiries' in locals() else [],
+                "spot": 0,
+                "pcr": {"oi": 0, "vol": 0, "oi_chg": 0}
+            },
+            "data": []
+        }
 
     # Add Buildup and Analytics
     df['ce_chg_pct'] = ((df['ce_ltp'] - df['ce_close']) / df['ce_close'] * 100).replace([float('inf'), float('-inf')], 0).fillna(0)
@@ -2109,21 +2617,21 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None, count: i
         df_filtered = df_filtered.replace([float('inf'), float('-inf')], 0).fillna(0)
         data = df_filtered.to_dict(orient="records")
         pcr_meta = {
-            "oi": oi_pcr,
-            "vol": vol_pcr,
-            "oi_chg": oi_chg_pcr
+            "oi": float(oi_pcr) if not pd.isna(oi_pcr) else 0,
+            "vol": float(vol_pcr) if not pd.isna(vol_pcr) else 0,
+            "oi_chg": float(oi_chg_pcr) if not pd.isna(oi_chg_pcr) else 0
         }
     else:
         df = df.replace([float('inf'), float('-inf')], 0).fillna(0)
         data = df.to_dict(orient="records")
         pcr_meta = {
-            "oi": calculate_pcr(df),
-            "vol": calculate_volume_pcr(df),
-            "oi_chg": calculate_oi_change_pcr(df)
+            "oi": float(calculate_pcr(df)),
+            "vol": float(calculate_volume_pcr(df)),
+            "oi_chg": float(calculate_oi_change_pcr(df))
         }
 
     # Fetch all expiries for the metadata dropdown
-    expiries = get_expiries(token, key) if key else []
+    expiries = await run_in_threadpool(get_expiries, token, key) if key else []
 
     # Convert to JSON friendly format
     return {
@@ -2132,14 +2640,14 @@ async def fetch_option_chain(symbol: str = "NIFTY", expiry: str = None, count: i
             "symbol": symbol,
             "expiry": expiry,
             "expiries": expiries,
-            "spot": spot,
+            "spot": float(spot) if not pd.isna(spot) else 0,
             "pcr": pcr_meta
         },
-        "data": data
+        "data": df_filtered.replace([float('inf'), float('-inf')], 0).fillna(0).to_dict(orient="records")
     }
 
 @app.get("/api/straddle-data")
-async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: float = None):
+async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: float = None, current_user: User = Depends(get_current_user)):
     """
     Fetches intraday data for ATM or custom straddle legs, calculates combined premium and VWAP,
     and returns KPI metrics for the dashboard.
@@ -2154,7 +2662,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
     """
     print(f" [CORE] [Straddle API] Request for {symbol} expiry {expiry}")
     try:
-        token = get_access_token()
+        token = await get_access_token()
         key = SYMBOL_MAP.get(symbol.upper())
         if not key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -2195,7 +2703,21 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         pe_candles = await run_in_threadpool(get_intraday_data_v3, token, pe_key, "minute", 1)
         
         if not ce_candles or not pe_candles:
-            raise HTTPException(status_code=404, detail="Intraday data not found for one or more legs")
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "target_strike": target_strike,
+                    "ce_key": ce_key,
+                    "pe_key": pe_key,
+                    "index_key": key,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "kpis": {}
+                },
+                "data": []
+            }
             
         # 3. Merge and Calculate
         ce_df = pd.DataFrame(ce_candles)
@@ -2203,6 +2725,23 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         
         # Merge on timestamp
         merged = pd.merge(ce_df, pe_df, on='timestamp', suffixes=('_ce', '_pe'))
+        
+        if merged.empty:
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "target_strike": target_strike,
+                    "ce_key": ce_key,
+                    "pe_key": pe_key,
+                    "index_key": key,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "kpis": {}
+                },
+                "data": []
+            }
         
         # Combined Premium
         merged['combined_premium'] = merged['close_ce'] + merged['close_pe']
@@ -2256,33 +2795,23 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
             },
             "data": chart_data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# NOTE: /strike and /greeks routes are already defined above. These duplicates have been removed.
-
-@app.get("/option-chain", response_class=HTMLResponse)
-async def serve_option_chain_page():
-    """
-    Serves the Option Chain page.
-    """
-    html_path = os.path.join(os.path.dirname(__file__), "option_chain.html")
-    if not os.path.exists(html_path):
-        raise HTTPException(status_code=404, detail="option_chain.html not found")
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), media_type="text/html; charset=utf-8")
 
 @app.get("/api/strike-data")
-async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: float = None):
+async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: float = None, current_user: User = Depends(get_current_user)):
     """
     Fetches intraday data for a specific strike's CE and PE legs.
     Returns: {ce_oi, pe_oi, ce_ltp, pe_ltp} time-series.
     """
     print(f" [UPSTOX] [Strike API] Request for {symbol} {strike} {expiry}")
     try:
-        token = get_access_token()
+        token = await get_access_token()
         key = SYMBOL_MAP.get(symbol.upper())
         if not key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -2318,14 +2847,39 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
         ce_candles = await run_in_threadpool(get_intraday_data_v3, token, ce_key, "minute", 1)
         pe_candles = await run_in_threadpool(get_intraday_data_v3, token, pe_key, "minute", 1)
         
+        all_strikes = sorted(df['strike_price'].unique().tolist())
+        
         if not ce_candles or not pe_candles:
-            raise HTTPException(status_code=404, detail="Intraday data not found for legs")
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "target_strike": target_strike,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "latest": {}
+                },
+                "data": []
+            }
             
         # 3. Merge and formatting
         ce_df = pd.DataFrame(ce_candles).rename(columns={'close': 'ce_ltp', 'oi': 'ce_oi'})[['timestamp', 'ce_ltp', 'ce_oi']]
         pe_df = pd.DataFrame(pe_candles).rename(columns={'close': 'pe_ltp', 'oi': 'pe_oi'})[['timestamp', 'pe_ltp', 'pe_oi']]
         
         merged = pd.merge(ce_df, pe_df, on='timestamp', how='inner')
+        if merged.empty:
+            return {
+                "status": "success",
+                "metadata": {
+                    "symbol": symbol,
+                    "target_strike": target_strike,
+                    "all_strikes": all_strikes,
+                    "spot": spot,
+                    "latest": {}
+                },
+                "data": []
+            }
+
         merged['timestamp'] = pd.to_datetime(merged['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
         # Calculate changes vs Yesterday Close if available in candles (using first candle as proxy for open)
@@ -2333,8 +2887,6 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
         
         chart_data = merged.to_dict(orient="records")
         latest = merged.iloc[-1] if not merged.empty else {}
-        
-        all_strikes = sorted(df['strike_price'].unique().tolist())
         
         return {
             "status": "success",
@@ -2353,6 +2905,8 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
             },
             "data": chart_data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2366,7 +2920,7 @@ class LegRequest(BaseModel):
     lot: int = 1
 
 @app.post("/api/multi-strike-history")
-async def get_multi_strike_history(legs: List[LegRequest]):
+async def get_multi_strike_history(legs: List[LegRequest], current_user: User = Depends(get_current_user)):
     """
     Fetches historical 1-minute data for multiple legs, aligns them on timestamp,
     and calculates the Combined Premium and Running VWAP.
@@ -2374,7 +2928,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
     if not legs:
         return {"status": "success", "data": []}
 
-    token = get_access_token()
+    token = await get_access_token()
     
     # 1. Fetch Data for all legs (Throttled)
     _sem = asyncio.Semaphore(3)
@@ -2386,6 +2940,8 @@ async def get_multi_strike_history(legs: List[LegRequest]):
                 result = await run_in_threadpool(get_intraday_data_v3, token, leg.instrument_key, "minute", 1)
                 await asyncio.sleep(0.1) # Debounce
                 return {"leg": leg, "data": result}
+            except HTTPException as he:
+                raise he
             except Exception as e:
                 print(f"Error fetching {leg.instrument_key}: {e}")
                 return {"leg": leg, "data": None}
@@ -2462,7 +3018,7 @@ async def get_multi_strike_history(legs: List[LegRequest]):
     }
 
 @app.get("/api/cumulative-oi")
-async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_range: int = 4):
+async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_range: int = 4, current_user: User = Depends(get_current_user)):
     """
     Fetches intraday data for ATM +/- strike_range strikes, aggregates OI, 
     and returns time-series for cumulative OI charts.
@@ -2476,13 +3032,13 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
     """
     print(f" [UPSTOX] [Cumulative OI] Fetching data for {symbol} expiry {expiry}")
     try:
-        token = get_access_token()
+        token = await get_access_token()
         key = SYMBOL_MAP.get(symbol.upper())
         if not key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
         if not expiry:
-            expiries = get_expiries(token, key)
+            expiries = await run_in_threadpool(get_expiries, token, key)
             if not expiries:
                 raise HTTPException(status_code=404, detail="No expiries found")
             expiry = expiries[0]
@@ -2529,7 +3085,18 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
         leg_results = results[:-1]
         
         if not index_candles:
-            raise HTTPException(status_code=404, detail="Index intraday data not found")
+            return {
+                "status": "success",
+                "data": [],
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "spot": spot,
+                    "atm": atm,
+                    "strikes_used": sorted(target_strikes),
+                    "kpis": {}
+                }
+            }
             
         index_df = pd.DataFrame(index_candles).rename(columns={'close': 'ltp'})[['timestamp', 'ltp']]
         index_df['timestamp'] = pd.to_datetime(index_df['timestamp'])
@@ -2575,7 +3142,18 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             ce_combined['ce_oi_total'] = ce_combined[oi_cols].sum(axis=1)
             ce_total_df = ce_combined[['timestamp', 'ce_oi_total']].rename(columns={'ce_oi_total': 'ce_oi'})
         else:
-            raise HTTPException(status_code=404, detail="No CE data found")
+            return {
+                "status": "success",
+                "data": [],
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "spot": spot,
+                    "atm": atm,
+                    "strikes_used": sorted(target_strikes),
+                    "kpis": {}
+                }
+            }
 
         # 2. Align PE Data
         if pe_dfs:
@@ -2587,7 +3165,18 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             pe_combined['pe_oi_total'] = pe_combined[oi_cols].sum(axis=1)
             pe_total_df = pe_combined[['timestamp', 'pe_oi_total']].rename(columns={'pe_oi_total': 'pe_oi'})
         else:
-            raise HTTPException(status_code=404, detail="No PE data found")
+            return {
+                "status": "success",
+                "data": [],
+                "metadata": {
+                    "symbol": symbol,
+                    "expiry": expiry,
+                    "spot": spot,
+                    "atm": atm,
+                    "strikes_used": sorted(target_strikes),
+                    "kpis": {}
+                }
+            }
         
         # Merge all
         merged = pd.merge(ce_total_df, pe_total_df, on='timestamp', how='inner')
@@ -2638,18 +3227,20 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
             },
             "data": chart_data
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/option-chain/{symbol}")
-async def get_full_chain(symbol: str, expiry: str):
+async def get_full_chain(symbol: str, expiry: str, current_user: User = Depends(get_current_user)):
     """
     Get Complete Option Chain with Build Up & Top OI.
     """
     try:
-        token = await run_in_threadpool(auth_get_token)
+        token = await get_access_token()
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
              raise HTTPException(status_code=400, detail="Invalid Symbol")
@@ -2660,7 +3251,8 @@ async def get_full_chain(symbol: str, expiry: str):
         if df.empty:
              return {"chain": [], "spot": 0}
 
-        spot = df['underlying_spot'].iloc[0] if not df.empty else 0
+        _spot_raw = df['underlying_spot'].iloc[0] if not df.empty else 0
+        spot = float(_spot_raw) if not pd.isna(_spot_raw) else 0
 
         # --- Top 3 OI Logic ---
         # Sort by OI desc
@@ -2680,7 +3272,11 @@ async def get_full_chain(symbol: str, expiry: str):
         df['oi_rank'] = df.apply(check_top_oi, axis=1)
 
         # Convert to list of dicts for JSON
-        chain_data = df.to_dict(orient='records')
+        chain_data = df.replace([float('inf'), float('-inf')], 0).fillna(0).to_dict(orient='records')
+        
+        # Ensure no NaNs in lists
+        top_ce = [float(x) for x in top_ce if not pd.isna(x)]
+        top_pe = [float(x) for x in top_pe if not pd.isna(x)]
         
         return {
             "chain": chain_data,
@@ -2689,6 +3285,8 @@ async def get_full_chain(symbol: str, expiry: str):
             "top_pe": top_pe
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2696,6 +3294,7 @@ async def get_full_chain(symbol: str, expiry: str):
 
 @app.get("/api/multi-strike-oi-data")
 async def get_multi_strike_oi_data(
+    current_user: User = Depends(get_current_user),
     symbol: str = Query(..., description="Symbol like NIFTY"),
     expiry: str = Query(..., description="Expiry Date"),
     strikes: str = Query(..., description="Comma-separated strikes")
@@ -2705,7 +3304,7 @@ async def get_multi_strike_oi_data(
     """
     print(f" [UPSTOX] [Multi-Strike OI] Request: {symbol} | {expiry} | Strikes: {strikes}")
     try:
-        token = get_access_token()
+        token = await get_access_token()
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
             print(f" [UPSTOX] [Multi-Strike OI] Invalid symbol: {symbol}")
@@ -2788,6 +3387,8 @@ async def get_multi_strike_oi_data(
             "data": merged.to_dict(orient="records")
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2796,6 +3397,7 @@ async def get_multi_strike_oi_data(
 
 @app.get("/api/multi-strike-price-data")
 async def get_multi_strike_price_data(
+    current_user: User = Depends(get_current_user),
     symbol: str = Query(..., description="Symbol like NIFTY"),
     expiry: str = Query(..., description="Expiry Date"),
     strikes: str = Query(..., description="Comma-separated strikes")
@@ -2805,7 +3407,7 @@ async def get_multi_strike_price_data(
     """
     print(f" [UPSTOX] [Multi-Strike Price] Request: {symbol} | {expiry} | Strikes: {strikes}")
     try:
-        token = get_access_token()
+        token = await get_access_token()
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
             print(f" [UPSTOX] [Multi-Strike Price] Invalid symbol: {symbol}")
@@ -2888,6 +3490,8 @@ async def get_multi_strike_price_data(
             "data": merged.to_dict(orient="records")
         }
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         import traceback
         traceback.print_exc()
