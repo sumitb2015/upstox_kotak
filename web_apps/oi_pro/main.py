@@ -64,6 +64,82 @@ SYMBOL_MAP = {
 # Reverse map for broadcasting
 KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
 
+# --- Nifty 50 Dashboard Config ---
+NIFTY_50_KEYS = {
+    "ADANIENT": "NSE_EQ|INE423A01024",
+    "ADANIPORTS": "NSE_EQ|INE742F01042",
+    "APOLLOHOSP": "NSE_EQ|INE437A01024",
+    "ASIANPAINT": "NSE_EQ|INE021A01026",
+    "AXISBANK": "NSE_EQ|INE238A01034",
+    "BAJAJ-AUTO": "NSE_EQ|INE917I01010",
+    "BAJAJFINSV": "NSE_EQ|INE918I01026",
+    "BAJFINANCE": "NSE_EQ|INE296A01032",
+    "BHARTIARTL": "NSE_EQ|INE397D01024",
+    "BPCL": "NSE_EQ|INE029A01011",
+    "BRITANNIA": "NSE_EQ|INE216A01030",
+    "CIPLA": "NSE_EQ|INE059A01026",
+    "COALINDIA": "NSE_EQ|INE522F01014",
+    "DIVISLAB": "NSE_EQ|INE361B01024",
+    "DRREDDY": "NSE_EQ|INE089A01031",
+    "EICHERMOT": "NSE_EQ|INE066A01021",
+    "GRASIM": "NSE_EQ|INE047A01021",
+    "HCLTECH": "NSE_EQ|INE860A01027",
+    "HDFCBANK": "NSE_EQ|INE040A01034",
+    "HDFCLIFE": "NSE_EQ|INE795G01014",
+    "HEROMOTOCO": "NSE_EQ|INE158A01026",
+    "HINDALCO": "NSE_EQ|INE038A01020",
+    "HINDUNILVR": "NSE_EQ|INE030A01027",
+    "ICICIBANK": "NSE_EQ|INE090A01021",
+    "INDUSINDBK": "NSE_EQ|INE095A01012",
+    "INFY": "NSE_EQ|INE009A01021",
+    "ITC": "NSE_EQ|INE154A01025",
+    "JSWSTEEL": "NSE_EQ|INE019A01038",
+    "KOTAKBANK": "NSE_EQ|INE237A01036",
+    "LT": "NSE_EQ|INE018A01030",
+    "LTIM": "NSE_EQ|INE214T01019",
+    "M&M": "NSE_EQ|INE101A01026",
+    "MARUTI": "NSE_EQ|INE585B01010",
+    "NESTLEIND": "NSE_EQ|INE239A01024",
+    "NTPC": "NSE_EQ|INE733E01010",
+    "ONGC": "NSE_EQ|INE213A01029",
+    "POWERGRID": "NSE_EQ|INE752E01010",
+    "RELIANCE": "NSE_EQ|INE002A01018",
+    "SBILIFE": "NSE_EQ|INE123W01016",
+    "SBIN": "NSE_EQ|INE062A01020",
+    "SUNPHARMA": "NSE_EQ|INE044A01036",
+    "TATACONSUM": "NSE_EQ|INE192A01025",
+    "TATASTEEL": "NSE_EQ|INE081A01020",
+    "TCS": "NSE_EQ|INE467B01029",
+    "TECHM": "NSE_EQ|INE669C01036",
+    "TITAN": "NSE_EQ|INE280A01028",
+    "TMPV": "NSE_EQ|INE155A01022",
+    "ULTRACEMCO": "NSE_EQ|INE481G01011",
+    "UPL": "NSE_EQ|INE628A01036",
+    "WIPRO": "NSE_EQ|INE075A01022",
+}
+
+NIFTY_50_STOCKS = list(NIFTY_50_KEYS.keys())
+NIFTY_50_REVERSE_MAP = {v: k for k, v in NIFTY_50_KEYS.items()}
+
+# --- Bank Nifty Dashboard Config ---
+BANKNIFTY_KEYS = {
+    'PNB': 'NSE_EQ|INE160A01022',
+    'KOTAKBANK': 'NSE_EQ|INE237A01036',
+    'CANBK': 'NSE_EQ|INE476A01022',
+    'BANKBARODA': 'NSE_EQ|INE028A01039',
+    'YESBANK': 'NSE_EQ|INE528G01035',
+    'SBIN': 'NSE_EQ|INE062A01020',
+    'HDFCBANK': 'NSE_EQ|INE040A01034',
+    'AUBANK': 'NSE_EQ|INE949L01017',
+    'INDUSINDBK': 'NSE_EQ|INE095A01012',
+    'AXISBANK': 'NSE_EQ|INE238A01034',
+    'UNIONBANK': 'NSE_EQ|INE692A01016',
+    'FEDERALBNK': 'NSE_EQ|INE171A01029',
+    'ICICIBANK': 'NSE_EQ|INE090A01021',
+    'IDFCFIRSTB': 'NSE_EQ|INE092T01019'
+}
+BANKNIFTY_STOCKS = list(BANKNIFTY_KEYS.keys())
+
 # Lookup for fetching LTP by symbol (Dynamic)
 # Replaced with redis_wrapper.set_raw("symbol_lookup:...", ...)
 
@@ -1463,6 +1539,71 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
     except Exception as e:
         print(f"Market Watch WS Error: {e}")
         manager.disconnect(websocket)
+
+@app.get("/stock-dashboard", response_class=HTMLResponse)
+async def get_stock_dashboard(request: Request):
+    """Serves the Unified HTML for the Nifty 50 Stock Dashboard"""
+    try:
+        html_path = Path(__file__).parent / "stock_dashboard.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/api/market-quote")
+async def get_market_quote(
+    token: str = Query(None),
+    index: str = Query("NIFTY", description="Index to fetch quotes for: NIFTY or BANKNIFTY")
+):
+    """REST endpoint for Index constituents real-time updates and daily changes"""
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            get_user(email)
+            
+        upstox_token = await get_access_token()
+        if not upstox_token:
+            return {"status": "error", "message": "No active broker connection"}
+            
+        # Determine Target Dictionary based on query param
+        target_keys = BANKNIFTY_KEYS if index.upper() == "BANKNIFTY" else NIFTY_50_KEYS
+            
+        from lib.api.market_data import get_market_quotes
+        quotes = await run_in_threadpool(get_market_quotes, upstox_token, list(target_keys.values()))
+        
+        # Transform the response into our dashboard format
+        formatted_data = {}
+        for symbol, key in target_keys.items():
+            # The SDK often returns the keys as 'NSE_EQ:SYMBOL'
+            quote = quotes.get(f"NSE_EQ:{symbol}")
+            if not quote:
+                # Fallback: search by actual instrument_token
+                for q in quotes.values():
+                    if q.get('instrument_token') == key:
+                        quote = q
+                        break
+            
+            if quote:
+                ltp = quote.get('last_price', 0)
+                net_change = quote.get('net_change', 0)
+                # Calculate the percentage change using (net_change / (ltp - net_change)) * 100
+                chg = 0.0
+                prev_close = ltp - net_change
+                if prev_close > 0:
+                    chg = round((net_change / prev_close) * 100, 2)
+                    
+                formatted_data[symbol] = {
+                    "ltp": ltp,
+                    "chg": chg,
+                    "prev": prev_close
+                }
+                
+        return {"status": "success", "type": "stock_data", "data": formatted_data}
+        
+    except Exception as e:
+        import traceback
+        print(f"Error fetching market quote API: {e}")
+        return {"status": "error", "message": str(e)}
 
 # Duplicate consolidated (see line 647)
 pass
