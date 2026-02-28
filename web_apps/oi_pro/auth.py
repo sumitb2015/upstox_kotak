@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from passlib.context import CryptContext
+import bcrypt
 import jwt
 from peewee import SqliteDatabase, Model, CharField, BooleanField, DateTimeField, ForeignKeyField
 
@@ -13,7 +13,6 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 # ── Database Setup ──
@@ -54,13 +53,24 @@ def init_db():
     db.close()
 
 # ── Auth Utilities ──
-def verify_password(plain_password, hashed_password):
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plain text password against its hashed version."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        if isinstance(plain_password, str):
+            plain_password = plain_password.encode('utf-8')
+        if isinstance(hashed_password, str):
+            hashed_password = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(plain_password, hashed_password)
+    except Exception:
+        return False
 
-def get_password_hash(password):
+def get_password_hash(password: str) -> str:
     """Generates a bcrypt hash for the given password."""
-    return pwd_context.hash(password)
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password, salt)
+    return hashed.decode('utf-8')
 
 def get_user(email: str):
     """Retrieves a user from the database by their email address."""
