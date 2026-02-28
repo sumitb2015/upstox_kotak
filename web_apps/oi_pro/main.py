@@ -13,6 +13,8 @@ Author: OI Pro Team
 import sys
 import os
 import time
+from datetime import datetime, timedelta
+import asyncio
 
 # Force UTF-8 output so Windows cp1252 doesn't crash on any emoji/unicode in logs
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -37,6 +39,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 # Import custom authentication module
 from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db
+
+# --- Global Background Token Cache ---
+BACKGROUND_TOKEN_CACHE = {
+    "token": None,
+    "last_validated": None,
+    "expiry_seconds": 300  # Cache for 5 minutes
+}
 
 from lib.api.option_chain import get_expiries, get_option_chain_dataframe, calculate_pcr, calculate_volume_pcr, calculate_oi_change_pcr, calculate_max_pain
 from lib.api.market_data import get_full_option_chain, fetch_historical_data
@@ -363,9 +372,9 @@ strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
 
-@app.on_event("startup")
-def startup_event():
-    init_db()
+# app = FastAPI(...) is at line 373
+
+# We will move the merged startup_event down to line 1479 area for consistency
 
 @app.middleware("http")
 async def db_session_middleware(request: Request, call_next):
@@ -409,7 +418,7 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         
         # Run blocking call in threadpool to prevent freezing the server
         print(f" [PoP API] Fetching option chain for {instrument_key}...")
@@ -862,11 +871,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
     Consolidated WebSocket endpoint for real-time Straddle updates.
     Client sends JSON subscribe request.
     """
-    # Manual token check for WS (FastAPI Depends can sometimes be tricky with WS handshakes in some clients)
+    # Manual token check for WS
+    current_user = None
     try:
         if token:
-            from web_apps.oi_pro.auth import verify_jwt
-            verify_jwt(token)
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            current_user = get_user(email)
     except:
          await websocket.close(code=1008) # Policy Violation
          return
@@ -896,10 +907,12 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
     Authenticates via token query parameter and broadcasts live price updates.
     """
     # Manual token check
+    current_user = None
     try:
         if token:
-            from web_apps.oi_pro.auth import verify_jwt
-            verify_jwt(token)
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            current_user = get_user(email)
     except:
          await websocket.close(code=1008)
          return
@@ -928,7 +941,7 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                             print(f" [WS] [CumulativePrices] Subscribing {symbol} {expiry}...")
                             await websocket.send_json({"type": "status", "status": "loading", "symbol": symbol})
 
-                            token = await get_access_token()
+                            token = await get_access_token(current_user)
                             index_key = SYMBOL_MAP.get(symbol)
                             if not index_key:
                                 await websocket.send_json({"type": "error", "message": f"Unknown symbol: {symbol}"})
@@ -1055,7 +1068,6 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
         manager.disconnect(websocket)
         print(" [WS] [CumulativePrices] Disconnected")
 
-@app.on_event("startup")
 async def startup_event_ws():
     """
     Initializes the Upstox WebSocket bridge on application startup.
@@ -1067,6 +1079,10 @@ async def startup_event_ws():
     try:
         # Initialize streamer with access token
         token = await get_access_token()
+        if not token:
+            print(" [WS] No token available yet. Streamer will initialize on first user login.")
+            return
+
         streamer = UpstoxStreamer(token)
         
         # Define callback that bridges Thread -> Async
@@ -1140,6 +1156,9 @@ async def prefetch_option_master():
     print(" [Dashboard] Prefetching Option Master for LTP Lookup...")
     try:
         token = await get_access_token()
+        if not token:
+            print(" [Dashboard] [Warning] No access token available for prefetch_option_master. Skipping.")
+            return
         
         for symbol, index_key in SYMBOL_MAP.items():
             try:
@@ -1188,6 +1207,9 @@ async def load_todays_data():
     print("[CORE] Loading today's NIFTY data from CSV...")
     try:
         token = await get_access_token()
+        if not token:
+            print("[CORE] [Warning] No access token available for load_todays_data. Skipping.")
+            return
         from lib.utils.greeks_helper import LOT_SIZE_MAP
         today = datetime.now().date()
         file_path = greeks_storage._get_file_path("NIFTY", today)
@@ -1283,6 +1305,9 @@ async def fetch_baseline_oi():
     print("IN [CORE] [Baseline OI] Fetching previous session OI...")
     try:
         token = await get_access_token()
+        if not token:
+            print("[CORE] [Warning] No access token available for fetch_baseline_oi. Skipping.")
+            return
         for symbol in SYMBOL_MAP.keys():
             index_key = SYMBOL_MAP.get(symbol)
             if not index_key:
@@ -1331,6 +1356,9 @@ async def unified_background_poller():
     from lib.utils.greeks_helper import LOT_SIZE_MAP
     
     cycle_count = 0
+    is_baseline_fetched = False
+    is_streamer_started = False
+    is_master_prefetched = False
     
     while True:
         try:
@@ -1346,6 +1374,25 @@ async def unified_background_poller():
                 LAST_CACHE_RESET_DATE = today
 
             token = await get_access_token()
+            if not token:
+                if cycle_count == 0 or cycle_count % 30 == 0:
+                    print(" [CORE] [Poller] Waiting for an authorized user to log in...")
+                await asyncio.sleep(60)
+                continue
+
+            # --- Lazy Initializations (once token available) ---
+            if not is_baseline_fetched:
+                await fetch_baseline_oi()
+                is_baseline_fetched = True
+                
+            if not is_streamer_started:
+                await startup_event_ws()
+                is_streamer_started = True
+                
+            if not is_master_prefetched:
+                asyncio.create_task(prefetch_option_master())
+                is_master_prefetched = True
+
             cycle_count += 1
             is_nifty_heatmap_updated = False
             
@@ -1438,8 +1485,6 @@ async def unified_background_poller():
                  pass
 
             await asyncio.sleep(60) 
-        except HTTPException as he:
-            raise he
         except Exception as e:
             import traceback
             print(f" [CORE] Unified Poller Error: {e}")
@@ -1448,33 +1493,20 @@ async def unified_background_poller():
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize background tasks and load state from disk."""
+    """Consolidated startup sequence: Initialize DB, then let pollers handle the rest lazily."""
     print("START [CORE] Dashboard Server Starting...")
+    
+    # 1. Initialize Authentication Database
     try:
-        # Initialize the authentication database
         init_db()
-        print("[AUTH] Database initialized")
-    except HTTPException as he:
-        raise he
+        print(" [AUTH] Database initialized")
     except Exception as e:
-        print(f"[AUTH] Failed to init DB: {e}")
+        print(f" [AUTH] [Error] Failed to init DB: {e}")
 
-    try:
-        # 1. Recover persistent state
-        await load_todays_data()
-        
-        # 2. Fetch yesterday's OI/Close as static baseline  do this BEFORE pollers start
-        await fetch_baseline_oi()
-        
-        # 3. Launch Background Pollers
-        print("[CORE] Starting background tasks...")
-        asyncio.create_task(prefetch_option_master())
-        asyncio.create_task(unified_background_poller())
-        print("[CORE] Background processes initialized.")
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"[CORE] Startup Failure: {e}")
+    # 2. Launch Background Poller (which will handle lazy init once token is available)
+    print(" [CORE] Launching Background Poller...")
+    asyncio.create_task(unified_background_poller())
+    print(" [CORE] Server standby mode active.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1490,10 +1522,12 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
     Authenticates via token and subscribes the user to real-time index updates.
     """
     # Manual token check
+    current_user = None
     try:
         if token:
-            from web_apps.oi_pro.auth import verify_jwt
-            verify_jwt(token)
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            current_user = get_user(email)
     except:
          await websocket.close(code=1008)
          return
@@ -1548,15 +1582,91 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def get_access_token():
+async def get_access_token(user: User = None):
     """
-    Returns a valid access token using the core authentication library.
-    Offloads the synchronous validation/refresh to a thread pool.
+    Returns a valid access token. 
+    1. If user provided: Prioritizes that user's database token.
+    2. If no user: Tries to find ANY active user's token (User-Powered Background Polling).
+    3. Fallback: Core .env authentication.
     """
+    from web_apps.oi_pro.auth import BrokerCredential
+    from lib.core.authentication import validate_token
     from starlette.concurrency import run_in_threadpool
-    token = await run_in_threadpool(auth_get_token, auto_refresh=True)
+
+    # --- Case 1: Specific User ---
+    if user:
+        try:
+            broker = BrokerCredential.get(
+                (BrokerCredential.user == user) & 
+                (BrokerCredential.broker_name == "Upstox") &
+                (BrokerCredential.access_token.is_null(False))
+            )
+            
+            if broker.last_token_at and broker.last_token_at.date() == datetime.utcnow().date():
+                token = broker.access_token
+                is_valid = await run_in_threadpool(validate_token, token)
+                if is_valid:
+                    return token
+                else:
+                    print(f" [CORE] [Auth] Database token for {user.email} is invalid. Clearing.")
+                    broker.access_token = None
+                    broker.status = "Expired"
+                    broker.save()
+        except BrokerCredential.DoesNotExist:
+            pass
+
+    # --- Case 2: Background Task (User-Powered Polling) ---
+    else:
+        # Check global cache first
+        now = datetime.utcnow()
+        if BACKGROUND_TOKEN_CACHE["token"] and BACKGROUND_TOKEN_CACHE["last_validated"]:
+            if (now - BACKGROUND_TOKEN_CACHE["last_validated"]).total_seconds() < BACKGROUND_TOKEN_CACHE["expiry_seconds"]:
+                return BACKGROUND_TOKEN_CACHE["token"]
+
+        try:
+            # Look for ANY user token generated today
+            today = datetime.utcnow().date()
+            active_brokers = BrokerCredential.select().where(
+                (BrokerCredential.broker_name == "Upstox") &
+                (BrokerCredential.access_token.is_null(False)) &
+                (BrokerCredential.last_token_at >= today)
+            ).order_by(BrokerCredential.last_token_at.desc())
+
+            for broker in active_brokers:
+                token = broker.access_token
+                is_valid = await run_in_threadpool(validate_token, token)
+                if is_valid:
+                    print(f" [CORE] [Auth] [Background] Using token from active user: {broker.user.email}")
+                    BACKGROUND_TOKEN_CACHE["token"] = token
+                    BACKGROUND_TOKEN_CACHE["last_validated"] = now
+                    return token
+                else:
+                    print(f" [CORE] [Auth] [Background] Token for {broker.user.email} invalid. Clearing.")
+                    broker.access_token = None
+                    broker.status = "Expired"
+                    broker.save()
+        except Exception as e:
+            print(f" [CORE] [Auth] Error in User-Powered Background Polling: {e}")
+
+    # --- Case 3: Fallback to .env ---
+    try:
+        token = await run_in_threadpool(auth_get_token, auto_refresh=True)
+    except Exception as e:
+        print(f" [CORE] [Auth] .env Auth fallback failed: {e}")
+        token = None
     if not token:
-        raise HTTPException(status_code=500, detail="Failed to retrieve or refresh access token. Please check .env credentials.")
+        # If specific user requested, we raise error
+        if user:
+            raise HTTPException(status_code=500, detail="Failed to retrieve or refresh access token. No active user tokens found and .env is missing or invalid.")
+        else:
+            # If background task, we just return None and let the poller handle it
+            return None
+    
+    # Cache the .env token as well if we're in background mode
+    if not user:
+        BACKGROUND_TOKEN_CACHE["token"] = token
+        BACKGROUND_TOKEN_CACHE["last_validated"] = datetime.utcnow()
+        
     return token
 
 def calculate_buildup(price_chg_pct, oi_chg_pct):
@@ -1986,7 +2096,7 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         
         # 1. Fetch Option Chain
         print(f" [Greeks API] Fetching option chain for {instrument_key}...")
@@ -2089,7 +2199,7 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None, current_use
     Used for the Net GEX regime traffic light chart.
     """
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         index_key = SYMBOL_MAP.get(symbol.upper())
         if not expiry:
             expiries = await run_in_threadpool(get_expiries, token, index_key)
@@ -2147,7 +2257,7 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
         if not index_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
 
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         if not expiry:
             expiries = await run_in_threadpool(get_expiries, token, index_key)
             if not expiries: return {"status": "error", "message": "No expiries"}
@@ -2346,7 +2456,7 @@ async def get_pcr_data(current_user: User = Depends(get_current_user),
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         
         print(f" [UPSTOX] [PCR API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
@@ -2439,7 +2549,7 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
         if not instrument_key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         
         print(f" [Max Pain API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
@@ -2497,10 +2607,12 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
 @app.websocket("/ws/price/{symbol}")
 async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(None)):
     # Manual token check
+    current_user = None
     try:
         if token:
-            from web_apps.oi_pro.auth import verify_jwt
-            verify_jwt(token)
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            current_user = get_user(email)
     except:
          await websocket.close(code=1008)
          return
@@ -2508,8 +2620,8 @@ async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(
     await manager.connect(websocket)
     
     if streamer is None:
-        token = await get_access_token()
-        streamer = UpstoxStreamer(token)
+        token_upstox = await get_access_token(current_user)
+        streamer = UpstoxStreamer(token_upstox)
         streamer.connect_market_data(
             instrument_keys=list(SYMBOL_MAP.values()),
             mode="ltpc"
@@ -2527,8 +2639,8 @@ async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(
         manager.disconnect(websocket)
 
 @app.get("/api/expiries")
-async def fetch_expiries(symbol: str = "NIFTY"):
-    token = await get_access_token()
+async def fetch_expiries(symbol: str = "NIFTY", current_user: User = Depends(get_current_user)):
+    token = await get_access_token(current_user)
     key = SYMBOL_MAP.get(symbol.upper())
     if not key:
         raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -2548,7 +2660,7 @@ async def fetch_option_chain(current_user: User = Depends(get_current_user),
         count: Number of strikes to return around ATM (default: 6). 
                Use a higher number (e.g., 50) for full analysis pages.
     """
-    token = await get_access_token()
+    token = await get_access_token(current_user)
     key = SYMBOL_MAP.get(symbol.upper())
     if not key:
         raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -2662,7 +2774,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
     """
     print(f" [CORE] [Straddle API] Request for {symbol} expiry {expiry}")
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         key = SYMBOL_MAP.get(symbol.upper())
         if not key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -2811,7 +2923,7 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
     """
     print(f" [UPSTOX] [Strike API] Request for {symbol} {strike} {expiry}")
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         key = SYMBOL_MAP.get(symbol.upper())
         if not key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -2928,7 +3040,7 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
     if not legs:
         return {"status": "success", "data": []}
 
-    token = await get_access_token()
+    token = await get_access_token(current_user)
     
     # 1. Fetch Data for all legs (Throttled)
     _sem = asyncio.Semaphore(3)
@@ -3032,7 +3144,7 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
     """
     print(f" [UPSTOX] [Cumulative OI] Fetching data for {symbol} expiry {expiry}")
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         key = SYMBOL_MAP.get(symbol.upper())
         if not key:
             raise HTTPException(status_code=400, detail="Invalid symbol")
@@ -3240,7 +3352,7 @@ async def get_full_chain(symbol: str, expiry: str, current_user: User = Depends(
     Get Complete Option Chain with Build Up & Top OI.
     """
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
              raise HTTPException(status_code=400, detail="Invalid Symbol")
@@ -3304,7 +3416,7 @@ async def get_multi_strike_oi_data(
     """
     print(f" [UPSTOX] [Multi-Strike OI] Request: {symbol} | {expiry} | Strikes: {strikes}")
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
             print(f" [UPSTOX] [Multi-Strike OI] Invalid symbol: {symbol}")
@@ -3407,7 +3519,7 @@ async def get_multi_strike_price_data(
     """
     print(f" [UPSTOX] [Multi-Strike Price] Request: {symbol} | {expiry} | Strikes: {strikes}")
     try:
-        token = await get_access_token()
+        token = await get_access_token(current_user)
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
             print(f" [UPSTOX] [Multi-Strike Price] Invalid symbol: {symbol}")
