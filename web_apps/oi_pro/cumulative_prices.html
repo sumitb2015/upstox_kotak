@@ -239,21 +239,6 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"];
         const MAX_POINTS = 23400; // 1 tick/sec * 6.5hr full trading session
 
-        // ─── Plotly base layout ──────────────────────────────────────────────────────
-        const baseLayout = {
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            margin: { t: 8, b: 45, l: 58, r: 60 },
-            font: { family: 'Inter', color: isDark ? '#94a3b8' : '#1e293b', size: 11 },
-            xaxis: {
-                gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 },
-                showgrid: true, type: 'category', nticks: 12
-            },
-            hovermode: 'x unified',
-            hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : '#e2e8f0', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter', size: 12 } },
-            showlegend: true,
-            legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 11 }, orientation: 'h', x: 0, y: -0.18 },
-        };
 
         // ─── Main Component ──────────────────────────────────────────────────────────
         function CumulativePrices() {
@@ -263,6 +248,22 @@
                 window.addEventListener('themeToggled', handleTheme);
                 return () => window.removeEventListener('themeToggled', handleTheme);
             }, []);
+
+            // ─── Plotly base layout ──────────────────────────────────────────────────────
+            const baseLayout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { t: 8, b: 45, l: 58, r: 60 },
+                font: { family: 'Inter', color: isDark ? '#94a3b8' : '#1e293b', size: 11 },
+                xaxis: {
+                    gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 },
+                    showgrid: true, type: 'category', nticks: 12
+                },
+                hovermode: 'x unified',
+                hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : '#e2e8f0', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter', size: 12 } },
+                showlegend: true,
+                legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 11 }, orientation: 'h', x: 0, y: -0.18 },
+            };
 
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
