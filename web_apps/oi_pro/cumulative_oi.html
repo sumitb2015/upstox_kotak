@@ -12,8 +12,8 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+            background-color: var(--background);
+            color: var(--foreground);
             margin: 0;
             overflow-x: hidden;
         }
@@ -258,7 +258,7 @@
             };
 
             return (
-                <div className="min-h-screen bg-[#030712] text-secondary-foreground antialiased flex overflow-hidden">
+                <div className="min-h-screen bg-background text-secondary-foreground antialiased flex overflow-hidden">
                     
 
                     <main className="pl-28 pr-8 py-8 max-w-[1400px] mx-auto">
@@ -278,7 +278,7 @@
                                         value={symbol}
                                         onChange={(e) => setSymbol(e.target.value)}
                                     >
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
 
@@ -289,7 +289,7 @@
                                         value={expiry}
                                         onChange={(e) => setExpiry(e.target.value)}
                                     >
-                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-card">{formatDate(exp)}</option>)}
                                     </select>
                                 </div>
 
@@ -300,7 +300,7 @@
                                         value={strikeRange}
                                         onChange={(e) => setStrikeRange(Number(e.target.value))}
                                     >
-                                        {[2, 4, 6, 8, 10, 15, 20].map(r => <option key={r} value={r} className="bg-[#0b0f1a]">±{r} Strikes</option>)}
+                                        {[2, 4, 6, 8, 10, 15, 20].map(r => <option key={r} value={r} className="bg-card">±{r} Strikes</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -313,7 +313,7 @@
                                 <h3 className={`text-xl font-black tracking-tighter ${kpis.net_chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                     {formatLargeNumber(kpis.net_chg)}
                                 </h3>
-                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">Sentiment: {kpis.net_chg >= 0 ? 'Bullish' : 'Bearish'}</div>
+                                <div className="mt-1 text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Sentiment: {kpis.net_chg >= 0 ? 'Bullish' : 'Bearish'}</div>
                             </div>
 
                             <div className="glass p-4 rounded-xl border-border/60 shadow-lg">
@@ -321,13 +321,13 @@
                                 <h3 className={`text-xl font-black tracking-tighter ${kpis.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                     {kpis.pcr || "---"}
                                 </h3>
-                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">{kpis.pcr >= 1 ? 'PUT HEAVY' : 'CALL HEAVY'}</div>
+                                <div className="mt-1 text-[8px] text-muted-foreground font-bold uppercase tracking-widest">{kpis.pcr >= 1 ? 'PUT HEAVY' : 'CALL HEAVY'}</div>
                             </div>
 
                             <div className="glass p-4 rounded-xl border-border/60 shadow-lg">
                                 <p className="text-muted-foreground text-[8px] font-black uppercase tracking-widest mb-1">Underlying LTP</p>
                                 <h3 className="text-xl font-black text-foreground tracking-tighter">₹{kpis.ltp?.toLocaleString() || "---"}</h3>
-                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">{symbol} Spot Price</div>
+                                <div className="mt-1 text-[8px] text-muted-foreground font-bold uppercase tracking-widest">{symbol} Spot Price</div>
                             </div>
 
                             <div className="glass p-4 rounded-xl border-border/60 shadow-lg border-l-rose-500/30">
@@ -366,7 +366,7 @@
                                         </span>
                                     );
                                 })}
-                                <span className="ml-auto text-[9px] text-slate-600 font-bold">
+                                <span className="ml-auto text-[9px] text-muted-foreground font-bold">
                                     ATM: <span className="text-amber-400">{atmStrike?.toLocaleString('en-IN')}</span>
                                     {metadata.spot && <> · Spot: <span className="text-muted-foreground">{metadata.spot?.toLocaleString('en-IN', { minimumFractionDigits: 1 })}</span></>}
                                 </span>
