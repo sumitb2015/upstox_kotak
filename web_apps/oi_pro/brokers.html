@@ -11,23 +11,21 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background: #02080f;
-            color: #f1f5f9;
             margin: 0;
             min-height: 100vh;
             padding-left: 6rem;
         }
 
         .glass {
-            background: rgba(8, 15, 30, 0.7);
+            background: var(--card);
             backdrop-filter: blur(32px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--border);
         }
 
         .glass-input {
-            background: rgba(3, 7, 18, 0.55);
+            background: var(--background);
             border: 1px solid var(--border);
-            color: white;
+            color: var(--foreground);
             outline: none;
             padding: 0.75rem 1rem;
             border-radius: 0.625rem;
@@ -52,17 +50,17 @@
 
         .btn-outline {
             background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #94a3b8;
+            border: 1px solid var(--border);
+            color: var(--muted-foreground);
             border-radius: 0.5rem;
             padding: 0.6rem 1.25rem;
             transition: all 0.2s;
         }
 
         .btn-outline:hover {
-            border-color: rgba(255, 255, 255, 0.3);
-            color: white;
-            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--foreground);
+            color: var(--foreground);
+            background: var(--muted);
         }
 
         .broker-table {
@@ -72,23 +70,23 @@
         }
 
         .broker-table th {
-            color: #64748b;
+            color: var(--muted-foreground);
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--border);
             text-align: left;
         }
 
         .broker-table td {
             padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border);
             font-size: 0.875rem;
         }
 
         .broker-table tr:hover {
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--muted);
         }
 
         .status-pill {
@@ -112,7 +110,7 @@
         .modal-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(2, 8, 18, 0.85);
+            background: rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(8px);
             display: none;
             align-items: center;
@@ -121,8 +119,8 @@
         }
 
         .modal-card {
-            background: #0b1221;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 1.5rem;
             padding: 2.5rem;
             width: 100%;
@@ -157,13 +155,13 @@
         }
 
         .breadcrumb {
-            color: #64748b;
+            color: var(--muted-foreground);
             font-size: 0.875rem;
             margin-bottom: 1.5rem;
         }
 
         .breadcrumb span {
-            color: #f8fafc;
+            color: var(--foreground);
             font-weight: 500;
         }
     </style>
@@ -250,7 +248,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -342,7 +340,8 @@
                         placeholder="Enter your API Secret">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Redirect URI (must match broker
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Redirect URI (must match
+                        broker
                         portal)</label>
                     <input id="modal-redirect-uri" type="text" class="glass-input w-full"
                         placeholder="http://127.0.0.1:8001/api/brokers/callback/upstox">
@@ -365,7 +364,8 @@
                 </svg>
             </div>
             <h3 class="text-xl font-bold text-foreground mb-2">Delete Broker</h3>
-            <p class="text-muted-foreground text-sm mb-6">Are you sure you want to remove this broker credential? This action
+            <p class="text-muted-foreground text-sm mb-6">Are you sure you want to remove this broker credential? This
+                action
                 cannot be undone.</p>
             <div class="flex gap-3">
                 <button onclick="closeConfirmModal()" class="btn-outline flex-1">Cancel</button>
