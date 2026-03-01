@@ -11,23 +11,21 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background: #02080f;
-            color: #f1f5f9;
             margin: 0;
             min-height: 100vh;
             padding-left: 6rem;
         }
 
         .glass {
-            background: rgba(8, 15, 30, 0.7);
+            background: var(--card);
             backdrop-filter: blur(32px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--border);
         }
 
         .glass-input {
-            background: rgba(3, 7, 18, 0.55);
+            background: var(--background);
             border: 1px solid var(--border);
-            color: white;
+            color: var(--foreground);
             outline: none;
             padding: 0.75rem 1rem;
             border-radius: 0.625rem;
@@ -49,16 +47,16 @@
         }
 
         .btn-ghost {
-            background: rgba(255, 255, 255, 0.05);
-            color: #94a3b8;
+            background: transparent;
+            color: var(--muted-foreground);
             border-radius: 0.625rem;
             padding: 0.75rem 1.25rem;
             transition: all 0.2s;
         }
 
         .btn-ghost:hover {
-            background: rgba(255, 255, 255, 0.09);
-            color: white;
+            background: var(--muted);
+            color: var(--foreground);
         }
 
         .user-table {
@@ -68,12 +66,12 @@
         }
 
         .user-table tr {
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--card);
             transition: background 0.2s;
         }
 
         .user-table tr:hover {
-            background: rgba(255, 255, 255, 0.04);
+            background: var(--muted);
         }
 
         .user-table td,
@@ -83,7 +81,7 @@
         }
 
         .user-table th {
-            color: #64748b;
+            color: var(--muted-foreground);
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.1em;
@@ -111,7 +109,7 @@
         .modal-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(2, 8, 18, 0.85);
+            background: rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(8px);
             display: none;
             align-items: center;
@@ -120,8 +118,8 @@
         }
 
         .modal-card {
-            background: #0b1221;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 1.5rem;
             padding: 2.5rem;
             width: 100%;
@@ -211,7 +209,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
