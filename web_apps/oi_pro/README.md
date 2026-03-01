@@ -70,16 +70,28 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 - **Functionality**: Persistent historical time-series of option Greeks for a specific strike.
 - **Key Features**: 5 charts — Delta, Gamma, Vega, Theta, and Implied Volatility. 8-card KPI strip with latest values and intraday change. Color-coded CE (solid) / PE (dashed) spline traces. Live pulse badge and informative empty-state.
 
-### 17. User Login (`/login`)
+### 17. Market Watch (`/market-watch`) [NEW]
+- **Functionality**: Sector performance and constituent contribution tracking.
+- **Key Features**: Plotly bar chart displaying the daily percentage changes of various indices (NIFTY IT, BANKNIFTY, etc.) and visual constituent boards for NIFTY and BANKNIFTY stocks with right-to-left and left-to-right bar progressions.
+
+### 18. Future Intraday Buildup (`/future-intraday`) [NEW]
+- **Functionality**: Detailed intraday tracking of Open Interest buildup for the current month's future contract.
+- **Key Features**: Allows toggling between 3, 5, and 15-minute intervals. Calculates real-time sentiment (Long Buildup, Short Buildup, etc.) based on Price and OI changes. Includes a sentiment progress bar and a detailed color-coded table. Automatically refreshes every minute.
+
+### 19. Future Price vs OI (`/future-price-oi`) [NEW]
+- **Functionality**: High-performance streaming chart correlating Future Price with Open Interest.
+- **Key Features**: Live dual-axis Plotly line chart rendering Future Price (left axis) vs Open Interest (right axis). Initializes using historical 1-minute data and seamlessly streams tick-by-tick updates via WebSockets for real-time visualization.
+
+### 20. User Login (`/login`)
 - **Functionality**: Secure gateway to the analytics platform using JWT-based authentication.
 - **Key Features**: Persistent sessions via local storage, automatic redirection for unauthenticated users.
 - **Default Credentials**: `admin@oipro.com` / `OIPro@123` (Administrator)
 
-### 18. User Management (`/users`)
+### 21. User Management (`/users`)
 - **Functionality**: Administrator dashboard for managing platform accounts.
 - **Key Features**: View all users, add new accounts with specific roles, and delete users. Access is strictly restricted to 'admin' role accounts.
 
-### 19. Broker Management (`/brokers`)
+### 22. Broker Management (`/brokers`)
 - **Functionality**: Centralized interface for managing broker API credentials and generating daily access tokens.
 - **Key Features**: Add, edit, and delete broker credentials (masked API Keys/Secrets). Features an interactive popup-based OAuth token generation flow for Upstox without leaving the dashboard.
 

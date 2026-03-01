@@ -1612,6 +1612,24 @@ async def get_indices_dashboard(request: Request):
     except Exception as e:
         return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
 
+@app.get("/market-watch", response_class=HTMLResponse)
+async def get_market_watch(request: Request):
+    """Serves the Unified HTML for the Market Watch Dashboard"""
+    try:
+        html_path = Path(__file__).parent / "market_watch.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/future-intraday", response_class=HTMLResponse)
+async def get_future_intraday(request: Request):
+    """Serves the Unified HTML for the Future Intraday Buildup"""
+    try:
+        html_path = Path(__file__).parent / "future_intraday.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
 @app.get("/api/market-quote")
 async def get_market_quote(
     token: str = Query(None),
@@ -3730,6 +3748,177 @@ async def get_multi_strike_price_data(
         traceback.print_exc()
         print(f" [UPSTOX] [Multi-Strike Price] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/future-intraday")
+async def get_future_intraday_api(
+    symbol: str = Query("NIFTY"),
+    timeframe: int = Query(3)
+):
+    """Fetch intraday future buildup data"""
+    try:
+        from lib.api.historical import get_intraday_data_v3
+        from lib.utils.instrument_utils import get_future_instrument_key
+        # get_access_token and calculate_buildup are in the global scope of main.py
+        
+        access_token = await get_access_token()
+        if not access_token:
+            return {"status": "error", "message": "Access token not found"}
+            
+        from lib.api.market_data import download_nse_market_data
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        
+        instrument_key = get_future_instrument_key(symbol, nse_data)
+        if not instrument_key:
+            return {"status": "error", "message": f"Future key not found for {symbol}"}
+            
+        # Fetch Intraday Data
+        candles = await run_in_threadpool(get_intraday_data_v3, access_token, instrument_key, "minute", timeframe)
+        if not candles:
+            # Fallback to daily data if intraday fails or market hasn't opened?
+            return {"status": "error", "message": f"No intraday data found for {symbol} {timeframe}m"}
+            
+        # Process Buildup
+        processed = []
+        for i in range(1, len(candles)):
+            curr = candles[i]
+            prev = candles[i-1]
+            
+            # Use close-to-close for buildup
+            price_chg = curr['close'] - prev['close']
+            price_chg_pct = (price_chg / prev['close']) * 100 if prev['close'] != 0 else 0
+            oi_chg = curr['oi'] - prev['oi']
+            oi_chg_pct = (oi_chg / prev['oi']) * 100 if prev['oi'] != 0 else 0
+            
+            sentiment = calculate_buildup(price_chg_pct, oi_chg_pct)
+            
+            processed.append({
+                "time": curr['timestamp'], 
+                "price": curr['close'],
+                "price_chg": round(price_chg, 2),
+                "oi": curr['oi'],
+                "oi_chg": oi_chg,
+                "sentiment": sentiment
+            })
+            
+        # Sort by time descending (latest first)
+        processed.sort(key=lambda x: x['time'], reverse=True)
+        
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "data": processed
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.get("/future-price-oi", response_class=HTMLResponse)
+async def future_price_oi_page():
+    try:
+        html_path = Path("web_apps/oi_pro/future_price_oi.html")
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/api/future-price-oi-history")
+async def get_future_price_oi_history(symbol: str = Query("NIFTY")):
+    """Fetch 1m intraday historical data for Future Price vs OI chart"""
+    try:
+        from lib.api.historical import get_intraday_data_v3
+        from lib.utils.instrument_utils import get_future_instrument_key
+        
+        access_token = await get_access_token()
+        if not access_token:
+            return {"status": "error", "message": "Access token not found"}
+            
+        from lib.api.market_data import download_nse_market_data
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        
+        instrument_key = get_future_instrument_key(symbol, nse_data)
+        if not instrument_key:
+            return {"status": "error", "message": f"Future key not found for {symbol}"}
+            
+        # Fetch Intraday 1-minute Data
+        candles = await run_in_threadpool(get_intraday_data_v3, access_token, instrument_key, "minute", 1)
+        if not candles:
+            return {"status": "error", "message": f"No intraday data found for {symbol}"}
+            
+        processed = []
+        for curr in candles:
+            processed.append({
+                "time": curr['timestamp'], 
+                "price": curr['close'],
+                "oi": curr['oi']
+            })
+            
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "instrument_key": instrument_key,
+            "data": processed
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.websocket("/ws/future-price-oi/{symbol}")
+async def future_price_oi_websocket(websocket: WebSocket, symbol: str, token: str = Query(None)):
+    current_user = None
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            current_user = get_user(email)
+    except:
+         await websocket.close(code=1008)
+         return
+         
+    global streamer
+    await manager.connect(websocket)
+    
+    try:
+        from lib.utils.instrument_utils import get_future_instrument_key
+        from lib.api.market_data import download_nse_market_data
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        future_key = get_future_instrument_key(symbol, nse_data)
+        
+        if not future_key:
+            raise Exception("Future key not found")
+            
+        if streamer is None:
+            token_upstox = await get_access_token(current_user)
+            streamer = UpstoxStreamer(token_upstox)
+            
+        # Ensure we subscribe to full mode so we get OI
+        streamer.connect_market_data(
+            instrument_keys=[future_key],
+            mode="full"
+        )
+        streamer.subscribe_market_data([future_key], mode="full")
+
+        while True:
+            await asyncio.sleep(1) # Update every second
+            if streamer:
+                latest = streamer.get_latest_data(future_key)
+                if latest and 'ltp' in latest and 'oi' in latest:
+                    import time
+                    ts = int(time.time() * 1000)
+                    
+                    await websocket.send_json({
+                        "type": "future-price-oi", 
+                        "time": ts,
+                        "price": latest['ltp'],
+                        "oi": latest['oi']
+                    })
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        manager.disconnect(websocket)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        manager.disconnect(websocket)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)

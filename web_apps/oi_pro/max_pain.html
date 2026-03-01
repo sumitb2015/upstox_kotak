@@ -318,7 +318,7 @@
                         vol = (d.ce_volume + d.pe_volume) / 2;
                     }
 
-                    return { strike: d.strike, iv, oi, vol };
+                    return { strike: d.strike, iv, oi, vol, ce_oi: d.ce_oi, pe_oi: d.pe_oi };
                 }).filter(d =>
                     d.iv > 0 &&
                     d.iv < 150 &&
@@ -339,7 +339,10 @@
 
                 const strikes = smoothedData.map(d => d.strike);
                 const ivValues = smoothedData.map(d => d.iv);
+                const callOiValues = smoothedData.map(d => d.ce_oi || 0);
+                const putOiValues = smoothedData.map(d => d.pe_oi || 0);
 
+                // --- TRACES ---
                 const traceSmile = {
                     x: strikes,
                     y: ivValues,
@@ -358,25 +361,59 @@
                     },
                     fill: 'tozeroy',
                     fillcolor: isDark ? 'rgba(56, 189, 248, 0.05)' : 'rgba(3, 105, 161, 0.05)',
-                    hovertemplate: '<b>Strike: %{x}</b><br>Implied Vol: %{y:.2f}%<extra></extra>'
+                    hovertemplate: '<b>Strike: %{x}</b><br>Implied Vol: %{y:.2f}%<extra></extra>',
+                    yaxis: 'y'
+                };
+
+                const traceCallOi = {
+                    x: strikes,
+                    y: smoothedData.map(d => d.ce_oi),
+                    name: 'Call OI',
+                    type: 'bar',
+                    marker: { color: isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.4)' },
+                    hoverinfo: 'skip',
+                    yaxis: 'y2'
+                };
+
+                const tracePutOi = {
+                    x: strikes,
+                    y: smoothedData.map(d => d.pe_oi),
+                    name: 'Put OI',
+                    type: 'bar',
+                    marker: { color: isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(244, 63, 94, 0.4)' },
+                    hoverinfo: 'skip',
+                    yaxis: 'y2' // Use secondary y-axis
                 };
 
                 const layout = {
                     title: { text: `Volatility Smile - OTM IV Curve`, font: { color: isDark ? '#f8fafc' : '#0f172a', size: 18 } },
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    showlegend: false,
+                    showlegend: true, // Show legend for the new traces
+                    legend: { orientation: 'h', y: 1.1, x: 0 },
+                    barmode: 'group', // Group the bars
                     xaxis: {
                         title: { text: 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569' } },
                         tickfont: { color: isDark ? '#94a3b8' : '#475569' },
                         gridcolor: isDark ? '#1e293b' : '#f1f5f9',
                         zeroline: false
                     },
-                    yaxis: {
+                    yaxis: { // Primary Y-axis (IV)
                         title: { text: 'Implied Volatility (%)', font: { color: isDark ? '#94a3b8' : '#475569' } },
                         tickfont: { color: isDark ? '#94a3b8' : '#475569' },
                         gridcolor: isDark ? '#1e293b' : '#f1f5f9',
-                        zeroline: false
+                        zeroline: false,
+                        side: 'left'
+                    },
+                    yaxis2: { // Secondary Y-axis (OI)
+                        title: '',
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: 'transparent',
+                        zeroline: false,
+                        overlaying: 'y', // Important: Overlay on top of the primary axis
+                        side: 'right', // Place it on the right
+                        showgrid: false, // Don't show grid lines for the secondary axis
+                        tickformat: '.2s' // Format as K/M
                     },
                     hovermode: 'x unified',
                     hoverlabel: {
@@ -401,7 +438,7 @@
                     ]
                 };
 
-                Plotly.react('iv-chart', [traceSmile], layout, { responsive: true, displayModeBar: false });
+                Plotly.react('iv-chart', [traceCallOi, tracePutOi, traceSmile], layout, { responsive: true, displayModeBar: false });
 
             }, [ivData, spotPrice, symbol, isDark]);
 
