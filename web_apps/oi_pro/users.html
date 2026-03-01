@@ -128,6 +128,96 @@
             max-width: 450px;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body class="p-8">
@@ -136,8 +226,8 @@
     <div class="max-w-6xl mx-auto">
         <div class="flex justify-between items-center mb-10">
             <div>
-                <h1 class="text-4xl font-extrabold tracking-tight text-white mb-2">User Management</h1>
-                <p class="text-slate-500">Manage internal accounts and access levels.</p>
+                <h1 class="text-4xl font-extrabold tracking-tight text-foreground mb-2">User Management</h1>
+                <p class="text-muted-foreground">Manage internal accounts and access levels.</p>
             </div>
             <button onclick="openAddModal()" class="btn-cta">Add New User</button>
         </div>
@@ -162,18 +252,18 @@
     <!-- Add User Modal -->
     <div id="add-modal" class="modal-overlay">
         <div class="modal-card">
-            <h2 class="text-2xl font-bold text-white mb-6">Create New User</h2>
+            <h2 class="text-2xl font-bold text-foreground mb-6">Create New User</h2>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Email Address</label>
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Email Address</label>
                     <input id="new-email" type="email" class="glass-input w-full" placeholder="user@oipro.com">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Password</label>
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Password</label>
                     <input id="new-password" type="password" class="glass-input w-full" placeholder="••••••••">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Role</label>
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Role</label>
                     <select id="new-role" class="glass-input w-full appearance-none">
                         <option value="user">Standard User</option>
                         <option value="admin">Administrator</option>
@@ -203,13 +293,13 @@
                 container.innerHTML = users.map(user => `
                     <tr>
                         <td>
-                            <div class="font-bold text-white">${user.email}</div>
-                            <div class="text-xs text-slate-500">${user.is_active ? 'Active' : 'Inactive'}</div>
+                            <div class="font-bold text-foreground">${user.email}</div>
+                            <div class="text-xs text-muted-foreground">${user.is_active ? 'Active' : 'Inactive'}</div>
                         </td>
                         <td>
                             <span class="role-badge role-${user.role}">${user.role}</span>
                         </td>
-                        <td class="text-slate-400 text-sm">
+                        <td class="text-muted-foreground text-sm">
                             ${new Date(user.created_at).toLocaleDateString()}
                         </td>
                         <td class="text-right">

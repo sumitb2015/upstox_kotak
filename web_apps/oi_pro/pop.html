@@ -10,10 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -85,6 +82,96 @@
             scrollbar-color: #1e293b transparent;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -224,7 +311,7 @@
             }, [filteredData, minPoP]);
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased selection:bg-emerald-500/30">
+                <div className="min-h-screen bg-background text-muted-foreground antialiased selection:bg-emerald-500/30">
                     {/* Unified Sidebar Navigation */}
                     <div id="sidebar-root"></div>
 
@@ -232,25 +319,25 @@
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 pr-28">
                             <div>
-                                <h1 className="text-3xl font-black text-white tracking-tight">Premium vs PoP</h1>
-                                <p className="text-slate-500 font-medium">Risk-Reward Analysis for Option Sellers</p>
+                                <h1 className="text-3xl font-black text-foreground tracking-tight">Premium vs PoP</h1>
+                                <p className="text-muted-foreground font-medium">Risk-Reward Analysis for Option Sellers</p>
                             </div>
 
                             <div className="flex gap-4 pr-32">
                                 <select
                                     value={symbol}
                                     onChange={e => setSymbol(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
+                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50"
                                 >
-                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
 
                                 <select
                                     value={expiry}
                                     onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
+                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50"
                                 >
-                                    {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
+                                    {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -259,7 +346,7 @@
                         <div className="glass p-6 rounded-2xl mb-8 flex items-center gap-8">
                             <div className="w-full max-w-md">
                                 <div className="flex justify-between mb-2">
-                                    <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Min Probability of Profit</span>
+                                    <span className="text-muted-foreground text-xs font-bold uppercase tracking-widest">Min Probability of Profit</span>
                                     <span className="text-emerald-400 font-black">{minPoP}%</span>
                                 </div>
                                 <input
@@ -270,8 +357,8 @@
                                     onChange={e => setMinPoP(Number(e.target.value))}
                                 />
                             </div>
-                            <div className="text-slate-500 text-sm border-l border-slate-700 pl-8">
-                                Showing <span className="text-white font-bold">{filteredData.length}</span> opportunities with PoP {'>'} {minPoP}%
+                            <div className="text-muted-foreground text-sm border-l border-border pl-8">
+                                Showing <span className="text-foreground font-bold">{filteredData.length}</span> opportunities with PoP {'>'} {minPoP}%
                             </div>
                         </div>
 
@@ -331,7 +418,7 @@
                                     {/* Top Opportunities Table */}
                                     {filteredData.length > 0 && (
                                         <div className="glass rounded-2xl mb-6 overflow-hidden">
-                                            <div className="px-5 py-3 border-b border-slate-800/60 flex items-center justify-between">
+                                            <div className="px-5 py-3 border-b border-border/60 flex items-center justify-between">
                                                 <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Top Selling Opportunities</span>
                                                 <span style={{ fontSize: 9, color: '#475569' }}>Sorted by Premium · PoP ≥ {minPoP}%</span>
                                             </div>
@@ -386,7 +473,7 @@
                         {/* Chart Area */}
                         <div className="glass p-6 rounded-3xl min-h-[500px] relative">
                             {loading && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 rounded-3xl">
+                                <div className="absolute inset-0 flex items-center justify-center bg-card/50 backdrop-blur-sm z-10 rounded-3xl">
                                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
                                 </div>
                             )}

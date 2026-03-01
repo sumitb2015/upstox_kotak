@@ -10,10 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -58,6 +55,96 @@
             scrollbar-color: #1e293b transparent;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -333,7 +420,7 @@
             // Re-render when dependencies change
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
+                <div className="min-h-screen bg-background text-muted-foreground antialiased flex overflow-hidden">
                     {/* Unified Sidebar Navigation */}
                     <div id="sidebar-root"></div>
 
@@ -344,34 +431,34 @@
                                 <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
                                     Greeks Exposure Analysis
                                 </h1>
-                                <p className="text-slate-400 mt-1 flex items-center gap-2">
+                                <p className="text-muted-foreground mt-1 flex items-center gap-2">
                                     Analyze Delta, Gamma, Vega, Theta, GEX Levels
                                     {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
+                                        <span className="text-xs bg-slate-800 text-muted-foreground px-2 py-0.5 rounded-full border border-border">
                                             Updated: {lastUpdated.toLocaleTimeString()}
                                         </span>
                                     )}
                                 </p>
                             </div>
                             <div className="flex gap-4 items-center"> {/* Added items-center for vertical alignment */}
-                                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Spot Price</p>
-                                    <p className="text-2xl font-bold text-white">{spotPrice}</p>
+                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Spot Price</p>
+                                    <p className="text-2xl font-bold text-foreground">{spotPrice}</p>
                                 </div>
-                                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Net GEX</p>
+                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Net GEX</p>
                                     <p className={`text-2xl font-bold ${totalGex >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                                         {formatCurrency(totalGex)}
                                     </p>
                                 </div>
-                                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Total Exposure</p>
+                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Exposure</p>
                                     <p className="text-2xl font-bold text-cyan-400">
                                         {formatCurrency(totalExposure)}
                                     </p>
                                 </div>
-                                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700 min-w-[150px]">
-                                    <p className="text-xs text-slate-400 uppercase tracking-wider">Flip Point</p>
+                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Flip Point</p>
                                     <p className={`text-2xl font-bold ${flipPoint > spotPrice ? "text-rose-400" : "text-amber-400"}`}>
                                         {flipPoint > 0 ? `₹${flipPoint.toLocaleString()}` : '---'}
                                     </p>
@@ -379,29 +466,29 @@
                                 <select
                                     value={symbol}
                                     onChange={e => setSymbol(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
+                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50"
                                 >
-                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
 
                                 <select
                                     value={expiry}
                                     onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50"
+                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50"
                                 >
-                                    {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
+                                    {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
 
                                 <select
                                     value={greek}
                                     onChange={e => setGreek(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-white font-bold tracking-wide outline-none focus:border-emerald-500/50 bg-[#1e293b]"
+                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50 bg-[#1e293b]"
                                 >
-                                    {GREEKS.map(g => <option key={g} value={g} className="bg-[#0b0f1a]">{g}</option>)}
+                                    {GREEKS.map(g => <option key={g} value={g} className="bg-card">{g}</option>)}
                                 </select>
 
-                                <div className="bg-slate-800 p-2 rounded-xl border border-slate-700 flex items-center gap-3">
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Strikes: {strikeRange}</span>
+                                <div className="bg-slate-800 p-2 rounded-xl border border-border flex items-center gap-3">
+                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Strikes: {strikeRange}</span>
                                     <input
                                         type="range"
                                         min="2"
@@ -418,7 +505,7 @@
 
                                 <button
                                     onClick={() => setOrientation(prev => prev === 'v' ? 'h' : 'v')}
-                                    className="glass w-10 h-10 flex items-center justify-center rounded-xl hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 transition-all font-bold"
+                                    className="glass w-10 h-10 flex items-center justify-center rounded-xl hover:bg-emerald-500/20 text-muted-foreground hover:text-emerald-400 transition-all font-bold"
                                     title="Toggle Orientation"
                                 >
                                     {orientation === 'v' ? '⟳' : '⟲'}
@@ -426,7 +513,7 @@
 
                                 {/* Range Slider */}
                                 <div className="flex flex-col items-center gap-1 w-32">
-                                    <span className="text-xs text-slate-400">Strikes: ±{strikeRange}</span>
+                                    <span className="text-xs text-muted-foreground">Strikes: ±{strikeRange}</span>
                                     <input
                                         type="range"
                                         min="4"
@@ -443,7 +530,7 @@
                         <div className="flex flex-col gap-8">
                             <div className="glass p-6 rounded-3xl min-h-[500px] relative">
                                 {loading && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm z-10 rounded-3xl">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-card/50 backdrop-blur-sm z-10 rounded-3xl">
                                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
                                     </div>
                                 )}

@@ -171,125 +171,213 @@
     }
 
     function renderSidebar() {
+        // Apply saved theme immediately
+        const savedTheme = localStorage.getItem('oi-pro-theme') || 'dark';
+        if (savedTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+
         const currentPath = window.location.pathname;
+
+        const toggleTheme = () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            if (isDark) {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('oi-pro-theme', 'light');
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('oi-pro-theme', 'dark');
+            }
+            renderSidebar(); // Re-render to update icon
+        };
 
         // Inject Styles
         if (!document.getElementById('sidebar-styles')) {
             const style = document.createElement('style');
             style.id = 'sidebar-styles';
             style.innerHTML = `
-                .oi-pro-sidebar {
+                :root {
+                    --background: #ffffff;
+                    --foreground: #020817;
+                    --card: #ffffff;
+                    --card-foreground: #020817;
+                    --popover: #ffffff;
+                    --popover-foreground: #020817;
+                    --primary: #020817;
+                    --primary-foreground: #f8fafc;
+                    --secondary: #f8fafc;
+                    --secondary-foreground: #1e293b;
+                    --muted: #f1f5f9;
+                    --muted-foreground: #64748b;
+                    --accent: #f1f5f9;
+                    --accent-foreground: #020817;
+                    --destructive: #ef4444;
+                    --destructive-foreground: #f8fafc;
+                    --border: #e2e8f0;
+                    --input: #e2e8f0;
+                    --ring: #020817;
+                    --radius: 0.5rem;
+                }
+
+                .dark {
+                    --background: #020817;
+                    --foreground: #f8fafc;
+                    --card: #0f172a;
+                    --card-foreground: #f8fafc;
+                    --popover: #020817;
+                    --popover-foreground: #f8fafc;
+                    --primary: #f8fafc;
+                    --primary-foreground: #020817;
+                    --secondary: #1e293b;
+                    --secondary-foreground: #f8fafc;
+                    --muted: #1e293b;
+                    --muted-foreground: #94a3b8;
+                    --accent: #1e293b;
+                    --accent-foreground: #f8fafc;
+                    --destructive: #ef4444;
+                    --destructive-foreground: #f8fafc;
+                    --border: #334155;
+                    --input: #334155;
+                    --ring: #f8fafc;
+                }
+
+                .sidebar-root {
+                    font-family: 'Inter', sans-serif;
+                }
+                .sidebar {
                     position: fixed;
                     left: 0;
                     top: 0;
                     height: 100%;
                     width: 5.5rem;
-                    background: #0b0f1a;
-                    border-right: 1px solid rgba(51, 65, 85, 0.4);
+                    background-color: var(--card);
+                    border-right: 1px solid var(--border);
                     display: flex;
                     flex-direction: column;
-                    align-items: flex-start;
-                    padding: 1.5rem 0.75rem;
-                    gap: 1.25rem;
+                    padding: 1rem 0;
                     z-index: 1000;
                     overflow-y: auto;
                     overflow-x: hidden;
-                    transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
-                    scrollbar-width: thin;
-                    scrollbar-color: #1e293b transparent;
+                    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s, border-color 0.3s;
+                    scrollbar-width: none; /* Firefox */
                 }
-
-                .oi-pro-sidebar:hover {
-                    width: 18rem;
-                    background: #0f172a;
-                    box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+                .sidebar::-webkit-scrollbar {
+                    display: none; /* Chrome, Safari, Opera */
                 }
-
-                .nav-item {
-                    display: flex;
-                    align-items: center;
-                    width: 100%;
-                    min-height: 3rem;
-                    padding: 0 0.85rem;
-                    border-radius: 0.75rem;
-                    text-decoration: none;
-                    transition: all 0.2s ease;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    gap: 1.25rem;
+                .sidebar:hover {
+                    width: 16rem;
                 }
-
-                .nav-item-icon {
-                    flex-shrink: 0;
-                    width: 2.5rem;
-                    height: 2.5rem;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    border-radius: 0.625rem;
-                    transition: transform 0.2s;
-                }
-
-                .nav-label {
+                .nav-text {
                     opacity: 0;
-                    transform: translateX(-15px);
-                    transition: opacity 0.2s ease 0.1s, transform 0.2s ease 0.1s;
-                    font-size: 0.9rem;
-                    font-weight: 600;
-                    color: #94a3b8;
+                    margin-left: 0.75rem;
+                    font-weight: 500;
+                    white-space: nowrap;
+                    transition: opacity 0.2s, color 0.2s;
+                    display: none; /* Hidden by default */
                 }
-
-                .oi-pro-sidebar:hover .nav-label {
+                .sidebar:hover .nav-text {
                     opacity: 1;
-                    transform: translateX(0);
+                    display: block; /* Show on hover */
+                }
+                
+                .nav-item {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    padding: 0.75rem 0;
+                    margin: 0.25rem 0.75rem;
+                    border-radius: 0.5rem;
+                    color: var(--muted-foreground);
+                    text-decoration: none;
+                    transition: all 0.2s;
+                    justify-content: center;
+                }
+                
+                .sidebar:hover .nav-item {
+                    justify-content: flex-start;
+                    padding-left: 1rem;
                 }
 
-                .nav-item.active .nav-label {
-                    color: white;
-                }
-                
-                .nav-item:hover .nav-label {
-                    color: #10b981;
-                }
-                
-                .nav-item:hover .nav-item-icon {
-                    transform: scale(1.05);
+                .nav-item:hover {
+                    background-color: var(--accent);
+                    color: var(--foreground);
                 }
 
-                /* Active/Inactive states */
-                .nav-item.active .nav-item-icon {
-                    background: #10b981;
-                    box-shadow: 0 0 15px rgba(16,185,129,0.4);
-                    color: white;
-                }
-                
-                .nav-item.inactive .nav-item-icon {
-                    background: rgba(30, 41, 59, 0.5);
-                    color: #64748b;
-                }
-                
-                .nav-item.inactive:hover .nav-item-icon {
-                    background: rgba(16,185,129,0.15);
-                    color: #10b981;
+                .nav-item.active {
+                    background-color: var(--accent);
+                    color: var(--foreground);
+                    font-weight: 600;
                 }
 
-                /* Hide scrollbar */
-                .oi-pro-sidebar::-webkit-scrollbar { width: 4px; }
-                .oi-pro-sidebar::-webkit-scrollbar-track { background: transparent; }
-                .oi-pro-sidebar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+                /* Active indicator line */
+                .nav-item.active::before {
+                    content: '';
+                    position: absolute;
+                    left: 0;
+                    top: 15%;
+                    height: 70%;
+                    width: 3px;
+                    background-color: var(--foreground);
+                    border-radius: 0 4px 4px 0;
+                }
+
+                /* Scrollbar hiding for sidebar content */
+                .sidebar-content::-webkit-scrollbar {
+                    display: none;
+                }
+                .sidebar-content {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+
+                /* Mobile Bottom Nav */
+                @media (max-width: 768px) {
+                    .sidebar {
+                        width: 100%;
+                        height: 4rem;
+                        top: auto;
+                        bottom: 0;
+                        border-right: none;
+                        border-top: 1px solid var(--border);
+                        flex-direction: row;
+                        padding: 0;
+                    }
+                    .sidebar:hover {
+                        width: 100%;
+                    }
+                    .nav-text {
+                        display: none !important;
+                    }
+                    .nav-item {
+                        flex: 1;
+                        justify-content: center !important;
+                        margin: 0;
+                        border-radius: 0;
+                        padding: 0;
+                    }
+                    .nav-item.active::before {
+                        top: 0;
+                        left: 15%;
+                        width: 70%;
+                        height: 3px;
+                        border-radius: 0 0 4px 4px;
+                    }
+                }
 
                 /* Global Clock Styles */
                 #oi-pro-global-clock {
                     position: fixed;
                     top: 0;
                     right: 2.5rem;
-                    background: rgba(15, 23, 42, 0.9);
+                    background: var(--card);
                     backdrop-filter: blur(12px);
                     -webkit-backdrop-filter: blur(12px);
-                    border: 1px solid rgba(51, 65, 85, 0.6);
+                    border: 1px solid var(--border);
                     border-top: none;
                     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-                    color: #94a3b8;
+                    color: var(--muted-foreground);
                     font-size: 0.725rem;
                     font-weight: 600;
                     letter-spacing: 0.5px;
@@ -307,43 +395,68 @@
             document.head.appendChild(style);
         }
 
+        const isDark = document.documentElement.classList.contains('dark');
+
         // Build nav HTML
-        const itemsHTML = NAV_ITEMS.map(function (item) {
+        const navItemsHtml = NAV_ITEMS.map(function (item) {
             const isActive = item.href === "/"
                 ? currentPath === "/"
                 : currentPath === item.href || currentPath.startsWith(item.href + "/");
 
-            const strokeColor = isActive ? "white" : "currentColor";
-
-            return '<a href="' + item.href + '" class="nav-item ' + (isActive ? 'active' : 'inactive') + '">' +
-                '<div class="nav-item-icon">' +
-                '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + strokeColor + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+            return `<a href="${item.href}" class="nav-item ${isActive ? 'active' : ''}">` +
+                `<div class="w-5 h-5 flex items-center justify-center shrink-0">` +
+                `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
                 item.svg +
-                '</svg>' +
-                '</div>' +
-                '<span class="nav-label">' + item.title + '</span>' +
-                '</a>';
+                `</svg>` +
+                `</div>` +
+                `<span class="nav-text">${item.title}</span>` +
+                `</a>`;
         }).join('\n');
 
-        const logoutHTML = '<a href="#" id="oi-pro-logout" class="nav-item inactive mt-auto" style="margin-top: auto; border-top: 1px solid rgba(51, 65, 85, 0.4); border-radius: 0; padding-top: 1.25rem;">' +
-            '<div class="nav-item-icon">' +
-            '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-            '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>' +
-            '</svg>' +
-            '</div>' +
-            '<span class="nav-label" style="color: #ef4444;">Logout</span>' +
-            '</a>';
+        const navHTML = `
+            <nav class="sidebar">
+                <div class="flex items-center justify-center h-12 mb-6 cursor-default">
+                    <div class="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center text-background font-bold text-lg shadow-md shrink-0">
+                        OI
+                    </div>
+                    <span class="nav-text text-lg font-bold tracking-tight text-foreground">Pro Analytics</span>
+                </div>
 
-        const navHTML = '<nav class="oi-pro-sidebar">' +
-            itemsHTML +
-            logoutHTML +
-            '</nav>';
+                <div class="sidebar-content flex-1 overflow-y-auto">
+                    ${navItemsHtml}
+                </div>
+
+                <div class="mt-auto px-3 border-t border-border pt-4 flex flex-col gap-2">
+                    <!-- Theme Toggle -->
+                    <button id="theme-toggle" class="nav-item relative w-full group focus:outline-none">
+                        <div class="w-5 h-5 flex items-center justify-center shrink-0">
+                            ${isDark ?
+                `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`
+                :
+                `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`
+            }
+                        </div>
+                        <span class="nav-text">${isDark ? 'Light Mode' : 'Dark Mode'}</span>
+                    </button>
+
+                    <button id="oi-pro-logout" class="nav-item relative w-full group text-destructive hover:text-destructive-foreground hover:bg-destructive/10 focus:outline-none">
+                        <div class="w-5 h-5 flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line>
+                            </svg>
+                        </div>
+                        <span class="nav-text">Logout</span>
+                    </button>
+                </div>
+            </nav>
+        `;
 
         const root = document.getElementById('sidebar-root');
         if (root) {
             root.innerHTML = navHTML;
         } else {
             const div = document.createElement('div');
+            div.className = 'sidebar-root'; // Add class for styling
             div.innerHTML = navHTML;
             document.body.insertBefore(div.firstChild, document.body.firstChild);
         }
@@ -356,6 +469,12 @@
                 localStorage.removeItem('oi_pro_jwt');
                 window.location.href = '/login';
             });
+        }
+
+        // Add event listener to the theme toggle button
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        if (themeToggleBtn) {
+            themeToggleBtn.addEventListener('click', toggleTheme);
         }
     }
 

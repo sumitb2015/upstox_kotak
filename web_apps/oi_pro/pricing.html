@@ -410,6 +410,96 @@
             animation-delay: 0.3s;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -433,14 +523,14 @@
                 <span class="wordmark">OI Pro</span>
             </a>
             <nav class="header-nav hidden md:flex">
-                <a href="/pricing.html" class="nav-link text-white font-bold">Pricing</a>
+                <a href="/pricing.html" class="nav-link text-foreground font-bold">Pricing</a>
                 <a href="#" class="nav-link">Knowledge base</a>
                 <a href="/contact.html" class="nav-link">Contact Us</a>
                 <a href="/privacy.html" class="nav-link">Legals</a>
             </nav>
             <div class="flex items-center gap-4">
                 <a href="/login.html"
-                    class="text-sm font-semibold text-slate-400 hover:text-white transition-colors">Sign In</a>
+                    class="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors">Sign In</a>
                 <button class="btn-cta !w-auto !py-2 !px-4 !text-xs">Try for Free</button>
             </div>
         </div>
@@ -450,20 +540,20 @@
         <!-- Hero Section -->
         <section class="max-w-4xl mx-auto text-center mb-16 fade-up">
             <h1 class="text-5xl md:text-7xl font-black tracking-tight mb-6 wordmark">Choose Your Trading Edge</h1>
-            <p class="text-xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+            <p class="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
                 Powerful Options Analytics. Real-Time Data. Smarter Decisions. Get institutional-grade tools used by pro
                 traders.
             </p>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
                 <button class="btn-cta !w-auto !px-8 h-14 text-lg">Start Free 5-Day Trial</button>
-                <div class="text-xs text-slate-500 font-medium">No credit card required</div>
+                <div class="text-xs text-muted-foreground font-medium">No credit card required</div>
             </div>
         </section>
 
         <!-- Pricing Toggle -->
         <div class="flex flex-col items-center mb-12 fade-up delay-1">
             <div class="flex items-center gap-4 mb-6">
-                <span class="text-sm font-bold text-slate-500 uppercase tracking-widest">Pricing Plan</span>
+                <span class="text-sm font-bold text-muted-foreground uppercase tracking-widest">Pricing Plan</span>
                 <div class="toggle-group" id="pricing-toggle">
                     <div class="toggle-btn active" data-period="monthly">Monthly</div>
                     <div class="toggle-btn" data-period="yearly">Yearly</div>
@@ -483,7 +573,7 @@
             <div
                 class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-white/10 transition-all duration-300 relative">
                 <div
-                    class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-white/5 text-slate-400">
+                    class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-border text-muted-foreground">
                     Try Before You Commit
                 </div>
                 <div class="mb-8">
@@ -491,9 +581,9 @@
                     <div class="flex items-baseline gap-1">
                         <span class="text-4xl font-black">₹0</span>
                     </div>
-                    <p class="text-sm text-slate-500 mt-2 font-medium">5 Days Full Access</p>
+                    <p class="text-sm text-muted-foreground mt-2 font-medium">5 Days Full Access</p>
                 </div>
-                <ul class="space-y-4 mb-10 text-sm text-slate-400 flex-1">
+                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
                     <li class="flex items-center gap-3">
                         <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="3">
@@ -526,12 +616,12 @@
                     <h3 class="text-xl font-bold mb-1">Basic</h3>
                     <div class="flex items-baseline gap-1">
                         <span class="text-4xl font-black price-val" data-monthly="399" data-yearly="339">₹399</span>
-                        <span class="text-slate-500 font-medium text-sm">/ mo</span>
+                        <span class="text-muted-foreground font-medium text-sm">/ mo</span>
                     </div>
-                    <p class="text-sm text-slate-500 mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
+                    <p class="text-sm text-muted-foreground mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
                     </p>
                 </div>
-                <ul class="space-y-4 mb-10 text-sm text-slate-400 flex-1">
+                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
                     <li class="flex items-center gap-3">
                         <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="3">
@@ -568,12 +658,12 @@
                     <h3 class="text-xl font-bold mb-1">Pro</h3>
                     <div class="flex items-baseline gap-1">
                         <span class="text-4xl font-black price-val" data-monthly="599" data-yearly="509">₹599</span>
-                        <span class="text-slate-500 font-medium text-sm">/ mo</span>
+                        <span class="text-muted-foreground font-medium text-sm">/ mo</span>
                     </div>
-                    <p class="text-sm text-slate-500 mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
+                    <p class="text-sm text-muted-foreground mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
                     </p>
                 </div>
-                <ul class="space-y-4 mb-10 text-sm text-slate-300 flex-1">
+                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
                     <li class="flex items-center gap-3">
                         <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="3">
@@ -595,7 +685,7 @@
                         </svg>
                         Strategy Backtester
                     </li>
-                    <li class="flex items-center gap-3 font-bold text-white">
+                    <li class="flex items-center gap-3 font-bold text-foreground">
                         <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="3">
                             <polyline points="20 6 9 17 4 12" />
@@ -613,12 +703,12 @@
                     <h3 class="text-xl font-bold mb-1">Ultra</h3>
                     <div class="flex items-baseline gap-1">
                         <span class="text-4xl font-black price-val" data-monthly="999" data-yearly="849">₹999</span>
-                        <span class="text-slate-500 font-medium text-sm">/ mo</span>
+                        <span class="text-muted-foreground font-medium text-sm">/ mo</span>
                     </div>
-                    <p class="text-sm text-slate-500 mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
+                    <p class="text-sm text-muted-foreground mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
                     </p>
                 </div>
-                <ul class="space-y-4 mb-10 text-sm text-slate-400 flex-1">
+                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
                     <li class="flex items-center gap-3">
                         <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
                             stroke="currentColor" stroke-width="3">
@@ -831,7 +921,7 @@
             <div class="relative z-10">
                 <h2 class="text-4xl md:text-5xl font-black mb-6 tracking-tight">Ready to Level Up Your Options Trading?
                 </h2>
-                <p class="text-lg text-slate-400 mb-10 max-w-xl mx-auto">Join thousands of professional traders using
+                <p class="text-lg text-muted-foreground mb-10 max-w-xl mx-auto">Join thousands of professional traders using
                     the industry standard for options intelligence.</p>
                 <button class="btn-cta !w-auto !px-12 h-16 text-xl mx-auto">Start Free 5-Day Trial Now</button>
             </div>
@@ -842,21 +932,21 @@
         <div class="footer-content">
             <div class="footer-brand">
                 <h2 class="wordmark text-2xl font-black mb-4">OI Pro</h2>
-                <p class="text-slate-500 text-sm leading-relaxed max-w-xs">Institutional-grade derivatives intelligence
+                <p class="text-muted-foreground text-sm leading-relaxed max-w-xs">Institutional-grade derivatives intelligence
                     for active traders. Feel the pulse of the market with live data and deep analytics.</p>
             </div>
             <div class="grid grid-cols-2 gap-8">
                 <div>
-                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Resources</h3>
-                    <ul class="space-y-4 text-sm font-medium text-slate-400">
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6">Resources</h3>
+                    <ul class="space-y-4 text-sm font-medium text-muted-foreground">
                         <li><a href="#" class="hover:text-emerald-400 transition-colors">Documentation</a></li>
                         <li><a href="#" class="hover:text-emerald-400 transition-colors">Trading API</a></li>
                         <li><a href="#" class="hover:text-emerald-400 transition-colors">Strategic Guide</a></li>
                     </ul>
                 </div>
                 <div>
-                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-6">Company</h3>
-                    <ul class="space-y-4 text-sm font-medium text-slate-400">
+                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6">Company</h3>
+                    <ul class="space-y-4 text-sm font-medium text-muted-foreground">
                         <li><a href="/privacy.html" class="hover:text-emerald-400 transition-colors">Privacy Policy</a>
                         </li>
                         <li><a href="/terms.html" class="hover:text-emerald-400 transition-colors">Terms Guide</a></li>
@@ -867,7 +957,7 @@
             </div>
         </div>
         <div
-            class="max-w-7xl mx-auto mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
+            class="max-w-7xl mx-auto mt-20 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-6">
             <div class="text-xs text-slate-600">&copy; 2026 OI Pro Analytics. All rights reserved.</div>
             <div class="flex gap-6">
                 <!-- Social Icons -->

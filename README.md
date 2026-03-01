@@ -15,8 +15,9 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
 - **Secure OI Pro Dashboard**: Interactive analytics dashboard with JWT-based authentication and role-based access control (RBAC).
   - **User Management**: Administrator dashboard for managing platform accounts directly from the web interface.
-  - **Market Breadth Dashboard**: A Shadcn-styled stock overview tracking real-time components of Nifty 50 and Bank Nifty, calculating Sector Advances vs Declines.
-  - **Indices Dashboard**: Similar visual overview to track Major, Broad Market, Sectoral, and Thematic indices via Upstox APIs.
+  - 1. **Stock Dashboard**: Grid view of customizable NIFTY & BANKNIFTY stocks showing LTP, change, and momentum with auto-refreshing logic.
+  2. **Indices Dashboard**: Categorized view of NSE Major, Broad Market, Sectoral, and Thematic indices with market breadth indicators.
+  3. **Semantic Theming**: Built-in Light and Dark Mode toggle embedded across the entire analytics suite, persisting user preferences seamlessly.
   - **Multi-Option Chart**: Build custom multi-leg option strategies and view net premium charts updating in real-time via WebSockets.
   - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts and custom strike selection.
   - **OI Buildup Heatmap**: NIFTY-focused heatmap tracking day-over-day OI buildup every minute. Loads full-day history from 9:15 AM on restart. Strikes auto-pin to current ATM ± 8 (50-pt intervals). Buildup classified as Long/Short Buildup, Short Covering, or Long Unwinding — all relative to previous session's baseline OI.

@@ -134,6 +134,96 @@
             color: #475569;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -401,7 +491,7 @@
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-7">
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <h1 className="text-xl font-black text-white tracking-tight uppercase">
+                                    <h1 className="text-xl font-black text-foreground tracking-tight uppercase">
                                         Cumulative&nbsp;<span style={{ color: '#10b981' }}>Option Prices</span>
                                     </h1>
                                     {wsStatus === 'ready' && <span className="live-dot"></span>}
@@ -420,14 +510,14 @@
                                     <span style={{ fontSize: 9, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Symbol</span>
                                     <select className="bg-transparent border-none text-xs font-black focus:ring-0 cursor-pointer pr-5"
                                         style={{ color: '#10b981' }} value={symbol} onChange={e => setSymbol(e.target.value)}>
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
                                 <div className="card flex items-center gap-2 px-3 py-1.5">
                                     <span style={{ fontSize: 9, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Expiry</span>
-                                    <select className="bg-transparent border-none text-slate-300 text-xs font-black focus:ring-0 cursor-pointer pr-5"
+                                    <select className="bg-transparent border-none text-muted-foreground text-xs font-black focus:ring-0 cursor-pointer pr-5"
                                         value={expiry} onChange={e => setExpiry(e.target.value)}>
-                                        {expiries.map(ex => <option key={ex} value={ex} className="bg-[#0b0f1a]">{ex}</option>)}
+                                        {expiries.map(ex => <option key={ex} value={ex} className="bg-card">{ex}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -523,7 +613,7 @@
                         <div className="card card-lg p-6 mb-5">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Cumulative CE vs PE Prices</h3>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">Cumulative CE vs PE Prices</h3>
                                     <p style={{ fontSize: 10, color: '#475569' }}>Total option chain premium — CE above PE gap shows call dominance; narrowing gap is bullish</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
@@ -544,7 +634,7 @@
                         <div className="card card-lg p-6 mb-5">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">CE &amp; PE % Change from Open</h3>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">CE &amp; PE % Change from Open</h3>
                                     <p style={{ fontSize: 10, color: '#475569' }}>Both start at 0 — divergence shows which premium is rising faster vs session start</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
@@ -565,7 +655,7 @@
                         <div className="card card-lg p-6 mb-5">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Average Premium per Strike</h3>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">Average Premium per Strike</h3>
                                     <p style={{ fontSize: 10, color: '#475569' }}>Mean LTP across all active CE and PE strikes — tracks actual market price movement</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
@@ -585,7 +675,7 @@
                         <div className="card card-lg p-6">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">CE − PE Price Difference</h3>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">CE − PE Price Difference</h3>
                                     <p style={{ fontSize: 10, color: '#475569' }}>
                                         <span style={{ color: '#f87171' }}>Positive ↑ = Call dominant (Bearish bias)</span>
                                         &nbsp;·&nbsp;

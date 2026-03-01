@@ -12,10 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -200,6 +197,96 @@
             animation: shimmer 1.5s infinite;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -447,7 +534,7 @@
             };
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
+                <div className="min-h-screen bg-background text-muted-foreground antialiased flex overflow-hidden">
                     {/* Sidebar */}
                     <div id="sidebar-root"></div>
 
@@ -456,10 +543,10 @@
                         {/* ── Header ── */}
                         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
                             <div>
-                                <h1 className="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+                                <h1 className="text-2xl font-black text-foreground tracking-tight uppercase flex items-center gap-2">
                                     Options&nbsp;<span className="text-blue-400">Buildup</span>&nbsp;Heatmap
                                 </h1>
-                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">
+                                <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-[0.2em] mt-1">
                                     Day-Over-Day tracking · {Math.max(1, Math.floor(refreshInterval / 60000))}-min snaps · Green = Strength · Red = Weakness
                                 </p>
                             </div>
@@ -467,37 +554,37 @@
                             <div className="flex flex-wrap gap-3 items-center">
                                 {/* Symbol */}
                                 <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Symbol</span>
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Symbol</span>
                                     <select className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={symbol} onChange={e => setSymbol(e.target.value)}>
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
 
                                 {/* Expiry */}
                                 <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Expiry</span>
-                                    <select className="bg-transparent border-none text-slate-300 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Expiry</span>
+                                    <select className="bg-transparent border-none text-muted-foreground text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={expiry} onChange={e => setExpiry(e.target.value)}>
-                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-card">{formatDate(exp)}</option>)}
                                     </select>
                                 </div>
 
                                 {/* Frequency Dropdown */}
                                 <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Refresh</span>
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Refresh</span>
                                     <select className="bg-transparent border-none text-indigo-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={refreshInterval} onChange={e => setRefreshInterval(Number(e.target.value))}>
-                                        <option value={30000} className="bg-[#0b0f1a]">30 Sec</option>
-                                        <option value={60000} className="bg-[#0b0f1a]">1 Min</option>
-                                        <option value={180000} className="bg-[#0b0f1a]">3 Min</option>
-                                        <option value={300000} className="bg-[#0b0f1a]">5 Min</option>
+                                        <option value={30000} className="bg-card">30 Sec</option>
+                                        <option value={60000} className="bg-card">1 Min</option>
+                                        <option value={180000} className="bg-card">3 Min</option>
+                                        <option value={300000} className="bg-card">5 Min</option>
                                     </select>
                                 </div>
 
                                 {/* Refresh btn */}
                                 <button onClick={fetchData}
-                                    className="glass px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-colors cursor-pointer">
+                                    className="glass px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-blue-400 transition-colors cursor-pointer">
                                     ↻ Refresh
                                 </button>
 
@@ -505,12 +592,12 @@
                                 <div className="glass px-1 py-1 rounded-xl flex items-center overflow-hidden">
                                     <button
                                         onClick={() => setViewSide("CE")}
-                                        className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'CE' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-slate-500 hover:text-slate-300'}`}>
+                                        className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'CE' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-muted-foreground hover:text-muted-foreground'}`}>
                                         Calls
                                     </button>
                                     <button
                                         onClick={() => setViewSide("PE")}
-                                        className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'PE' ? 'bg-orange-600/20 text-orange-400 border border-orange-500/30' : 'text-slate-500 hover:text-slate-300'}`}>
+                                        className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'PE' ? 'bg-orange-600/20 text-orange-400 border border-orange-500/30' : 'text-muted-foreground hover:text-muted-foreground'}`}>
                                         Puts
                                     </button>
                                 </div>
@@ -518,7 +605,7 @@
                                 {/* Live badge */}
                                 <div className="glass px-4 py-1.5 rounded-xl flex items-center gap-2">
                                     <div className={`w-2 h-2 rounded-full ${loading ? 'bg-amber-500 pulse-live' : 'bg-emerald-500 pulse-live'}`}></div>
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
                                         {loading ? 'Polling...' : (lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : `${refreshInterval / 60000}-min Auto`)}
                                     </span>
                                 </div>
@@ -539,13 +626,13 @@
                             <div className="flex flex-wrap items-center gap-3 mb-5">
                                 <div className="glass px-4 py-2 rounded-xl flex items-center justify-between gap-6 overflow-hidden">
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Spot vs Prev Close</span>
+                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">Spot vs Prev Close</span>
                                         <span className={`text-sm font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}% <span className="text-[9px] text-slate-600 ml-1 font-semibold">{data?.spot?.toFixed(2)} (now)</span>
                                         </span>
                                     </div>
-                                    <div className="flex flex-col text-right border-l border-slate-700/50 pl-4">
-                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Current ATM</span>
+                                    <div className="flex flex-col text-right border-l border-border pl-4">
+                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">Current ATM</span>
                                         <span className="text-sm font-black text-amber-400">{atmStrike ? atmStrike.toLocaleString() : "---"}</span>
                                     </div>
                                 </div>
@@ -554,15 +641,15 @@
                                 <div className="glass px-4 py-2 rounded-xl border-l-[3px] border-blue-500/50 flex-1 flex items-center gap-3 opacity-80 hover:opacity-100 transition-opacity max-w-2xl">
                                     <span className="text-[16px]">💡</span>
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-0.5">HOW IT WORKS</span>
-                                        <span className="text-[10px] text-slate-400 leading-tight">Tracks day-over-day conviction vs previous close OI & price. Brightness scales with relative volume intensity.</span>
+                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">HOW IT WORKS</span>
+                                        <span className="text-[10px] text-muted-foreground leading-tight">Tracks day-over-day conviction vs previous close OI & price. Brightness scales with relative volume intensity.</span>
                                     </div>
                                 </div>
                             </div>
                         )}
 
                         {/* ── Heatmap Grid ────────────────────────────────── */}
-                        <div className="glass-strong rounded-[2.5rem] border-slate-800/40 relative overflow-hidden">
+                        <div className="glass-strong rounded-[2.5rem] border-border/40 relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent"></div>
 
                             <div className="p-6">
@@ -680,14 +767,14 @@
                                         <div className="w-8 h-5 rounded" style={{ background: 'rgba(16, 185, 129, 0.7)' }}></div>
                                         <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">Bright Green</span>
                                     </div>
-                                    <p className="text-[11px] text-slate-400">Long Buildup: Price Rising + OI Rising. Buyers are initiating long positions aggressively.</p>
+                                    <p className="text-[11px] text-muted-foreground">Long Buildup: Price Rising + OI Rising. Buyers are initiating long positions aggressively.</p>
                                 </div>
                                 <div className="glass p-5 rounded-2xl">
                                     <div className="flex items-center gap-2 mb-2">
                                         <div className="w-8 h-5 rounded" style={{ background: 'rgba(239, 68, 68, 0.7)' }}></div>
                                         <span className="text-xs font-black text-rose-400 uppercase tracking-widest">Bright Red</span>
                                     </div>
-                                    <p className="text-[11px] text-slate-400">Short Buildup: Price Falling + OI Rising. Sellers are initiating short positions aggressively.</p>
+                                    <p className="text-[11px] text-muted-foreground">Short Buildup: Price Falling + OI Rising. Sellers are initiating short positions aggressively.</p>
                                 </div>
                                 <div className="glass p-5 rounded-2xl">
                                     <div className="flex flex-col gap-2">
@@ -700,14 +787,14 @@
                                             <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Orange = Long Unwind</span>
                                         </div>
                                     </div>
-                                    <p className="text-[10px] text-slate-400 mt-2">Differentiating aggressive new trades from closing trades.</p>
+                                    <p className="text-[10px] text-muted-foreground mt-2">Differentiating aggressive new trades from closing trades.</p>
                                 </div>
                                 <div className="glass p-5 rounded-2xl">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="text-amber-400 font-black text-sm">▶</span>
                                         <span className="text-xs font-black text-amber-400 uppercase tracking-widest">Intensity Map</span>
                                     </div>
-                                    <p className="text-[11px] text-slate-400">Colors scale with % OI Change relative to the max% on the board for that specific block of time.</p>
+                                    <p className="text-[11px] text-muted-foreground">Colors scale with % OI Change relative to the max% on the board for that specific block of time.</p>
                                 </div>
                             </div>
                         )}
@@ -722,14 +809,14 @@
                                 </p>
                                 <div className="flex flex-wrap gap-6 text-xs">
                                     <div>
-                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Spot vs Prev Close: </span>
+                                        <span className="text-muted-foreground font-bold uppercase tracking-widest">Spot vs Prev Close: </span>
                                         <span className={`font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
                                             &nbsp;({data.spot?.toFixed(2)})
                                         </span>
                                     </div>
                                     <div>
-                                        <span className="text-slate-500 font-bold uppercase tracking-widest">Snapshots: </span>
+                                        <span className="text-muted-foreground font-bold uppercase tracking-widest">Snapshots: </span>
                                         <span className="font-black text-indigo-400">{data.timestamps.length}</span>
                                         <span className="text-slate-600 ml-1">× {data.data.length} strikes</span>
                                     </div>

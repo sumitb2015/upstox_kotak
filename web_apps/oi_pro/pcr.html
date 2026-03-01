@@ -10,10 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -150,6 +147,96 @@
             scrollbar-color: #1e293b transparent;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -510,7 +597,7 @@
                 : "—";
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased">
+                <div className="min-h-screen bg-background text-muted-foreground antialiased">
                     {/* Sidebar */}
                     <div id="sidebar-root"></div>
 
@@ -518,17 +605,17 @@
                         {/* Header */}
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                             <div>
-                                <h1 className="text-2xl font-black text-white tracking-tight">PCR by Strike</h1>
-                                <p className="text-slate-500 text-sm font-medium flex items-center gap-2 mt-0.5">
-                                    <span className="text-slate-400">{symbol}</span>
+                                <h1 className="text-2xl font-black text-foreground tracking-tight">PCR by Strike</h1>
+                                <p className="text-muted-foreground text-sm font-medium flex items-center gap-2 mt-0.5">
+                                    <span className="text-muted-foreground">{symbol}</span>
                                     <span className="text-slate-700">·</span>
-                                    <span>Expiry: <span className="text-slate-300">{formatDate(expiry)}</span></span>
+                                    <span>Expiry: <span className="text-muted-foreground">{formatDate(expiry)}</span></span>
                                     {spotPrice > 0 && <>
                                         <span className="text-slate-700">·</span>
                                         <span>Spot: <span className="text-amber-400 font-bold">{spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span></span>
                                     </>}
                                     {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full border border-slate-700/50">
+                                        <span className="text-xs bg-slate-800 text-muted-foreground px-2 py-0.5 rounded-full border border-border">
                                             {lastUpdated.toLocaleTimeString()}
                                         </span>
                                     )}
@@ -537,7 +624,7 @@
 
                             <div className="flex items-center gap-3 flex-wrap">
                                 {/* View Mode Toggle */}
-                                <div className="flex items-center gap-1 bg-slate-900/80 border border-white/5 rounded-lg p-1">
+                                <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-1">
                                     {[
                                         { id: 'combined', label: 'Combined' },
                                         { id: 'oi', label: 'OI View' },
@@ -550,7 +637,7 @@
                                 </div>
 
                                 {/* Strike Range */}
-                                <div className="flex items-center gap-1 bg-slate-900/80 border border-white/5 rounded-lg p-1">
+                                <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-1">
                                     {[10, 20, 30, 'All'].map(r => (
                                         <button key={r} className={`view-btn ${strikeRange === r ? 'active' : ''}`} onClick={() => setStrikeRange(r === 'All' ? 9999 : r)}>
                                             {r}
@@ -560,26 +647,26 @@
 
                                 {/* Symbol */}
                                 <select value={symbol} onChange={e => setSymbol(e.target.value)}
-                                    className="glass px-3 py-1.5 rounded-lg text-white text-sm font-bold outline-none pr-8">
-                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    className="glass px-3 py-1.5 rounded-lg text-foreground text-sm font-bold outline-none pr-8">
+                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
 
                                 {/* Expiry */}
                                 <select value={expiry} onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-3 py-1.5 rounded-lg text-white text-sm font-bold outline-none pr-8">
-                                    {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
+                                    className="glass px-3 py-1.5 rounded-lg text-foreground text-sm font-bold outline-none pr-8">
+                                    {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
 
                                 {/* Refresh */}
                                 <button onClick={fetchData} disabled={loading}
-                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-white/5 active:scale-95 disabled:opacity-50">
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-foreground rounded-lg transition-all border border-border active:scale-95 disabled:opacity-50">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loading ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
                                 </button>
                             </div>
                         </div>
 
                         {/* Legend */}
-                        <div className="flex items-center gap-5 mb-3 text-xs text-slate-400 flex-wrap">
+                        <div className="flex items-center gap-5 mb-3 text-xs text-muted-foreground flex-wrap">
                             <span className="flex items-center gap-1.5"><span className="legend-dot" style={{ background: 'rgba(16,185,129,0.85)' }}></span> Put OI (support)</span>
                             <span className="flex items-center gap-1.5"><span className="legend-dot" style={{ background: 'rgba(244,63,94,0.85)' }}></span> Call OI (resistance)</span>
                             <span className="flex items-center gap-1.5"><span className="w-5 h-0.5 inline-block" style={{ background: '#38bdf8' }}></span> PCR Line (right axis)</span>
@@ -589,7 +676,7 @@
                         {/* Chart */}
                         <div className="glass rounded-2xl p-4 mb-5 relative">
                             {loading && !data.length && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm z-10 rounded-2xl">
+                                <div className="absolute inset-0 flex items-center justify-center bg-card/60 backdrop-blur-sm z-10 rounded-2xl">
                                     <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500"></div>
                                 </div>
                             )}
@@ -598,11 +685,11 @@
 
                         {/* Live Quote Strip */}
                         <div className="flex items-center gap-4 mb-6">
-                            <div className="glass px-6 py-4 rounded-2xl border-slate-800/60 shadow-xl flex items-center gap-8 min-w-[400px]">
+                            <div className="glass px-6 py-4 rounded-2xl border-border/60 shadow-xl flex items-center gap-8 min-w-[400px]">
                                 <div>
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{symbol} SPOT PRICE</p>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">{symbol} SPOT PRICE</p>
                                     <div className="flex items-baseline gap-3">
-                                        <h2 className={`text-3xl font-black tabular-nums transition-all duration-300 ${priceFlashes[symbol] || 'text-white'}`}>
+                                        <h2 className={`text-3xl font-black tabular-nums transition-all duration-300 ${priceFlashes[symbol] || 'text-foreground'}`}>
                                             {spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </h2>
                                         {marketPrices[symbol] && (
@@ -615,20 +702,20 @@
                                 <div className="h-10 w-[1px] bg-slate-800/80"></div>
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Day High</span>
-                                        <span className="text-xs font-black text-slate-300 tabular-nums">{marketPrices[symbol]?.high?.toLocaleString('en-IN') || '---'}</span>
+                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Day High</span>
+                                        <span className="text-xs font-black text-muted-foreground tabular-nums">{marketPrices[symbol]?.high?.toLocaleString('en-IN') || '---'}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Day Low</span>
-                                        <span className="text-xs font-black text-slate-300 tabular-nums">{marketPrices[symbol]?.low?.toLocaleString('en-IN') || '---'}</span>
+                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Day Low</span>
+                                        <span className="text-xs font-black text-muted-foreground tabular-nums">{marketPrices[symbol]?.low?.toLocaleString('en-IN') || '---'}</span>
                                     </div>
                                 </div>
                             </div>
                             <div className="flex-grow flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
                                 {Object.keys(marketPrices).filter(s => s !== symbol).map(s => (
-                                    <div key={s} className="glass px-4 py-2 rounded-xl flex items-center gap-3 min-w-fit border-slate-800/40">
-                                        <span className="text-[10px] font-black text-slate-500">{s}</span>
-                                        <span className={`text-xs font-black tabular-nums ${priceFlashes[s] || 'text-slate-300'}`}>
+                                    <div key={s} className="glass px-4 py-2 rounded-xl flex items-center gap-3 min-w-fit border-border/40">
+                                        <span className="text-[10px] font-black text-muted-foreground">{s}</span>
+                                        <span className={`text-xs font-black tabular-nums ${priceFlashes[s] || 'text-muted-foreground'}`}>
                                             {marketPrices[s].ltp?.toLocaleString('en-IN')}
                                         </span>
                                     </div>
@@ -641,38 +728,38 @@
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                                 {/* Key Support */}
                                 <div className="insight-card">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Key Support (High Put OI)</div>
+                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-2">Key Support (High Put OI)</div>
                                     <div className="text-emerald-400 font-black text-lg leading-tight">
                                         {insights.topSupports.map(s => s.strike.toLocaleString('en-IN')).join(' / ') || '—'}
                                     </div>
-                                    <div className="text-slate-500 text-xs mt-1">Heavy put writing = strong floor</div>
+                                    <div className="text-muted-foreground text-xs mt-1">Heavy put writing = strong floor</div>
                                 </div>
 
                                 {/* Key Resistance */}
                                 <div className="insight-card">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Key Resistance (High Call OI)</div>
+                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-2">Key Resistance (High Call OI)</div>
                                     <div className="text-rose-400 font-black text-lg leading-tight">
                                         {insights.topResistances.map(s => s.strike.toLocaleString('en-IN')).join(' / ') || '—'}
                                     </div>
-                                    <div className="text-slate-500 text-xs mt-1">Heavy call writing = ceiling</div>
+                                    <div className="text-muted-foreground text-xs mt-1">Heavy call writing = ceiling</div>
                                 </div>
 
                                 {/* PCR at Spot */}
                                 <div className="insight-card">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">
+                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-2">
                                         PCR at Spot ({spotPrice > 0 ? spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 0 }) : atmStrike})
                                     </div>
                                     <div className={`font-black text-2xl ${insights.atmPCR >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                         {insights.atmPCR?.toFixed(2) || '—'}
                                     </div>
-                                    <div className="text-slate-500 text-xs mt-1">{atmPCRSentiment}</div>
+                                    <div className="text-muted-foreground text-xs mt-1">{atmPCRSentiment}</div>
                                 </div>
 
                                 {/* Overall Bias */}
                                 <div className="insight-card">
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2">Overall Bias</div>
+                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold mb-2">Overall Bias</div>
                                     <div className="font-black text-lg" style={{ color: insights.overallColor }}>{insights.overallBias}</div>
-                                    <div className="text-slate-500 text-xs mt-1">
+                                    <div className="text-muted-foreground text-xs mt-1">
                                         {insights.overallPCR >= 1
                                             ? 'Put-heavy OTM below = strong support'
                                             : 'Call-heavy OTM above = strong resistance'}
@@ -690,10 +777,10 @@
                                             ${item.strike === atmStrike ? 'border border-amber-500/40 bg-amber-500/5' : ''}
                                             ${item.pcr >= 1 ? 'border-b-2 border-b-emerald-500/60' : 'border-b-2 border-b-rose-500/60'}`}
                                     >
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${item.strike === atmStrike ? 'text-amber-400' : 'text-slate-500'}`}>
+                                        <span className={`text-[9px] font-bold uppercase tracking-wider ${item.strike === atmStrike ? 'text-amber-400' : 'text-muted-foreground'}`}>
                                             {item.strike === atmStrike ? '★ ATM' : 'Strike'}
                                         </span>
-                                        <span className="text-white text-sm font-black">{item.strike.toLocaleString('en-IN')}</span>
+                                        <span className="text-foreground text-sm font-black">{item.strike.toLocaleString('en-IN')}</span>
                                         <div className={`text-base font-black ${item.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             {item.pcr.toFixed(2)}
                                         </div>
@@ -707,7 +794,7 @@
                         )}
 
                         {!loading && data.length === 0 && (
-                            <div className="w-full h-64 flex items-center justify-center text-slate-500">
+                            <div className="w-full h-64 flex items-center justify-center text-muted-foreground">
                                 No data available for this expiry.
                             </div>
                         )}

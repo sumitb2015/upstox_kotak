@@ -10,10 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -64,6 +61,96 @@
             box-shadow: 0 0 40px rgba(16, 185, 129, 0.08);
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
@@ -234,7 +321,7 @@
             ];
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
+                <div className="min-h-screen bg-background text-muted-foreground antialiased flex overflow-hidden">
                     <div id="sidebar-root"></div>
 
                     <main className="pl-28 pr-4 py-8 w-full overflow-y-auto">
@@ -243,7 +330,7 @@
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-5 mb-7">
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <h1 className="text-3xl font-black text-white tracking-tight uppercase">
+                                    <h1 className="text-3xl font-black text-foreground tracking-tight uppercase">
                                         Strike&nbsp;<span className="text-emerald-400">Greeks</span>
                                     </h1>
                                     {!loading && data.length > 0 && <span className="pulse-dot"></span>}
@@ -271,15 +358,15 @@
                                 )}
                                 <select value={symbol} onChange={e => setSymbol(e.target.value)}
                                     className="glass px-3 py-2 rounded-xl text-emerald-400 text-sm font-black tracking-widest outline-none pr-8">
-                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
                                 <select value={expiry} onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-3 py-2 rounded-xl text-slate-300 text-sm font-black outline-none pr-8">
-                                    {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
+                                    className="glass px-3 py-2 rounded-xl text-muted-foreground text-sm font-black outline-none pr-8">
+                                    {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
                                 <select value={selectedStrike} onChange={e => setSelectedStrike(e.target.value)}
                                     className="glass px-3 py-2 rounded-xl text-emerald-400 text-sm font-black outline-none pr-8">
-                                    {strikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    {strikes.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
                                 <button onClick={fetchHistory}
                                     className="glass px-4 py-2 rounded-xl text-emerald-400 text-sm font-black tracking-widest hover:bg-emerald-500/10 transition-all border border-emerald-500/20 hover:border-emerald-500/50">
@@ -348,7 +435,7 @@
                         ) : !loading ? (
                             <div className="glass p-16 rounded-3xl text-center">
                                 <p className="text-5xl mb-4">Δ</p>
-                                <p className="text-xl text-slate-400 font-black">No Greek history yet for {selectedStrike} {symbol}</p>
+                                <p className="text-xl text-muted-foreground font-black">No Greek history yet for {selectedStrike} {symbol}</p>
                                 <p className="text-sm text-slate-600 mt-2">Data is logged every minute when the poller is active. Select a different strike or check back soon.</p>
                             </div>
                         ) : (
