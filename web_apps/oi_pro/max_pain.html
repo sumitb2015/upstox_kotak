@@ -157,6 +157,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function MaxPainAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -225,7 +232,7 @@
                     y: totalPain,
                     type: 'bar',
                     marker: {
-                        color: strikes.map(s => s === maxPainStrike ? '#10b981' : '#64748b'),
+                        color: strikes.map(s => s === maxPainStrike ? '#10b981' : isDark ? '#64748b' : '#64748b'),
                         line: { color: '#030712', width: 1 }
                     },
                     hovertemplate: '<b>Strike: %{x}</b><br>Total Pain: %{y:,.0f}<extra></extra>'
@@ -236,18 +243,18 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     xaxis: {
-                        title: { text: 'Strike Price', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
+                        title: { text: 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
                     },
                     yaxis: {
-                        title: { text: 'Total Pain (Loss)', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155',
+                        title: { text: 'Total Pain (Loss)', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
                         tickformat: '.2s'
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } },
+                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } },
                     shapes: [
                         {
                             type: 'line',
@@ -315,19 +322,19 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8' } },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569' } },
                     xaxis: {
-                        title: { text: 'Strike Price', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
+                        title: { text: 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
                     },
                     yaxis: {
-                        title: { text: 'Implied Volatility (%)', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
+                        title: { text: 'Implied Volatility (%)', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } },
+                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } },
                     shapes: [
                         {
                             type: 'line',

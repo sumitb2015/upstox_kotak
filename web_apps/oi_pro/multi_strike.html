@@ -170,6 +170,13 @@
         }
 
         function MultiStrikeAnalysis() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -293,10 +300,10 @@
                     Plotly.react('price-chart', traces, {
                         paper_bgcolor: 'rgba(0,0,0,0)',
                         plot_bgcolor: 'rgba(0,0,0,0)',
-                        font: { family: 'Inter', color: '#94a3b8' },
+                        font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
                         margin: { t: 20, r: 30, l: 80, b: 40 },
-                        xaxis: { gridcolor: '#1e293b', zeroline: false, showticklabels: false },
-                        yaxis: { gridcolor: '#1e293b', zeroline: false, title: { text: 'Premium (₹)', font: { size: 12 } } },
+                        xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, showticklabels: false },
+                        yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Premium (₹)', font: { size: 12 } } },
                         hovermode: 'x unified',
                         showlegend: true,
                         legend: { orientation: 'h', y: 1.1, x: 0.5, xanchor: 'center', font: { size: 10 } }
@@ -330,10 +337,10 @@
                     Plotly.react('oi-chart', traces, {
                         paper_bgcolor: 'rgba(0,0,0,0)',
                         plot_bgcolor: 'rgba(0,0,0,0)',
-                        font: { family: 'Inter', color: '#94a3b8' },
+                        font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
                         margin: { t: 20, r: 30, l: 80, b: 60 },
-                        xaxis: { gridcolor: '#1e293b', zeroline: false, title: { text: 'Time', font: { size: 11 } } },
-                        yaxis: { gridcolor: '#1e293b', zeroline: false, title: { text: 'Open Interest', font: { size: 12 } }, tickformat: ',.0f' },
+                        xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Time', font: { size: 11 } } },
+                        yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Open Interest', font: { size: 12 } }, tickformat: ',.0f' },
                         hovermode: 'x unified',
                         showlegend: false
                     }, { responsive: true, displayModeBar: false });
@@ -364,7 +371,7 @@
                                     <span className="text-xs font-black text-emerald-400">{lastUpdated || "---"}</span>
                                 </div>
                                 <select
-                                    className="bg-transparent border-none text-muted-foreground text-sm font-bold focus:ring-0 cursor-pointer pl-2 pr-8 py-2 rounded-xl hover:bg-slate-800/40 transition-colors"
+                                    className="bg-transparent border-none text-muted-foreground text-sm font-bold focus:ring-0 cursor-pointer pl-2 pr-8 py-2 rounded-xl hover:bg-secondary/40 transition-colors"
                                     value={refreshInterval}
                                     onChange={(e) => setRefreshInterval(Number(e.target.value))}
                                 >
@@ -373,17 +380,17 @@
                                     <option value={180000} className="bg-card">3m</option>
                                     <option value={300000} className="bg-card">5m</option>
                                 </select>
-                                <div className="w-px h-6 bg-slate-800"></div>
+                                <div className="w-px h-6 bg-secondary"></div>
                                 <select
-                                    className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer pl-4 pr-10 py-2 rounded-xl hover:bg-slate-800/40 transition-colors"
+                                    className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer pl-4 pr-10 py-2 rounded-xl hover:bg-secondary/40 transition-colors"
                                     value={symbol}
                                     onChange={(e) => { setSymbol(e.target.value); setStrikes([]); }}
                                 >
                                     {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
-                                <div className="w-px h-6 bg-slate-800"></div>
+                                <div className="w-px h-6 bg-secondary"></div>
                                 <select
-                                    className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer pl-4 pr-10 py-2 rounded-xl hover:bg-slate-800/40 transition-colors"
+                                    className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer pl-4 pr-10 py-2 rounded-xl hover:bg-secondary/40 transition-colors"
                                     value={expiry}
                                     onChange={(e) => { setExpiry(e.target.value); setStrikes([]); }}
                                 >
@@ -417,7 +424,7 @@
                                                     onClick={() => toggleStrike(s)}
                                                     className={`w-full flex items-center justify-between px-4 py-2 rounded-xl transition-all ${selected
                                                         ? 'bg-emerald-500/20 text-emerald-400'
-                                                        : 'hover:bg-slate-800/30 text-muted-foreground'}`}
+                                                        : 'hover:bg-secondary/30 text-muted-foreground'}`}
                                                 >
                                                     <span className="font-black text-sm">{Number(s).toLocaleString('en-IN')}</span>
                                                     <div className="flex items-center gap-2">

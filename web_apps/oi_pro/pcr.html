@@ -281,6 +281,13 @@
          * - Key Support/Resistance identification
          */
         function PCRAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             // State management
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
@@ -524,26 +531,26 @@
                     margin: { t: 20, b: 50, l: 70, r: 70 },
                     hovermode: 'x unified',
                     hoverlabel: {
-                        bgcolor: '#0f172a',
-                        bordercolor: '#334155',
-                        font: { color: '#e2e8f0', family: 'Inter', size: 12 }
+                        bgcolor: isDark ? '#0f172a' : '#ffffff',
+                        bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter', size: 12 }
                     },
                     legend: {
                         orientation: 'h',
                         x: 0, y: 1.06,
-                        font: { color: '#94a3b8', size: 11 },
+                        font: { color: isDark ? '#94a3b8' : '#475569', size: 11 },
                         bgcolor: 'rgba(0,0,0,0)',
                     },
                     xaxis: {
-                        tickfont: { color: '#64748b', size: 11 },
+                        tickfont: { color: isDark ? '#64748b' : '#64748b', size: 11 },
                         gridcolor: 'rgba(51,65,85,0.4)',
                         zeroline: false,
                         tickformat: ',d',
                         showgrid: true,
                     },
                     yaxis: {
-                        title: { text: 'Open Interest', font: { color: '#64748b', size: 11 } },
-                        tickfont: { color: '#64748b', size: 10 },
+                        title: { text: 'Open Interest', font: { color: isDark ? '#64748b' : '#64748b', size: 11 } },
+                        tickfont: { color: isDark ? '#64748b' : '#64748b', size: 10 },
                         gridcolor: 'rgba(51,65,85,0.3)',
                         zeroline: true,
                         zerolinecolor: 'rgba(255,255,255,0.1)',
@@ -616,7 +623,7 @@
                                         <span>Spot: <span className="text-amber-400 font-bold">{spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span></span>
                                     </>}
                                     {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-muted-foreground px-2 py-0.5 rounded-full border border-border">
+                                        <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full border border-border">
                                             {lastUpdated.toLocaleTimeString()}
                                         </span>
                                     )}
@@ -660,7 +667,7 @@
 
                                 {/* Refresh */}
                                 <button onClick={fetchData} disabled={loading}
-                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-foreground rounded-lg transition-all border border-border active:scale-95 disabled:opacity-50">
+                                    className="p-1.5 bg-secondary hover:bg-accent text-foreground rounded-lg transition-all border border-border active:scale-95 disabled:opacity-50">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={loading ? "animate-spin" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
                                 </button>
                             </div>
@@ -700,7 +707,7 @@
                                         )}
                                     </div>
                                 </div>
-                                <div className="h-10 w-[1px] bg-slate-800/80"></div>
+                                <div className="h-10 w-[1px] bg-secondary/80"></div>
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
                                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Day High</span>

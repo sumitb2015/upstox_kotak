@@ -162,6 +162,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function StraddleAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -381,27 +388,27 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', y: -0.15, x: 0 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 11 }, orientation: 'h', y: -0.15, x: 0 },
                     margin: { t: 20, b: 70, l: 70, r: 80 },
-                    font: { family: 'Inter', color: '#64748b' },
+                    font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     xaxis: {
-                        gridcolor: '#1e293b', zerolinecolor: '#334155',
-                        tickfont: { color: '#94a3b8', size: 10 }
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 }
                     },
                     yaxis: {
-                        title: { text: 'Total Premium (₹)', font: { color: '#94a3b8', size: 10 } },
-                        gridcolor: '#1e293b', zerolinecolor: '#334155',
-                        tickfont: { color: '#94a3b8' },
+                        title: { text: 'Total Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
                         autorange: true, rangemode: 'normal'
                     },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
-                        tickfont: { color: '#64748b', size: 9 },
-                        title: { text: 'Leg Price (₹)', font: { color: '#64748b', size: 9 } },
+                        tickfont: { color: isDark ? '#64748b' : '#64748b', size: 9 },
+                        title: { text: 'Leg Price (₹)', font: { color: isDark ? '#64748b' : '#64748b', size: 9 } },
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' },
+                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' },
                     // Open price reference line
                     shapes: openPrice > 0 ? [{
                         type: 'line', x0: 0, x1: 1, xref: 'paper', y0: openPrice, y1: openPrice,
@@ -409,7 +416,7 @@
                     }] : [],
                     annotations: openPrice > 0 ? [{
                         xref: 'paper', x: 0.01, y: openPrice, text: `Open ₹${openPrice.toFixed(0)}`,
-                        showarrow: false, font: { color: '#64748b', size: 9, family: 'Inter' },
+                        showarrow: false, font: { color: isDark ? '#64748b' : '#64748b', size: 9, family: 'Inter' },
                         bgcolor: 'rgba(15,23,42,0.7)', borderpad: 3
                     }] : [],
                 };
@@ -481,15 +488,15 @@
                                 { label: 'Day High', value: `₹${kpis.high || '---'}`, sub: 'Maximum Premium', color: '#ef4444' },
                                 { label: 'Day Low', value: `₹${kpis.low || '---'}`, sub: 'Minimum Premium', color: '#10b981' },
                                 { label: 'Strike', value: metadata.target_strike || '---', sub: `Spot ${metadata.spot?.toFixed(1) || '---'}`, color: '#a78bfa' },
-                                { label: 'Open', value: kpis.open ? `₹${Number(kpis.open).toFixed(1)}` : '---', sub: '09:15 Premium', color: '#94a3b8' },
+                                { label: 'Open', value: kpis.open ? `₹${Number(kpis.open).toFixed(1)}` : '---', sub: '09:15 Premium', color: isDark ? '#94a3b8' : '#475569' },
                                 { label: 'VWAP', value: kpis.vwap ? `₹${Number(kpis.vwap).toFixed(1)}` : '---', sub: 'Volume Wtd Avg', color: '#38bdf8' },
                                 { label: 'CE LTP', value: kpis.ce_ltp ? `₹${Number(kpis.ce_ltp).toFixed(1)}` : '---', sub: 'Call Leg Price', color: '#34d399' },
                                 { label: 'PE LTP', value: kpis.pe_ltp ? `₹${Number(kpis.pe_ltp).toFixed(1)}` : '---', sub: 'Put Leg Price', color: '#c084fc' },
                             ].map(c => (
                                 <div key={c.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderTop: `2px solid ${c.color}` }}>
-                                    <p style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</p>
+                                    <p style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</p>
                                     <p style={{ fontSize: c.big ? '1.8rem' : '1.35rem', fontWeight: 900, color: c.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{c.value}</p>
-                                    <p style={{ fontSize: 8, color: '#94a3b8' }}>{c.sub}</p>
+                                    <p style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569' }}>{c.sub}</p>
                                 </div>
                             ))}
                         </div>
@@ -509,7 +516,7 @@
                                     </div>
                                     <button
                                         onClick={() => setIsFullscreen(!isFullscreen)}
-                                        className="ml-4 p-2 bg-slate-800/50 hover:bg-emerald-500/20 rounded-lg text-muted-foreground hover:text-emerald-400 transition-all"
+                                        className="ml-4 p-2 bg-secondary/50 hover:bg-emerald-500/20 rounded-lg text-muted-foreground hover:text-emerald-400 transition-all"
                                         title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

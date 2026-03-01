@@ -157,6 +157,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function StrikeAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -273,11 +280,11 @@
                 const BASE = {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    font: { family: 'Inter', color: '#64748b' },
+                    font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.12 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.12 },
                     hovermode: isVertical ? 'x unified' : 'y unified',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } },
+                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } },
                     margin: { t: 30, b: 80, l: 80, r: 80 },
                 };
 
@@ -349,13 +356,13 @@
 
                 const layoutOI = {
                     ...BASE,
-                    title: { text: 'Total Open Interest by Strike', font: { color: '#e2e8f0', size: 14 }, x: 0.02 },
+                    title: { text: 'Total Open Interest by Strike', font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 14 }, x: 0.02 },
                     barmode: 'group',
-                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#334155' },
-                    yaxis: { title: { text: isVertical ? 'OI' : 'Strike Price', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#334155', tickformat: '.3s' },
+                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a' },
+                    yaxis: { title: { text: isVertical ? 'OI' : 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickformat: '.3s' },
                     ...(isVertical
-                        ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: '#334155', tickformat: '.3s' } }
-                        : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: '#334155' } }),
+                        ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickformat: '.3s' } }
+                        : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a' } }),
                     shapes: atmShape,
                     annotations: atmLabel,
                 };
@@ -410,10 +417,10 @@
 
                 const layoutChg = {
                     ...BASE,
-                    title: { text: 'Open Interest Change (Intraday)', font: { color: '#e2e8f0', size: 14 }, x: 0.02 },
+                    title: { text: 'Open Interest Change (Intraday)', font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 14 }, x: 0.02 },
                     barmode: 'group',
-                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI Change', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#475569', zerolinewidth: 1.5, zeroline: true },
-                    yaxis: { title: { text: isVertical ? 'OI Change' : 'Strike Price', font: { color: '#94a3b8', size: 10 } }, tickfont: { color: '#94a3b8' }, gridcolor: '#1e293b', zerolinecolor: '#475569', zerolinewidth: 1.5, zeroline: true, tickformat: '.3s' },
+                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI Change', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#475569' : '#cbd5e1', zerolinewidth: 1.5, zeroline: true },
+                    yaxis: { title: { text: isVertical ? 'OI Change' : 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#475569' : '#cbd5e1', zerolinewidth: 1.5, zeroline: true, tickformat: '.3s' },
                     ...(isVertical
                         ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#f472b6', size: 9 }, title: { text: 'Net Δ', font: { color: '#f472b6', size: 9 } } } }
                         : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#f472b6', size: 9 }, title: { text: 'Net Δ', font: { color: '#f472b6', size: 9 } } } }),
@@ -422,7 +429,7 @@
                         ...atmLabel,
                         {
                             xref: 'paper', yref: 'paper', x: 0.01, y: 0.5, text: '← Unwind / Build →',
-                            showarrow: false, font: { size: 8, color: '#475569', family: 'Inter' }
+                            showarrow: false, font: { size: 8, color: isDark ? '#475569' : '#cbd5e1', family: 'Inter' }
                         }
                     ],
                 };
@@ -445,14 +452,14 @@
                                 <p className="text-muted-foreground mt-1 flex items-center gap-2">
                                     Total OI & Change in OI by Strike
                                     {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-muted-foreground px-2 py-0.5 rounded-full border border-border">
+                                        <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full border border-border">
                                             Updated: {lastUpdated.toLocaleTimeString()}
                                         </span>
                                     )}
                                 </p>
                             </div>
                             <div className="flex gap-4 items-center pr-32">
-                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                <div className="bg-secondary p-3 rounded-xl border border-border min-w-[150px]">
                                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Spot Price</p>
                                     <p className="text-2xl font-bold text-foreground">{spotPrice}</p>
                                 </div>
@@ -473,7 +480,7 @@
                                     {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
 
-                                <div className="bg-slate-800 p-2 rounded-xl border border-border flex items-center gap-3">
+                                <div className="bg-secondary p-2 rounded-xl border border-border flex items-center gap-3">
                                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Range: ATM ±{sliderValue}</span>
                                     <input
                                         type="range"
@@ -554,11 +561,11 @@
                                     {cards.map(c => (
                                         <div key={c.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${c.color}` }}>
                                             <div className="flex justify-between items-center">
-                                                <span style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</span>
+                                                <span style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</span>
                                                 {c.hint && <span style={{ fontSize: 7, color: c.color, fontWeight: 700, opacity: 0.8 }}>{c.hint}</span>}
                                             </div>
                                             <p style={{ fontSize: '1.4rem', fontWeight: 900, color: c.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{c.value}</p>
-                                            <p style={{ fontSize: 9, color: '#94a3b8' }}>{c.sub}</p>
+                                            <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569' }}>{c.sub}</p>
                                         </div>
                                     ))}
                                 </div>

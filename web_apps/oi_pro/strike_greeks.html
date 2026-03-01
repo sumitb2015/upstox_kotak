@@ -178,15 +178,15 @@
         const mkLayout = (title, yTitle, extra = {}) => ({
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            title: { text: title, font: { color: '#e2e8f0', size: 13, family: 'Inter' }, x: 0.02 },
+            title: { text: title, font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 13, family: 'Inter' }, x: 0.02 },
             showlegend: true,
-            legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
+            legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
             margin: { t: 40, b: 60, l: 65, r: 30 },
-            font: { family: 'Inter', color: '#64748b' },
+            font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
             hovermode: 'x unified',
-            hoverlabel: { bgcolor: '#0f172a', bordercolor: '#1e293b', font: { color: '#e2e8f0', family: 'Inter' } },
-            xaxis: { gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 9 }, zeroline: false },
-            yaxis: { title: { text: yTitle, font: { color: '#94a3b8', size: 9 } }, gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 9 }, zeroline: true, zerolinecolor: '#334155', zerolinewidth: 1, tickformat: '.4f' },
+            hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#1e293b' : '#f1f5f9', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter' } },
+            xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: false },
+            yaxis: { title: { text: yTitle, font: { color: isDark ? '#94a3b8' : '#475569', size: 9 } }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', zerolinewidth: 1, tickformat: '.4f' },
             ...extra,
         });
 
@@ -200,6 +200,13 @@
 
         /* ── Component ─────────────────────────────────────────────────── */
         function StrikeGreeksAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -343,7 +350,7 @@
                                         </svg>
                                     )}
                                 </div>
-                                <p style={{ fontSize: 10, color: '#475569', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                                <p style={{ fontSize: 10, color: isDark ? '#475569' : '#cbd5e1', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
                                     Δ Γ ν Θ  ·  Historical intraday time-series
                                     {lastUpdated && <span className="ml-3 text-slate-600">· Updated {lastUpdated.toLocaleTimeString()}</span>}
                                 </p>
@@ -354,7 +361,7 @@
                                 {/* Spot badge */}
                                 {spotPrice > 0 && (
                                     <div className="glass px-3 py-1.5 rounded-xl flex flex-col">
-                                        <span style={{ fontSize: 8, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Spot</span>
+                                        <span style={{ fontSize: 8, color: isDark ? '#475569' : '#cbd5e1', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Spot</span>
                                         <span className="text-amber-400 font-black text-sm tracking-tight">{spotPrice.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                     </div>
                                 )}
@@ -382,7 +389,7 @@
                             <div className="grid grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
                                 {kpis.map(k => (
                                     <div key={k.label} className="glass rounded-2xl p-3 flex flex-col gap-1" style={{ borderTop: `2px solid ${k.color}` }}>
-                                        <span style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{k.label}</span>
+                                        <span style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{k.label}</span>
                                         <span style={{ fontSize: '1.15rem', fontWeight: 900, color: k.color, lineHeight: 1, letterSpacing: '-0.03em' }}>{k.value}</span>
                                         {k.change != null && (
                                             <span style={{ fontSize: 8, color: Number(k.change) >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
@@ -403,14 +410,14 @@
                                         <div className="w-4 h-0.5 mt-1.5 rounded" style={{ background: m.pe, opacity: 0.6 }}></div>
                                     </div>
                                     <div>
-                                        <span style={{ fontSize: 10, color: '#e2e8f0', fontWeight: 800 }}>{m.label}</span>
-                                        <span style={{ fontSize: 9, color: '#475569', marginLeft: 4 }}>{m.desc}</span>
+                                        <span style={{ fontSize: 10, color: isDark ? '#e2e8f0' : '#0f172a', fontWeight: 800 }}>{m.label}</span>
+                                        <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1', marginLeft: 4 }}>{m.desc}</span>
                                     </div>
                                 </div>
                             ))}
                             <div className="ml-auto flex items-center gap-2">
                                 <div className="w-6 h-0.5 border-t border-dashed border-slate-600"></div>
-                                <span style={{ fontSize: 9, color: '#475569' }}>PE leg (dashed) · CE leg (solid)</span>
+                                <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>PE leg (dashed) · CE leg (solid)</span>
                             </div>
                         </div>
 

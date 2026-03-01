@@ -186,9 +186,11 @@
             if (isDark) {
                 document.documentElement.classList.remove('dark');
                 localStorage.setItem('oi-pro-theme', 'light');
+            window.dispatchEvent(new Event('themeToggled'));
             } else {
                 document.documentElement.classList.add('dark');
                 localStorage.setItem('oi-pro-theme', 'dark');
+            window.dispatchEvent(new Event('themeToggled'));
             }
             renderSidebar(); // Re-render to update icon
         };

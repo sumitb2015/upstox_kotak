@@ -163,6 +163,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY"];
 
         function GexAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -269,18 +276,18 @@
 
                 const layout = {
                     showlegend: true,
-                    legend: { orientation: 'h', y: 1.1, font: { color: '#94a3b8' } },
+                    legend: { orientation: 'h', y: 1.1, font: { color: isDark ? '#94a3b8' : '#475569' } },
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     margin: { t: 40, b: 40, l: 60, r: 60 },
                     xaxis: {
-                        gridcolor: '#1e293b',
-                        tickfont: { color: '#64748b' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        tickfont: { color: isDark ? '#64748b' : '#64748b' },
                         zeroline: false
                     },
                     yaxis: {
                         title: { text: 'Net GEX (Exposure)', font: { color: '#10b981', size: 10, weight: 800 } },
-                        gridcolor: '#1e293b',
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
                         tickfont: { color: '#10b981' },
                         zeroline: true,
                         zerolinecolor: '#ef4444',
@@ -294,7 +301,7 @@
                         tickfont: { color: '#6366f1' }
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#0b0f1a', font: { color: 'white' } }
+                    hoverlabel: { bgcolor: '#0b0f1a', font: { color: isDark ? 'white' : '#0f172a' } }
                 };
 
                 Plotly.newPlot('gex-chart', [traceGex, traceSpot], layout, { responsive: true, displayModeBar: false });

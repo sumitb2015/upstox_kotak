@@ -164,6 +164,13 @@
         const GREEKS = ["Delta", "Gamma", "Vega", "Theta", "GEX"];
 
         function GreeksAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [greek, setGreek] = useState("Delta");
@@ -290,20 +297,20 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8' } },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569' } },
                     xaxis: {
-                        title: { text: isVertical ? 'Strike Price' : axisTitle, font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
+                        title: { text: isVertical ? 'Strike Price' : axisTitle, font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
                     },
                     yaxis: {
-                        title: { text: isVertical ? axisTitle : 'Strike Price', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155',
+                        title: { text: isVertical ? axisTitle : 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
                         tickformat: greek === "GEX" ? ".2s" : undefined
                     },
                     hovermode: isVertical ? 'x unified' : 'y unified',
-                    hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: 'white', family: 'Inter' } }
+                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } }
                 };
 
                 if (greek === "GEX") {
@@ -435,30 +442,30 @@
                                 <p className="text-muted-foreground mt-1 flex items-center gap-2">
                                     Analyze Delta, Gamma, Vega, Theta, GEX Levels
                                     {lastUpdated && (
-                                        <span className="text-xs bg-slate-800 text-muted-foreground px-2 py-0.5 rounded-full border border-border">
+                                        <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full border border-border">
                                             Updated: {lastUpdated.toLocaleTimeString()}
                                         </span>
                                     )}
                                 </p>
                             </div>
                             <div className="flex gap-4 items-center"> {/* Added items-center for vertical alignment */}
-                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                <div className="bg-secondary p-3 rounded-xl border border-border min-w-[150px]">
                                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Spot Price</p>
                                     <p className="text-2xl font-bold text-foreground">{spotPrice}</p>
                                 </div>
-                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                <div className="bg-secondary p-3 rounded-xl border border-border min-w-[150px]">
                                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Net GEX</p>
                                     <p className={`text-2xl font-bold ${totalGex >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                                         {formatCurrency(totalGex)}
                                     </p>
                                 </div>
-                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                <div className="bg-secondary p-3 rounded-xl border border-border min-w-[150px]">
                                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Exposure</p>
                                     <p className="text-2xl font-bold text-cyan-400">
                                         {formatCurrency(totalExposure)}
                                     </p>
                                 </div>
-                                <div className="bg-slate-800 p-3 rounded-xl border border-border min-w-[150px]">
+                                <div className="bg-secondary p-3 rounded-xl border border-border min-w-[150px]">
                                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Flip Point</p>
                                     <p className={`text-2xl font-bold ${flipPoint > spotPrice ? "text-rose-400" : "text-amber-400"}`}>
                                         {flipPoint > 0 ? `₹${flipPoint.toLocaleString()}` : '---'}
@@ -488,7 +495,7 @@
                                     {GREEKS.map(g => <option key={g} value={g} className="bg-card">{g}</option>)}
                                 </select>
 
-                                <div className="bg-slate-800 p-2 rounded-xl border border-border flex items-center gap-3">
+                                <div className="bg-secondary p-2 rounded-xl border border-border flex items-center gap-3">
                                     <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Strikes: {strikeRange}</span>
                                     <input
                                         type="range"
@@ -521,7 +528,7 @@
                                         max="50"
                                         value={strikeRange}
                                         onChange={(e) => setStrikeRange(parseInt(e.target.value))}
-                                        className="w-full h-1 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                        className="w-full h-1 bg-accent/50 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                                     />
                                 </div>
                             </div>

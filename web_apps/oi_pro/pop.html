@@ -190,6 +190,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function PoPAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -261,7 +268,7 @@
                         size: ceData.map(d => Math.max(8, Math.min(30, Math.sqrt(d.oi) / 50))),
                         color: '#10b981',
                         opacity: 0.7,
-                        line: { color: 'white', width: 1 }
+                        line: { color: isDark ? 'white' : '#0f172a', width: 1 }
                     }
                 };
 
@@ -283,7 +290,7 @@
                         size: peData.map(d => Math.max(8, Math.min(30, Math.sqrt(d.oi) / 50))),
                         color: '#ef4444',
                         opacity: 0.7,
-                        line: { color: 'white', width: 1 }
+                        line: { color: isDark ? 'white' : '#0f172a', width: 1 }
                     }
                 };
 
@@ -292,20 +299,20 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8' } },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569' } },
                     xaxis: {
-                        title: { text: 'Probability of Profit (%)', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155',
+                        title: { text: 'Probability of Profit (%)', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
                         range: [minPoP - 5, 100]
                     },
                     yaxis: {
-                        title: { text: 'Premium (₹)', font: { color: '#94a3b8' } },
-                        tickfont: { color: '#94a3b8' },
-                        gridcolor: '#334155'
+                        title: { text: 'Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569' } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
                     },
                     hovermode: 'closest',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' }
+                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' }
                 };
 
                 Plotly.newPlot('chart-div', [traceCE, tracePE], layout, { responsive: true, displayModeBar: false });
@@ -409,9 +416,9 @@
                                     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
                                         {stats.map(s => (
                                             <div key={s.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${s.color}` }}>
-                                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{s.label}</p>
+                                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{s.label}</p>
                                                 <p style={{ fontSize: '1.5rem', fontWeight: 900, color: s.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{s.value}</p>
-                                                <p style={{ fontSize: 9, color: '#94a3b8' }}>{s.sub}</p>
+                                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569' }}>{s.sub}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -420,15 +427,15 @@
                                     {filteredData.length > 0 && (
                                         <div className="glass rounded-2xl mb-6 overflow-hidden">
                                             <div className="px-5 py-3 border-b border-border/60 flex items-center justify-between">
-                                                <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Top Selling Opportunities</span>
-                                                <span style={{ fontSize: 9, color: '#475569' }}>Sorted by Premium · PoP ≥ {minPoP}%</span>
+                                                <span style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#475569', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Top Selling Opportunities</span>
+                                                <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>Sorted by Premium · PoP ≥ {minPoP}%</span>
                                             </div>
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-xs">
                                                     <thead>
                                                         <tr style={{ background: 'rgba(15,23,42,0.6)' }}>
                                                             {['#', 'Strike', 'Type', 'Premium', 'PoP %', 'OI', 'Signal'].map(h => (
-                                                                <th key={h} className="px-4 py-2 text-left" style={{ color: '#94a3b8', fontWeight: 800, fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{h}</th>
+                                                                <th key={h} className="px-4 py-2 text-left" style={{ color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{h}</th>
                                                             ))}
                                                         </tr>
                                                     </thead>
@@ -438,12 +445,12 @@
                                                             .slice(0, 10)
                                                             .map((d, i) => {
                                                                 const isCE = d.type === 'CE';
-                                                                const signal = d.pop >= 85 ? ['🟢 Strong', '#34d399'] : d.pop >= 70 ? ['🟡 Moderate', '#fbbf24'] : ['⚪ Weak', '#64748b'];
+                                                                const signal = d.pop >= 85 ? ['🟢 Strong', '#34d399'] : d.pop >= 70 ? ['🟡 Moderate', '#fbbf24'] : ['⚪ Weak', isDark ? '#64748b' : '#64748b'];
                                                                 return (
                                                                     <tr key={`${d.strike}-${d.type}`} style={{ borderBottom: '1px solid rgba(30,41,59,0.5)' }}
-                                                                        className="hover:bg-slate-800/20 transition-colors">
-                                                                        <td className="px-4 py-2" style={{ color: '#94a3b8', fontWeight: 700 }}>#{i + 1}</td>
-                                                                        <td className="px-4 py-2" style={{ color: '#e2e8f0', fontWeight: 800 }}>{d.strike.toLocaleString('en-IN')}</td>
+                                                                        className="hover:bg-secondary/20 transition-colors">
+                                                                        <td className="px-4 py-2" style={{ color: isDark ? '#94a3b8' : '#475569', fontWeight: 700 }}>#{i + 1}</td>
+                                                                        <td className="px-4 py-2" style={{ color: isDark ? '#e2e8f0' : '#0f172a', fontWeight: 800 }}>{d.strike.toLocaleString('en-IN')}</td>
                                                                         <td className="px-4 py-2">
                                                                             <span style={{
                                                                                 fontSize: 8, fontWeight: 800, padding: '2px 7px', borderRadius: 4,
@@ -455,8 +462,8 @@
                                                                             </span>
                                                                         </td>
                                                                         <td className="px-4 py-2" style={{ color: isCE ? '#34d399' : '#f87171', fontWeight: 900 }}>₹{d.premium.toFixed(1)}</td>
-                                                                        <td className="px-4 py-2" style={{ color: d.pop >= 80 ? '#34d399' : d.pop >= 70 ? '#fbbf24' : '#94a3b8', fontWeight: 800 }}>{d.pop}%</td>
-                                                                        <td className="px-4 py-2" style={{ color: '#94a3b8' }}>{fmtOI(d.oi)}</td>
+                                                                        <td className="px-4 py-2" style={{ color: d.pop >= 80 ? '#34d399' : d.pop >= 70 ? '#fbbf24' : isDark ? '#94a3b8' : '#475569', fontWeight: 800 }}>{d.pop}%</td>
+                                                                        <td className="px-4 py-2" style={{ color: isDark ? '#94a3b8' : '#475569' }}>{fmtOI(d.oi)}</td>
                                                                         <td className="px-4 py-2" style={{ color: signal[1], fontWeight: 700, fontSize: 10 }}>{signal[0]}</td>
                                                                     </tr>
                                                                 );

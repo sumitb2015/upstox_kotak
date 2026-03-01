@@ -315,11 +315,11 @@
                 const BASE_LAYOUT = {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    font: { family: 'Inter', color: '#64748b' },
+                    font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     hovermode: 'closest',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' },
-                    xaxis: { gridcolor: '#1e293b', zerolinecolor: '#334155', tickfont: { color: '#94a3b8' } },
-                    yaxis: { gridcolor: '#1e293b', zerolinecolor: '#334155', tickfont: { color: '#94a3b8' }, tickformat: '.3s' },
+                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' },
+                    xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickfont: { color: isDark ? '#94a3b8' : '#475569' } },
+                    yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickfont: { color: isDark ? '#94a3b8' : '#475569' }, tickformat: '.3s' },
                 };
 
                 // Vertical ATM shape (shared across charts)
@@ -425,10 +425,10 @@
                 const chart1Layout = {
                     ...BASE_LAYOUT,
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.15, x: 0 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.15, x: 0 },
                     margin: { t: 20, b: 100, l: 80, r: 40 },
-                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike Price', font: { color: '#64748b', size: 11 } } },
-                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Open Interest', font: { color: '#64748b', size: 11 } } },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike Price', font: { color: isDark ? '#64748b' : '#64748b', size: 11 } } },
+                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Open Interest', font: { color: isDark ? '#64748b' : '#64748b', size: 11 } } },
                     shapes: atmShape,
                     annotations: strike1Annotations,
                 };
@@ -480,13 +480,13 @@
                     ...BASE_LAYOUT,
                     barmode: 'group',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18 },
                     margin: { t: 20, b: 90, l: 70, r: 70 },
-                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: '#64748b', size: 10 } } },
-                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Total OI', font: { color: '#64748b', size: 10 } } },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } } },
+                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Total OI', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } } },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
-                        tickfont: { color: '#a78bfa', size: 9 }, zeroline: true, zerolinecolor: '#334155',
+                        tickfont: { color: '#a78bfa', size: 9 }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
                         title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }
                     },
                     height: 400,
@@ -539,12 +539,12 @@
                     ...BASE_LAYOUT,
                     barmode: 'group',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18 },
                     margin: { t: 20, b: 90, l: 75, r: 70 },
-                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: '#64748b', size: 10 } } },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } } },
                     yaxis: {
-                        ...BASE_LAYOUT.yaxis, title: { text: 'OI Change', font: { color: '#64748b', size: 10 } },
-                        zeroline: true, zerolinecolor: '#475569', zerolinewidth: 1.5
+                        ...BASE_LAYOUT.yaxis, title: { text: 'OI Change', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } },
+                        zeroline: true, zerolinecolor: isDark ? '#475569' : '#cbd5e1', zerolinewidth: 1.5
                     },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
@@ -557,7 +557,7 @@
                         ...atmAnnotation,
                         {
                             xref: 'paper', yref: 'paper', x: 0.01, y: 0.5, text: '← Unwind / Build →',
-                            showarrow: false, font: { size: 8, color: '#475569', family: 'Inter' }
+                            showarrow: false, font: { size: 8, color: isDark ? '#475569' : '#cbd5e1', family: 'Inter' }
                         }
                     ],
                 };
@@ -575,8 +575,8 @@
                 ce: data.filter(d => d.ce_buildup === type).length,
                 pe: data.filter(d => d.pe_buildup === type).length,
             })).filter(b => b.ce > 0 || b.pe > 0);
-            const dominantBuildupCE = buildupSummary.reduce((a, b) => a.ce > b.ce ? a : b, { type: '---', ce: 0, color: '#94a3b8' });
-            const dominantBuildupPE = buildupSummary.reduce((a, b) => a.pe > b.pe ? a : b, { type: '---', pe: 0, color: '#94a3b8' });
+            const dominantBuildupCE = buildupSummary.reduce((a, b) => a.ce > b.ce ? a : b, { type: '---', ce: 0, color: isDark ? '#94a3b8' : '#475569' });
+            const dominantBuildupPE = buildupSummary.reduce((a, b) => a.pe > b.pe ? a : b, { type: '---', pe: 0, color: isDark ? '#94a3b8' : '#475569' });
 
 
             return (
