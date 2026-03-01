@@ -270,6 +270,12 @@
         };
 
         const Dashboard = () => {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
             const [stocks, setStocks] = useState({});
             const [isConnected, setIsConnected] = useState(false);
             const [activeCategory, setActiveCategory] = useState("Major");

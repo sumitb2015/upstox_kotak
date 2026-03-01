@@ -208,6 +208,12 @@
         };
 
         const Dashboard = () => {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
             const [data, setData] = useState([]);
             const [metadata, setMetadata] = useState({});
             const [loading, setLoading] = useState(true);

@@ -378,6 +378,16 @@
             }, []);
 
             const [symbol, setSymbol] = useState("NIFTY");
+            const [expiry, setExpiry] = useState("");
+            const [expiries, setExpiries] = useState([]);
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [lastUpdate, setLastUpdate] = useState(null);
+            const [refreshInterval, setRefreshInterval] = useState(60000); // Default 1 min
+            const [viewSide, setViewSide] = useState("CE"); // 'CE' or 'PE'
+            const [fixedTimestamps, setFixedTimestamps] = useState([]);
+            const tooltipRef = useRef(null);
 
             // Generate full day timeline (9:15 to 15:30) based on refreshInterval
             useEffect(() => {
