@@ -217,7 +217,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -244,13 +244,13 @@
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             margin: { t: 8, b: 45, l: 58, r: 60 },
-            font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b', size: 11 },
+            font: { family: 'Inter', color: isDark ? '#94a3b8' : '#1e293b', size: 11 },
             xaxis: {
-                gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#64748b' : '#64748b', size: 10 },
+                gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 },
                 showgrid: true, type: 'category', nticks: 12
             },
             hovermode: 'x unified',
-            hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter', size: 12 } },
+            hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : '#e2e8f0', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter', size: 12 } },
             showlegend: true,
             legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 11 }, orientation: 'h', x: 0, y: -0.18 },
         };
@@ -491,8 +491,8 @@
             const peChg = kpi.pe_chg ?? 0;
 
             return (
-                <div className="min-h-screen flex" className="min-h-screen flex bg-background" style={{ transition: "background-color 0.2s" }}>
-                    
+                <div className="min-h-screen flex bg-background" style={{ transition: "background-color 0.2s" }}>
+
 
                     <main className="flex-1 pl-28 pr-4 py-7">
 
