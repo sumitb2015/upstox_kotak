@@ -10,21 +10,25 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
         }
 
         .glass-strong {
-            background: rgba(17, 24, 39, 0.9);
+            background: var(--card);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: 1px solid var(--border);
         }
 
         select {
@@ -138,7 +142,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -430,7 +434,7 @@
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
-                    
+
 
                     <main className="pl-28 pr-8 py-8 max-w-[1600px] mx-auto">
                         {/* Header */}
@@ -507,7 +511,7 @@
                                             const val = parseInt(e.target.value, 10);
                                             setStrikeRange(val);
                                         }}
-                                        className="w-24 accent-emerald-500 cursor-pointer h-1 bg-slate-600 rounded-lg appearance-none"
+                                        className="w-24 accent-emerald-500 cursor-pointer h-1 bg-secondary rounded-lg appearance-none"
                                     />
                                 </div>
 

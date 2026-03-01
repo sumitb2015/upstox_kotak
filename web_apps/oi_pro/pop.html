@@ -10,21 +10,25 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
         }
 
         .glass-strong {
-            background: rgba(17, 24, 39, 0.9);
+            background: var(--card);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: 1px solid var(--border);
         }
 
         select {
@@ -165,7 +169,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -312,7 +316,7 @@
                         gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
                     },
                     hovermode: 'closest',
-                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' }
+                    hoverlabel: { bgcolor: isDark ? '#111827' : '#ffffff', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: isDark ? '#374151' : '#e2e8f0' }
                 };
 
                 Plotly.newPlot('chart-div', [traceCE, tracePE], layout, { responsive: true, displayModeBar: false });
@@ -321,7 +325,7 @@
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased selection:bg-emerald-500/30">
-                    
+
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}
@@ -415,10 +419,10 @@
                                 <>
                                     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
                                         {stats.map(s => (
-                                            <div key={s.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderLeft: `3px solid ${s.color}` }}>
-                                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{s.label}</p>
-                                                <p style={{ fontSize: '1.5rem', fontWeight: 900, color: s.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{s.value}</p>
-                                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569' }}>{s.sub}</p>
+                                            <div key={s.label} className="glass rounded-2xl p-4 flex flex-col gap-1.5" style={{ borderLeft: `4px solid ${s.color}` }}>
+                                                <p className="text-[9px] font-black text-muted-foreground tracking-[0.15em] uppercase">{s.label}</p>
+                                                <p className="text-2xl font-black leading-none tracking-tight" style={{ color: s.color }}>{s.value}</p>
+                                                <p className="text-[10px] font-semibold text-muted-foreground">{s.sub}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -426,16 +430,16 @@
                                     {/* Top Opportunities Table */}
                                     {filteredData.length > 0 && (
                                         <div className="glass rounded-2xl mb-6 overflow-hidden">
-                                            <div className="px-5 py-3 border-b border-border/60 flex items-center justify-between">
-                                                <span style={{ fontSize: 11, fontWeight: 800, color: isDark ? '#94a3b8' : '#475569', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Top Selling Opportunities</span>
-                                                <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>Sorted by Premium · PoP ≥ {minPoP}%</span>
+                                            <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
+                                                <span className="text-xs font-black text-muted-foreground tracking-widest uppercase">Top Selling Opportunities</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground">Sorted by Premium · PoP ≥ {minPoP}%</span>
                                             </div>
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-xs">
                                                     <thead>
-                                                        <tr style={{ background: 'rgba(15,23,42,0.6)' }}>
+                                                        <tr className="bg-muted/50 border-b border-border">
                                                             {['#', 'Strike', 'Type', 'Premium', 'PoP %', 'OI', 'Signal'].map(h => (
-                                                                <th key={h} className="px-4 py-2 text-left" style={{ color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{h}</th>
+                                                                <th key={h} className="px-4 py-3 text-left text-[10px] font-black tracking-widest text-muted-foreground uppercase">{h}</th>
                                                             ))}
                                                         </tr>
                                                     </thead>
@@ -445,26 +449,20 @@
                                                             .slice(0, 10)
                                                             .map((d, i) => {
                                                                 const isCE = d.type === 'CE';
-                                                                const signal = d.pop >= 85 ? ['🟢 Strong', '#34d399'] : d.pop >= 70 ? ['🟡 Moderate', '#fbbf24'] : ['⚪ Weak', isDark ? '#64748b' : '#64748b'];
+                                                                const signal = d.pop >= 85 ? ['🟢 Strong', 'text-emerald-500'] : d.pop >= 70 ? ['🟡 Moderate', 'text-amber-500'] : ['⚪ Weak', 'text-muted-foreground'];
                                                                 return (
-                                                                    <tr key={`${d.strike}-${d.type}`} style={{ borderBottom: '1px solid rgba(30,41,59,0.5)' }}
-                                                                        className="hover:bg-secondary/20 transition-colors">
-                                                                        <td className="px-4 py-2" style={{ color: isDark ? '#94a3b8' : '#475569', fontWeight: 700 }}>#{i + 1}</td>
-                                                                        <td className="px-4 py-2" style={{ color: isDark ? '#e2e8f0' : '#0f172a', fontWeight: 800 }}>{d.strike.toLocaleString('en-IN')}</td>
-                                                                        <td className="px-4 py-2">
-                                                                            <span style={{
-                                                                                fontSize: 8, fontWeight: 800, padding: '2px 7px', borderRadius: 4,
-                                                                                color: isCE ? '#10b981' : '#ef4444',
-                                                                                background: isCE ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                                                                                border: `1px solid ${isCE ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`
-                                                                            }}>
+                                                                    <tr key={`${d.strike}-${d.type}`} className="border-b border-border hover:bg-muted/50 transition-colors">
+                                                                        <td className="px-4 py-3 text-muted-foreground font-bold">#{i + 1}</td>
+                                                                        <td className="px-4 py-3 text-foreground font-black">{d.strike.toLocaleString('en-IN')}</td>
+                                                                        <td className="px-4 py-3">
+                                                                            <span className={`text-[9px] font-black px-2 py-1 rounded-md border ${isCE ? 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20' : 'text-rose-600 bg-rose-500/10 border-rose-500/20'}`}>
                                                                                 {d.type}
                                                                             </span>
                                                                         </td>
-                                                                        <td className="px-4 py-2" style={{ color: isCE ? '#34d399' : '#f87171', fontWeight: 900 }}>₹{d.premium.toFixed(1)}</td>
-                                                                        <td className="px-4 py-2" style={{ color: d.pop >= 80 ? '#34d399' : d.pop >= 70 ? '#fbbf24' : isDark ? '#94a3b8' : '#475569', fontWeight: 800 }}>{d.pop}%</td>
-                                                                        <td className="px-4 py-2" style={{ color: isDark ? '#94a3b8' : '#475569' }}>{fmtOI(d.oi)}</td>
-                                                                        <td className="px-4 py-2" style={{ color: signal[1], fontWeight: 700, fontSize: 10 }}>{signal[0]}</td>
+                                                                        <td className={`px-4 py-3 font-black ${isCE ? 'text-emerald-500' : 'text-rose-500'}`}>₹{d.premium.toFixed(1)}</td>
+                                                                        <td className={`px-4 py-3 font-black ${d.pop >= 80 ? 'text-emerald-500' : d.pop >= 70 ? 'text-amber-500' : 'text-muted-foreground'}`}>{d.pop}%</td>
+                                                                        <td className="px-4 py-3 text-muted-foreground font-semibold">{fmtOI(d.oi)}</td>
+                                                                        <td className={`px-4 py-3 font-bold text-[10px] ${signal[1]}`}>{signal[0]}</td>
                                                                     </tr>
                                                                 );
                                                             })

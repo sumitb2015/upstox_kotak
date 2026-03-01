@@ -22,10 +22,10 @@
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
         }
 
         .custom-scrollbar::-webkit-scrollbar {
@@ -160,7 +160,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -292,8 +292,8 @@
 
             const getOIRankBg = (rank) => {
                 if (rank === 1) return "bg-amber-500/20 border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)]";
-                if (rank === 2) return "bg-slate-400/20 border border-slate-400/50";
-                if (rank === 3) return "bg-orange-700/20 border border-orange-700/50";
+                if (rank === 2) return "bg-muted border border-border";
+                if (rank === 3) return "bg-secondary border border-border/50";
                 return "";
             };
 
@@ -320,7 +320,7 @@
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased selection:bg-emerald-500/30 flex">
 
-                    
+
 
                     <div className="flex-1 pl-28 flex flex-col overflow-hidden" style={{ height: '100vh' }}>
                         {/* Header - fixed height compact bar */}
@@ -483,7 +483,7 @@
                                                             <span className={getOIRankColor(ce.oi_rank)}>
                                                                 {ce.oi ? (ce.oi / 100000).toFixed(2) + 'L' : "-"}
                                                             </span>
-                                                            {ce.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${ce.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-slate-400'}`}></span>}
+                                                            {ce.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${ce.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-muted-foreground/50'}`}></span>}
                                                         </div>
                                                     </td>
 
@@ -554,7 +554,7 @@
                                                     {/* OI */}
                                                     <td className={`py-2 px-1 ${peBg} ${getOIRankBg(pe.oi_rank)}`}>
                                                         <div className={`flex items-center justify-start gap-1`}>
-                                                            {pe.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${pe.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-slate-400'}`}></span>}
+                                                            {pe.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${pe.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-muted-foreground/50'}`}></span>}
                                                             <span className={getOIRankColor(pe.oi_rank)}>
                                                                 {pe.oi ? (pe.oi / 100000).toFixed(2) + 'L' : "-"}
                                                             </span>
