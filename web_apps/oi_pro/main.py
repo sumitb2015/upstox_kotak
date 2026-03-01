@@ -140,6 +140,54 @@ BANKNIFTY_KEYS = {
 }
 BANKNIFTY_STOCKS = list(BANKNIFTY_KEYS.keys())
 
+# --- Indices Dashboard Config ---
+INDICES_KEYS = {
+    # Major / Nifty 50 Family Indices
+    "NIFTY": "NSE_INDEX|Nifty 50",
+    "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "FINNIFTY": "NSE_INDEX|Nifty Fin Service",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+    "INDIA VIX": "NSE_INDEX|India VIX",
+    # Broad Market Indices
+    "NIFTYNXT50": "NSE_INDEX|Nifty Next 50",
+    "NIFTY 100": "NSE_INDEX|Nifty 100",
+    "NIFTY 200": "NSE_INDEX|Nifty 200",
+    "NIFTY 500": "NSE_INDEX|Nifty 500",
+    "NIFTY MIDCAP 50": "NSE_INDEX|Nifty Midcap 50",
+    "NIFTY MIDCAP 100": "NSE_INDEX|NIFTY MIDCAP 100",
+    "NIFTY SMLCAP 50": "NSE_INDEX|NIFTY SMLCAP 50",
+    "NIFTY SMLCAP 100": "NSE_INDEX|NIFTY SMLCAP 100",
+    "NIFTY SMLCAP 250": "NSE_INDEX|NIFTY SMLCAP 250",
+    "NIFTY MICROCAP250": "NSE_INDEX|NIFTY MICROCAP250",
+    "NIFTY TOTAL MKT": "NSE_INDEX|NIFTY TOTAL MKT",
+    # Sectoral Indices
+    "NIFTY AUTO": "NSE_INDEX|Nifty Auto",
+    "NIFTY ENERGY": "NSE_INDEX|Nifty Energy",
+    "NIFTY FMCG": "NSE_INDEX|Nifty FMCG",
+    "NIFTY IT": "NSE_INDEX|Nifty IT",
+    "NIFTY MEDIA": "NSE_INDEX|Nifty Media",
+    "NIFTY METAL": "NSE_INDEX|Nifty Metal",
+    "NIFTY PHARMA": "NSE_INDEX|Nifty Pharma",
+    "NIFTY PVT BANK": "NSE_INDEX|Nifty Pvt Bank",
+    "NIFTY PSU BANK": "NSE_INDEX|Nifty PSU Bank",
+    "NIFTY REALTY": "NSE_INDEX|Nifty Realty",
+    "NIFTY HEALTHCARE": "NSE_INDEX|NIFTY HEALTHCARE",
+    "NIFTY CONSR DURBL": "NSE_INDEX|NIFTY CONSR DURBL",
+    "NIFTY OIL AND GAS": "NSE_INDEX|NIFTY OIL AND GAS",
+    # Thematic / Strategy Indices
+    "NIFTY CPSE": "NSE_INDEX|Nifty CPSE",
+    "NIFTY INFRA": "NSE_INDEX|Nifty Infra",
+    "NIFTY MNC": "NSE_INDEX|Nifty MNC",
+    "NIFTY PSE": "NSE_INDEX|Nifty PSE",
+    "NIFTY COMMODITIES": "NSE_INDEX|Nifty Commodities",
+    "NIFTY CONSUMPTION": "NSE_INDEX|Nifty Consumption",
+    "NIFTY IND DEFENCE": "NSE_INDEX|Nifty Ind Defence",
+    "NIFTY IPO": "NSE_INDEX|Nifty IPO",
+    "NIFTY DIV OPPS 50": "NSE_INDEX|Nifty Div Opps 50",
+    "NIFTY50 VALUE 20": "NSE_INDEX|Nifty50 Value 20",
+    "NIFTY100 ESG": "NSE_INDEX|NIFTY100 ESG",
+}
+
 # Lookup for fetching LTP by symbol (Dynamic)
 # Replaced with redis_wrapper.set_raw("symbol_lookup:...", ...)
 
@@ -1549,10 +1597,19 @@ async def get_stock_dashboard(request: Request):
     except Exception as e:
         return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
 
+@app.get("/indices-dashboard", response_class=HTMLResponse)
+async def get_indices_dashboard(request: Request):
+    """Serves the Unified HTML for the Indices Dashboard"""
+    try:
+        html_path = Path(__file__).parent / "indices_dashboard.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
 @app.get("/api/market-quote")
 async def get_market_quote(
     token: str = Query(None),
-    index: str = Query("NIFTY", description="Index to fetch quotes for: NIFTY or BANKNIFTY")
+    index: str = Query("NIFTY", description="Index to fetch quotes for: NIFTY, BANKNIFTY, or INDICES")
 ):
     """REST endpoint for Index constituents real-time updates and daily changes"""
     try:
@@ -1566,7 +1623,12 @@ async def get_market_quote(
             return {"status": "error", "message": "No active broker connection"}
             
         # Determine Target Dictionary based on query param
-        target_keys = BANKNIFTY_KEYS if index.upper() == "BANKNIFTY" else NIFTY_50_KEYS
+        if index.upper() == "BANKNIFTY":
+            target_keys = BANKNIFTY_KEYS
+        elif index.upper() == "INDICES":
+            target_keys = INDICES_KEYS
+        else:
+            target_keys = NIFTY_50_KEYS
             
         from lib.api.market_data import get_market_quotes
         quotes = await run_in_threadpool(get_market_quotes, upstox_token, list(target_keys.values()))
@@ -1574,8 +1636,10 @@ async def get_market_quote(
         # Transform the response into our dashboard format
         formatted_data = {}
         for symbol, key in target_keys.items():
-            # The SDK often returns the keys as 'NSE_EQ:SYMBOL'
+            # The SDK often returns the keys as 'NSE_EQ:SYMBOL' or 'NSE_INDEX:SYMBOL'
             quote = quotes.get(f"NSE_EQ:{symbol}")
+            if not quote:
+                quote = quotes.get(f"NSE_INDEX:{symbol}")
             if not quote:
                 # Fallback: search by actual instrument_token
                 for q in quotes.values():
