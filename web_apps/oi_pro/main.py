@@ -943,6 +943,8 @@ class ConnectionManager:
             # We will send what we have. API usually gives 'ltp'. 
             # If we want change, we need close.
             
+            # Extract OHLC: On weekends/outside market hours, Upstox nests daily High/Low in 'ohlc_day'.
+            # During market hours, it may be in 'ohlc' or at the top level. We check all for safety.
             dashboard_msg = {
                 "type": "market_update",
                 "prices": {

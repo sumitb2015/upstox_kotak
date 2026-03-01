@@ -151,7 +151,6 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - **Middleware**: CORS enabled for cross-origin access.
 
 ### Recent Reliability Improvements
-- **Robust Cold Start & Standby Mode**: The server now starts in a refined "standby" mode, consolidating fragmented startup handlers into a single predictable sequence. Background services (Greeks History, Baseline OI, Streamer) now use "Lazy Initialization," waiting for the first authorized user login before activating. This ensures a clean, error-free startup in production environments.
-- **User-Powered Background Polling**: Refactored the global data polling mechanism to dynamically "borrow" access tokens from active, authorized users. This removes the dependency on hardcoded `.env` credentials for production deployments.
-- **Graceful Weekend Handling**: Endpoints for Option Chain, Straddle, and Strike data now return a successful 200 OK with empty metadata instead of 404/500 errors during non-trading hours. This ensures the dashboard UI remains stable even when indices have no active weekly contracts.
-- **NaN Serialization Fix**: All numeric outputs (Spot, PCR, Greeks) are sanitized for `NaN` and `Inf` values before JSON serialization to prevent frontend crashes on low-liquidity future expiries.
+- **Full-System Semantic Theming**: Introduced a robust design system using CSS variables across 30+ pages, enabling seamless switching between Light and Dark modes while maintaining premium aesthetics.
+- **Weekend/Off-Market High-Low Fix**: Enhanced the Upstox WebSocket parsing logic to correctly extract daily OHLC data from the `ohlc_day` nested structure, ensuring high/low prices are populated on all dashboards even during weekends and non-trading hours.
+- **Authenticated UI Integrity**: The login gateway is now forced to Dark Mode permanently to ensure a consistent, secure-feeling point of entry, independent of the dashboard's theme settings.
