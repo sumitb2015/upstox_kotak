@@ -10,7 +10,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -144,7 +148,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -174,33 +178,34 @@
             iv: { label: 'IV', ce: '#34d399', pe: '#f87171', desc: 'Implied Volatility (%)' },
         };
 
-        /* ── Chart layout factory ────────────────────────────────────────── */
-        const mkLayout = (title, yTitle, extra = {}) => ({
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            title: { text: title, font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 13, family: 'Inter' }, x: 0.02 },
-            showlegend: true,
-            legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
-            margin: { t: 40, b: 60, l: 65, r: 30 },
-            font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
-            hovermode: 'x unified',
-            hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#1e293b' : '#f1f5f9', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter' } },
-            xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: false },
-            yaxis: { title: { text: yTitle, font: { color: isDark ? '#94a3b8' : '#475569', size: 9 } }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', zerolinewidth: 1, tickformat: '.4f' },
-            ...extra,
-        });
-
-        /* ── Trace builder ─────────────────────────────────────────────── */
-        const mkTrace = (name, times, vals, color, dash = 'solid') => ({
-            x: times, y: vals, name,
-            type: 'scatter', mode: 'lines',
-            line: { color, width: dash === 'solid' ? 2.5 : 1.5, dash, shape: 'spline', smoothing: 0.6 },
-            hovertemplate: `<b>${name}</b>: %{y:.4f}<extra></extra>`,
-        });
-
         /* ── Component ─────────────────────────────────────────────────── */
         function StrikeGreeksAnalytics() {
             const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+
+            /* ── Chart layout factory ────────────────────────────────────────── */
+            const mkLayout = (title, yTitle, extra = {}) => ({
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                title: { text: title, font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 13, family: 'Inter' }, x: 0.02 },
+                showlegend: true,
+                legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
+                margin: { t: 40, b: 60, l: 65, r: 30 },
+                font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
+                hovermode: 'x unified',
+                hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#1e293b' : '#f1f5f9', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter' } },
+                xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: false },
+                yaxis: { title: { text: yTitle, font: { color: isDark ? '#94a3b8' : '#475569', size: 9 } }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: true, zerolinecolor: isDark ? '#334155' : '#e2e8f0', zerolinewidth: 1, tickformat: '.4f' },
+                ...extra,
+            });
+
+            /* ── Trace builder ─────────────────────────────────────────────── */
+            const mkTrace = (name, times, vals, color, dash = 'solid') => ({
+                x: times, y: vals, name,
+                type: 'scatter', mode: 'lines',
+                line: { color, width: dash === 'solid' ? 2.5 : 1.5, dash, shape: 'spline', smoothing: 0.6 },
+                hovertemplate: `<b>${name}</b>: %{y:.4f}<extra></extra>`,
+            });
+
             useEffect(() => {
                 const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
                 window.addEventListener('themeToggled', handleTheme);
@@ -331,7 +336,7 @@
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
-                    
+
 
                     <main className="pl-28 pr-4 py-8 w-full overflow-y-auto">
 
