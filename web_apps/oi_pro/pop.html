@@ -175,6 +175,8 @@
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <!-- Scripts -->
@@ -311,9 +313,8 @@
             }, [filteredData, minPoP]);
 
             return (
-                <div className="min-h-screen bg-background text-muted-foreground antialiased selection:bg-emerald-500/30">
-                    {/* Unified Sidebar Navigation */}
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased selection:bg-emerald-500/30">
+                    
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}

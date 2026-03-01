@@ -154,6 +154,8 @@
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -321,8 +323,8 @@
             ];
 
             return (
-                <div className="min-h-screen bg-background text-muted-foreground antialiased flex overflow-hidden">
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
+                    
 
                     <main className="pl-28 pr-4 py-8 w-full overflow-y-auto">
 

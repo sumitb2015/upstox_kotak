@@ -170,6 +170,8 @@
 </head>
 
 <body class="bg-background text-muted-foreground">
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <script type="text/babel">
@@ -316,10 +318,9 @@
             };
 
             return (
-                <div className="min-h-screen bg-background text-muted-foreground antialiased selection:bg-emerald-500/30 flex">
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased selection:bg-emerald-500/30 flex">
 
-                    {/* Navigation Sidebar (Existing) */}
-                    <div id="sidebar-root"></div>
+                    
 
                     <div className="flex-1 pl-28 flex flex-col overflow-hidden" style={{ height: '100vh' }}>
                         {/* Header - fixed height compact bar */}

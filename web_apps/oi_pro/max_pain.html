@@ -142,6 +142,8 @@
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <!-- Scripts -->
@@ -348,9 +350,8 @@
             }, [ivData, spotPrice, symbol]);
 
             return (
-                <div className="min-h-screen bg-background text-muted-foreground antialiased flex overflow-hidden">
-                    {/* Unified Sidebar Navigation */}
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
+                    
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}

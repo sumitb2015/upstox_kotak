@@ -240,6 +240,8 @@
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <!-- Scripts -->
@@ -597,9 +599,8 @@
                 : "—";
 
             return (
-                <div className="min-h-screen bg-background text-muted-foreground antialiased">
-                    {/* Sidebar */}
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased">
+                    
 
                     <main className="pl-28 pr-6 py-6 max-w-[1700px] mx-auto">
                         {/* Header */}

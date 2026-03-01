@@ -163,6 +163,8 @@
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -537,8 +539,8 @@
             const hasAllStrikes = legs.length > 0 && legs.every(l => l.strike);
 
             return (
-                <div className="min-h-screen bg-background text-muted-foreground antialiased flex overflow-hidden">
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
+                    
 
                     <main className="flex-1 pl-28 flex flex-row h-screen overflow-hidden p-4 gap-4">
 
