@@ -22,15 +22,13 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ### 4. Greeks Exposure Analysis (`/greeks`)
 - **Functionality**: Provides a per-strike breakdown of all major Greeks.
-- **Key Features**: Real-time Delta, Gamma, Vega, Theta, and GEX for every strike in the chain. Visualizes Net Delta and Net Gamma across the option chain.
-
 ### 5. OI Change Heatmap (`/heatmap`)
 - **Functionality**: A time-series grid showing the intensity of OI change and price buildup across strikes.
 - **Key Features**: Color-coded visualization of Long Buildup, Short Buildup, Short Covering, and Long Unwinding. Tracks strike-wise shifts every minute.
 
-### 6. Max Pain & IV Smile (`/max-pain`)
-- **Functionality**: Uses the Max Pain theory to identify the strike where option buyers lose the most (and sellers gain the most).
-- **Key Features**: Displays the Max Pain strike, Volatility Smile, analytics KPI grid (Highest CE/PE OI strikes, Best Premium to Sell, PCR, Average PoP), and Top 10 Opportunities table for options sellers. Full-width layout.
+### 6. Max Pain & Volatility Smile (`/max-pain`)
+- **Functionality**: Uses the Max Pain theory to identify optimal strike prices and visualizes implied volatility dynamics.
+- **Key Features**: Displays the Max Pain strike and a **Unified Volatility Smile (OTM IV Curve)** with rolling smoothing, analytics KPI grid, and Top 10 Opportunities table for options sellers.
 
 ### 7. Multi-Option Chart (`/multi`)
 - **Functionality**: A custom strategy builder for multi-leg positions (Spreads, Iron Condors, etc.).
@@ -64,9 +62,9 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 - **Functionality**: Isolated deep-dive into a single strike.
 - **Key Features**: Historical and real-time intraday tracking of CE vs. PE OI, Price, and Buildup for a specific strike price. Includes dynamic-colored bars (buildup vs unwinding), Net OI / Net Change secondary lines, ATM amber annotations, zero-band shading, and a 6-card KPI strip (Max CE/PE OI, Max CE/PE OI Change, PCR, Sentiment).
 
-### 15. Options Buildup (`/`)
-- **Functionality**: Visualizes strike-level OI buildup patterns with sentiment classification.
-- **Key Features**: Three enhanced charts — Sentiment Scatter (√-scaled bubbles, quadrant zones, top-3 labels), Total OI Bar (dynamic opacity, Net OI line), OI Change Bar (dynamic coloring, Net Change line). ATM reference lines across all charts. Buildup Summary Strip showing CE/PE counts by type and dominant signal.
+### 15. OI Trend Analyzer (`/oi-buildup`)
+- **Functionality**: Professional-grade high-density "Tape" visualization of strike-level OI buildup patterns.
+- **Key Features**: Barcode-style high-density grid for PE (Top) and CE (Bottom) buildup visualization, slanting strike labels, and flicker-free 1-minute background updates.
 
 ### 16. Strike Greeks History (`/strike-greeks`)
 - **Functionality**: Persistent historical time-series of option Greeks for a specific strike.

@@ -2080,6 +2080,22 @@ async def serve_option_chain_page():
     content = await run_in_threadpool(read_file, html_path)
     return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
+@app.get("/oi-buildup", response_class=HTMLResponse)
+async def serve_oi_buildup_page():
+    """
+    Serves the OI Buildup Visualization page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "oi_buildup.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="oi_buildup.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def serve_privacy_page():
     """
@@ -2669,13 +2685,16 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
             ce_iv = row.get('ce_iv') or 0
             pe_iv = row.get('pe_iv') or 0
             
-            # Only include strikes with valid IV data
-            if ce_iv > 0 or pe_iv > 0:
-                iv_data.append({
-                    "strike": strike,
-                    "ce_iv": round(ce_iv, 2) if ce_iv else 0,
-                    "pe_iv": round(pe_iv, 2) if pe_iv else 0
-                })
+            # Include all strikes; filtering will be done on the frontend to allow more flexibility
+            iv_data.append({
+                "strike": strike,
+                "ce_iv": round(ce_iv, 2) if ce_iv else 0,
+                "pe_iv": round(pe_iv, 2) if pe_iv else 0,
+                "ce_oi": row.get('ce_oi') or 0,
+                "pe_oi": row.get('pe_oi') or 0,
+                "ce_volume": row.get('ce_volume') or 0,
+                "pe_volume": row.get('pe_volume') or 0
+            })
         
         # Sort by strike
         iv_data.sort(key=lambda x: x['strike'])

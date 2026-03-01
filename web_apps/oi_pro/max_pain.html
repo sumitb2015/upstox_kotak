@@ -10,7 +10,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -132,7 +136,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -287,78 +291,123 @@
 
             }, [painData, maxPainStrike, spotPrice, symbol]);
 
-            // Render Volatility Smile Chart
+            // Render Volatility Smile Chart (Unified OTM IV Curve)
             useEffect(() => {
                 if (ivData.length === 0) return;
 
-                const strikes = ivData.map(d => d.strike);
-                const ceIV = ivData.map(d => d.ce_iv);
-                const peIV = ivData.map(d => d.pe_iv);
+                // 1. Process and Filter Data
+                let combinedIV = ivData.map(d => {
+                    let iv = 0;
+                    let oi = 0;
+                    let vol = 0;
 
-                const traceCE = {
+                    if (d.strike < spotPrice) {
+                        // OTM Puts
+                        iv = d.pe_iv;
+                        oi = d.pe_oi;
+                        vol = d.pe_volume;
+                    } else if (d.strike > spotPrice) {
+                        // OTM Calls
+                        iv = d.ce_iv;
+                        oi = d.ce_oi;
+                        vol = d.ce_volume;
+                    } else {
+                        // ATM - Average
+                        iv = (d.ce_iv + d.pe_iv) / 2;
+                        oi = (d.ce_oi + d.pe_oi) / 2;
+                        vol = (d.ce_volume + d.pe_volume) / 2;
+                    }
+
+                    return { strike: d.strike, iv, oi, vol };
+                }).filter(d =>
+                    d.iv > 0 &&
+                    d.iv < 150 &&
+                    d.oi >= 100 &&
+                    d.vol > 0
+                );
+
+                if (combinedIV.length === 0) return;
+
+                // 2. Simple Smoothing (Rolling Median/Average)
+                const smoothedData = combinedIV.map((d, i, arr) => {
+                    if (i < 1 || i > arr.length - 2) return d;
+                    const prev = arr[i - 1].iv;
+                    const curr = d.iv;
+                    const next = arr[i + 1].iv;
+                    return { ...d, iv: (prev + curr + next) / 3 };
+                });
+
+                const strikes = smoothedData.map(d => d.strike);
+                const ivValues = smoothedData.map(d => d.iv);
+
+                const traceSmile = {
                     x: strikes,
-                    y: ceIV,
-                    name: 'Call IV',
+                    y: ivValues,
+                    name: 'OTM IV',
                     type: 'scatter',
                     mode: 'lines+markers',
-                    marker: { color: '#10b981', size: 6 },
-                    line: { color: '#10b981', width: 2 },
-                    hovertemplate: '<b>%{x} CE</b><br>IV: %{y:.2f}%<extra></extra>'
-                };
-
-                const tracePE = {
-                    x: strikes,
-                    y: peIV,
-                    name: 'Put IV',
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    marker: { color: '#ef4444', size: 6 },
-                    line: { color: '#ef4444', width: 2 },
-                    hovertemplate: '<b>%{x} PE</b><br>IV: %{y:.2f}%<extra></extra>'
+                    marker: {
+                        color: isDark ? '#38bdf8' : '#0369a1',
+                        size: 4,
+                        opacity: 0.6
+                    },
+                    line: {
+                        color: isDark ? '#38bdf8' : '#0369a1',
+                        width: 3,
+                        shape: 'spline'
+                    },
+                    fill: 'tozeroy',
+                    fillcolor: isDark ? 'rgba(56, 189, 248, 0.05)' : 'rgba(3, 105, 161, 0.05)',
+                    hovertemplate: '<b>Strike: %{x}</b><br>Implied Vol: %{y:.2f}%<extra></extra>'
                 };
 
                 const layout = {
-                    title: { text: `Volatility Smile - ${symbol}`, font: { color: '#fff', size: 18 } },
+                    title: { text: `Volatility Smile - OTM IV Curve`, font: { color: isDark ? '#f8fafc' : '#0f172a', size: 18 } },
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    showlegend: true,
-                    legend: { font: { color: isDark ? '#94a3b8' : '#475569' } },
+                    showlegend: false,
                     xaxis: {
                         title: { text: 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569' } },
                         tickfont: { color: isDark ? '#94a3b8' : '#475569' },
-                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: false
                     },
                     yaxis: {
                         title: { text: 'Implied Volatility (%)', font: { color: isDark ? '#94a3b8' : '#475569' } },
                         tickfont: { color: isDark ? '#94a3b8' : '#475569' },
-                        gridcolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a'
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: false
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } },
+                    hoverlabel: {
+                        bgcolor: isDark ? '#1e293b' : '#ffffff',
+                        bordercolor: isDark ? '#38bdf8' : '#0369a1',
+                        font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }
+                    },
                     shapes: [
                         {
                             type: 'line',
                             x0: spotPrice, y0: 0, x1: spotPrice, y1: 1,
                             yref: 'paper',
-                            line: { color: '#f59e0b', width: 2, dash: 'dot' }
+                            line: { color: '#f59e0b', width: 2, dash: 'dash' }
                         }
                     ],
                     annotations: [
                         {
-                            x: spotPrice, y: 1, xref: 'x', yref: 'paper',
-                            text: `Spot: ${spotPrice}`, showarrow: false,
-                            font: { color: '#f59e0b', size: 12 }, yshift: 10
+                            x: spotPrice, y: 1.05, xref: 'x', yref: 'paper',
+                            text: `ATM: ${spotPrice.toFixed(2)}`, showarrow: false,
+                            font: { color: '#f59e0b', size: 11, weight: 'bold' }
                         }
                     ]
                 };
 
-                Plotly.react('iv-chart', [traceCE, tracePE], layout, { responsive: true, displayModeBar: false });
+                Plotly.react('iv-chart', [traceSmile], layout, { responsive: true, displayModeBar: false });
 
-            }, [ivData, spotPrice, symbol]);
+            }, [ivData, spotPrice, symbol, isDark]);
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
-                    
+
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         {/* Header */}

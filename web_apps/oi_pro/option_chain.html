@@ -178,6 +178,7 @@
         const { useState, useEffect, useMemo } = React;
 
         function OptionChain() {
+            const [viewMode, setViewMode] = useState("Standard");
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiryList, setExpiryList] = useState([]);
             const [selectedExpiry, setSelectedExpiry] = useState("");
@@ -305,13 +306,13 @@
                 if (buildup === "Long Unwinding") color = "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20";
 
                 let text = "-";
-                if (buildup === "Long Buildup") text = "L.Build";
-                if (buildup === "Short Buildup") text = "S.Build";
-                if (buildup === "Short Covering") text = "S.Cov";
-                if (buildup === "Long Unwinding") text = "L.Unwind";
+                if (buildup === "Long Buildup") text = "Long Buildup";
+                if (buildup === "Short Buildup") text = "Short Buildup";
+                if (buildup === "Short Covering") text = "Short Covering";
+                if (buildup === "Long Unwinding") text = "Long Unwinding";
 
                 return (
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold ${color}`}>
+                    <span className={`text-[8px] px-1 py-0.5 rounded uppercase tracking-wider font-bold whitespace-nowrap ${color}`}>
                         {text}
                     </span>
                 );
@@ -339,6 +340,18 @@
                                                 className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${symbol === s ? 'bg-secondary text-foreground shadow-lg' : 'text-muted-foreground hover:text-muted-foreground'}`}
                                             >
                                                 {s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="h-5 w-px bg-white/10 mx-1"></div>
+                                    <div className="flex bg-card/50 p-0.5 rounded-lg border border-border">
+                                        {["Standard", "Greeks"].map(v => (
+                                            <button
+                                                key={v}
+                                                onClick={() => setViewMode(v)}
+                                                className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${viewMode === v ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shadow-lg' : 'text-muted-foreground hover:text-muted-foreground'}`}
+                                            >
+                                                {v}
                                             </button>
                                         ))}
                                     </div>
@@ -414,17 +427,29 @@
                                     <thead className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
                                         <tr className="bg-card shadow-lg z-40">
                                             {/* CALLS HEADER */}
-                                            <th style={{ top: 0 }} colSpan="7" className="py-2 border-b border-border bg-card text-emerald-400 tracking-widest sticky z-40">CALLS (CE)</th>
+                                            <th style={{ top: 0 }} colSpan="8" className="py-2 border-b border-border bg-card text-emerald-400 tracking-widest sticky z-40">CALLS (CE)</th>
                                             <th style={{ top: 0 }} rowSpan="2" className="py-2 px-4 border-b border-border bg-card text-foreground sticky-col z-50 shadow-xl border-x border-border sticky">STRIKE</th>
                                             {/* PUTS HEADER */}
-                                            <th style={{ top: 0 }} colSpan="7" className="py-2 border-b border-border bg-card text-rose-400 tracking-widest sticky z-40">PUTS (PE)</th>
+                                            <th style={{ top: 0 }} colSpan="8" className="py-2 border-b border-border bg-card text-rose-400 tracking-widest sticky z-40">PUTS (PE)</th>
                                         </tr>
                                         <tr className="bg-card shadow-md z-30">
                                             {/* CE Columns */}
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Trend</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">OI</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">OI %</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Chg OI</th>
+                                            {viewMode === "Standard" ? (
+                                                <React.Fragment>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Trend</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">OI</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">OI %</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Chg OI</th>
+                                                </React.Fragment>
+                                            ) : (
+                                                <React.Fragment>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Theta</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Vega</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Gamma</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-indigo-400 bg-card sticky z-30 border-r border-border">Delta</th>
+                                                </React.Fragment>
+                                            )}
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">Vol</th>
                                             <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">IV</th>
                                             <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-r border-border">LTP %</th>
                                             <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30">LTP</th>
@@ -433,13 +458,25 @@
                                             <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">LTP</th>
                                             <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">LTP %</th>
                                             <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">IV</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Chg OI</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">OI %</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">OI</th>
-                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Trend</th>
+                                            <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Vol</th>
+                                            {viewMode === "Standard" ? (
+                                                <React.Fragment>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Chg OI</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">OI %</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">OI</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Trend</th>
+                                                </React.Fragment>
+                                            ) : (
+                                                <React.Fragment>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-indigo-400 bg-card sticky z-30 border-l border-border">Delta</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Gamma</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Vega</th>
+                                                    <th style={{ top: '33px' }} className="py-2 px-1 border-b border-border text-muted-foreground bg-card sticky z-30 border-l border-border">Theta</th>
+                                                </React.Fragment>
+                                            )}
                                         </tr>
                                     </thead>
-                                    <tbody className="text-xs font-medium divide-y divide-white/5">
+                                    <tbody className="text-xs font-semibold divide-y divide-white/5">
                                         {visibleData.map((row, i) => {
                                             const ce = row.CE || {};
                                             const pe = row.PE || {};
@@ -462,43 +499,58 @@
                                             const pePricePct = getPctChange(pe.ltp, pe.prev_ltp);
 
                                             const getPctColor = (val) => {
-                                                if (val > 0) return "text-emerald-400";
-                                                if (val < 0) return "text-rose-400";
-                                                return "text-muted-foreground";
+                                                if (val > 0) return "text-emerald-600 dark:text-emerald-400 font-bold";
+                                                if (val < 0) return "text-rose-600 dark:text-rose-400 font-bold";
+                                                return "text-muted-foreground font-bold";
                                             };
 
                                             return (
                                                 <tr key={row.strike} className={`transition-colors group ${rowClass}`}>
 
                                                     {/* === CE DATA === */}
+                                                    {viewMode === "Standard" ? (
+                                                        <React.Fragment>
+                                                            {/* Trend */}
+                                                            <td className={`py-2 px-1 ${ceBg}`}>
+                                                                {getBuildupBadge(ce.buildup)}
+                                                            </td>
 
-                                                    {/* Trend */}
-                                                    <td className={`py-2 px-1 ${ceBg}`}>
-                                                        {getBuildupBadge(ce.buildup)}
-                                                    </td>
+                                                            {/* OI */}
+                                                            <td className={`py-2 px-1 ${ceBg} ${getOIRankBg(ce.oi_rank)}`}>
+                                                                <div className={`flex items-center justify-end gap-1`}>
+                                                                    <span className={getOIRankColor(ce.oi_rank)}>
+                                                                        {ce.oi ? (ce.oi / 100000).toFixed(2) + 'L' : "-"}
+                                                                    </span>
+                                                                    {ce.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${ce.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-muted-foreground/50'}`}></span>}
+                                                                </div>
+                                                            </td>
 
-                                                    {/* OI */}
-                                                    <td className={`py-2 px-1 ${ceBg} ${getOIRankBg(ce.oi_rank)}`}>
-                                                        <div className={`flex items-center justify-end gap-1`}>
-                                                            <span className={getOIRankColor(ce.oi_rank)}>
-                                                                {ce.oi ? (ce.oi / 100000).toFixed(2) + 'L' : "-"}
-                                                            </span>
-                                                            {ce.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${ce.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-muted-foreground/50'}`}></span>}
-                                                        </div>
-                                                    </td>
+                                                            {/* OI % */}
+                                                            <td className={`py-2 px-1 ${ceBg} ${getPctColor(ceOIPct)} text-[10px]`}>
+                                                                {ceOIPct ? `${ceOIPct > 0 ? '+' : ''}${ceOIPct.toFixed(1)}%` : "-"}
+                                                            </td>
 
-                                                    {/* OI % */}
-                                                    <td className={`py-2 px-1 ${ceBg} ${getPctColor(ceOIPct)} text-[10px]`}>
-                                                        {ceOIPct ? `${ceOIPct > 0 ? '+' : ''}${ceOIPct.toFixed(1)}%` : "-"}
-                                                    </td>
+                                                            {/* Chg OI */}
+                                                            <td className={`py-2 px-1 ${ceBg} ${ce.prev_oi && ce.oi > ce.prev_oi ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}`}>
+                                                                {ce.oi && ce.prev_oi ? ((ce.oi - ce.prev_oi) / 100000).toFixed(2) + 'L' : "-"}
+                                                            </td>
+                                                        </React.Fragment>
+                                                    ) : (
+                                                        <React.Fragment>
+                                                            <td className={`py-2 px-1 ${ceBg} text-muted-foreground font-mono text-[10px]`}>{ce.theta ? ce.theta.toFixed(2) : "-"}</td>
+                                                            <td className={`py-2 px-1 ${ceBg} text-muted-foreground font-mono text-[10px]`}>{ce.vega ? ce.vega.toFixed(2) : "-"}</td>
+                                                            <td className={`py-2 px-1 ${ceBg} text-muted-foreground font-mono text-[10px]`}>{ce.gamma ? ce.gamma.toFixed(4) : "-"}</td>
+                                                            <td className={`py-2 px-1 ${ceBg} text-indigo-400 font-bold font-mono text-[11px]`}>{ce.delta !== undefined ? ce.delta.toFixed(3) : "-"}</td>
+                                                        </React.Fragment>
+                                                    )}
 
-                                                    {/* Chg OI */}
-                                                    <td className={`py-2 px-1 ${ceBg} ${ce.prev_oi && ce.oi > ce.prev_oi ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                        {ce.oi && ce.prev_oi ? ((ce.oi - ce.prev_oi) / 100000).toFixed(2) + 'L' : "-"}
+                                                    {/* Vol */}
+                                                    <td className={`py-2 px-1 ${ceBg} text-[10px]`}>
+                                                        {ce.volume ? (ce.volume / 100000).toFixed(2) + 'L' : "-"}
                                                     </td>
 
                                                     {/* IV */}
-                                                    <td className={`py-2 px-1 ${ceBg} text-amber-500/60 font-mono text-[10px]`}>
+                                                    <td className={`py-2 px-1 ${ceBg} text-amber-600 dark:text-amber-400 font-bold font-mono text-[11px]`}>
                                                         {ce.iv ? ce.iv.toFixed(1) : "-"}
                                                     </td>
 
@@ -537,34 +589,50 @@
                                                     </td>
 
                                                     {/* IV */}
-                                                    <td className={`py-2 px-1 ${peBg} text-amber-500/60 font-mono text-[10px]`}>
+                                                    <td className={`py-2 px-1 ${peBg} text-amber-600 dark:text-amber-400 font-bold font-mono text-[11px]`}>
                                                         {pe.iv ? pe.iv.toFixed(1) : "-"}
                                                     </td>
 
-                                                    {/* Chg OI */}
-                                                    <td className={`py-2 px-1 ${peBg} ${pe.prev_oi && pe.oi > pe.prev_oi ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                        {pe.oi && pe.prev_oi ? ((pe.oi - pe.prev_oi) / 100000).toFixed(2) + 'L' : "-"}
+                                                    {/* Vol */}
+                                                    <td className={`py-2 px-1 ${peBg} text-[10px]`}>
+                                                        {pe.volume ? (pe.volume / 100000).toFixed(2) + 'L' : "-"}
                                                     </td>
 
-                                                    {/* OI % */}
-                                                    <td className={`py-2 px-1 ${peBg} ${getPctColor(peOIPct)} text-[10px]`}>
-                                                        {peOIPct ? `${peOIPct > 0 ? '+' : ''}${peOIPct.toFixed(1)}%` : "-"}
-                                                    </td>
+                                                    {viewMode === "Standard" ? (
+                                                        <React.Fragment>
+                                                            {/* Chg OI */}
+                                                            <td className={`py-2 px-1 ${peBg} ${pe.prev_oi && pe.oi > pe.prev_oi ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}`}>
+                                                                {pe.oi && pe.prev_oi ? ((pe.oi - pe.prev_oi) / 100000).toFixed(2) + 'L' : "-"}
+                                                            </td>
 
-                                                    {/* OI */}
-                                                    <td className={`py-2 px-1 ${peBg} ${getOIRankBg(pe.oi_rank)}`}>
-                                                        <div className={`flex items-center justify-start gap-1`}>
-                                                            {pe.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${pe.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-muted-foreground/50'}`}></span>}
-                                                            <span className={getOIRankColor(pe.oi_rank)}>
-                                                                {pe.oi ? (pe.oi / 100000).toFixed(2) + 'L' : "-"}
-                                                            </span>
-                                                        </div>
-                                                    </td>
+                                                            {/* OI % */}
+                                                            <td className={`py-2 px-1 ${peBg} ${getPctColor(peOIPct)} text-[10px]`}>
+                                                                {peOIPct ? `${peOIPct > 0 ? '+' : ''}${peOIPct.toFixed(1)}%` : "-"}
+                                                            </td>
 
-                                                    {/* Trend */}
-                                                    <td className={`py-2 px-1 ${peBg}`}>
-                                                        {getBuildupBadge(pe.buildup)}
-                                                    </td>
+                                                            {/* OI */}
+                                                            <td className={`py-2 px-1 ${peBg} ${getOIRankBg(pe.oi_rank)}`}>
+                                                                <div className={`flex items-center justify-start gap-1`}>
+                                                                    {pe.oi_rank > 0 && <span className={`w-1.5 h-1.5 rounded-full ${pe.oi_rank === 1 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]' : 'bg-muted-foreground/50'}`}></span>}
+                                                                    <span className={getOIRankColor(pe.oi_rank)}>
+                                                                        {pe.oi ? (pe.oi / 100000).toFixed(2) + 'L' : "-"}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Trend */}
+                                                            <td className={`py-2 px-1 ${peBg}`}>
+                                                                {getBuildupBadge(pe.buildup)}
+                                                            </td>
+                                                        </React.Fragment>
+                                                    ) : (
+                                                        <React.Fragment>
+                                                            <td className={`py-2 px-1 ${peBg} text-indigo-400 font-bold font-mono text-[11px]`}>{pe.delta !== undefined ? pe.delta.toFixed(3) : "-"}</td>
+                                                            <td className={`py-2 px-1 ${peBg} text-muted-foreground font-mono text-[10px]`}>{pe.gamma ? pe.gamma.toFixed(4) : "-"}</td>
+                                                            <td className={`py-2 px-1 ${peBg} text-muted-foreground font-mono text-[10px]`}>{pe.vega ? pe.vega.toFixed(2) : "-"}</td>
+                                                            <td className={`py-2 px-1 ${peBg} text-muted-foreground font-mono text-[10px]`}>{pe.theta ? pe.theta.toFixed(2) : "-"}</td>
+                                                        </React.Fragment>
+                                                    )}
 
                                                 </tr>
                                             );

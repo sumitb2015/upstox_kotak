@@ -101,6 +101,11 @@
             svg: '<line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>'
         },
         {
+            href: "/oi-buildup",
+            title: "OI Trend Analyzer",
+            svg: '<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>'
+        },
+        {
             href: "/cumulative",
             title: "Cumulative OI Analysis",
             svg: '<path d="M18 20V10"></path><path d="M12 20V4"></path><path d="M6 20v-6"></path>'
@@ -186,11 +191,11 @@
             if (isDark) {
                 document.documentElement.classList.remove('dark');
                 localStorage.setItem('oi-pro-theme', 'light');
-            window.dispatchEvent(new Event('themeToggled'));
+                window.dispatchEvent(new Event('themeToggled'));
             } else {
                 document.documentElement.classList.add('dark');
                 localStorage.setItem('oi-pro-theme', 'dark');
-            window.dispatchEvent(new Event('themeToggled'));
+                window.dispatchEvent(new Event('themeToggled'));
             }
             renderSidebar(); // Re-render to update icon
         };
