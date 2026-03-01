@@ -948,8 +948,8 @@ class ConnectionManager:
                 "prices": {
                     symbol: {
                         "ltp": message.get('ltp') or message.get('last_price'),
-                        "high": message.get('ohlc', {}).get('high') or message.get('high'),
-                        "low": message.get('ohlc', {}).get('low') or message.get('low'),
+                        "high": message.get('ohlc_day', {}).get('high') or message.get('ohlc', {}).get('high') or message.get('high'),
+                        "low": message.get('ohlc_day', {}).get('low') or message.get('ohlc', {}).get('low') or message.get('low'),
                         "chg": 0.0 # Placeholder, calculating change requires yesterday's close
                     }
                 }
@@ -1564,9 +1564,9 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
                 data = streamer.get_latest_data(key)
                 if data:
                     ltp = data.get('ltp') or data.get('last_price')
-                    close = data.get('close') or data.get('ohlc', {}).get('close')
-                    high = data.get('high') or data.get('ohlc', {}).get('high')
-                    low = data.get('low') or data.get('ohlc', {}).get('low')
+                    close = data.get('close') or data.get('ohlc_day', {}).get('close') or data.get('ohlc', {}).get('close')
+                    high = data.get('high') or data.get('ohlc_day', {}).get('high') or data.get('ohlc', {}).get('high')
+                    low = data.get('low') or data.get('ohlc_day', {}).get('low') or data.get('ohlc', {}).get('low')
                     chg = 0.0
                     if ltp and close:
                         chg = round(((ltp - close) / close) * 100, 2)
