@@ -10,24 +10,67 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+            background-color: var(--background);
+            color: var(--foreground);
             margin: 0;
             overflow-x: hidden;
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
+            border: 1px solid var(--border);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .glass-strong {
-            background: rgba(17, 24, 39, 0.9);
+            background: var(--card);
+            opacity: 0.95;
+            border: 1px solid var(--border);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
         }
 
         select {
@@ -49,18 +92,20 @@
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #1e293b;
+            background: var(--muted);
             border-radius: 10px;
         }
 
         .custom-scrollbar {
             scrollbar-width: thin;
-            scrollbar-color: #1e293b transparent;
+            scrollbar-color: var(--muted) transparent;
         }
     </style>
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -73,6 +118,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function CumulativeOI() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [strikeRange, setStrikeRange] = useState(4);
@@ -174,17 +226,17 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8' }, orientation: 'h', y: -0.2 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569' }, orientation: 'h', y: -0.2 },
                     margin: { t: 20, b: 60, l: 60, r: 60 },
-                    font: { family: 'Inter', color: '#64748b' },
-                    xaxis: { gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 10 } },
+                    font: { family: 'Inter', color: isDark ? '#94a3b8' : '#1e293b' },
+                    xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' } }
+                    hoverlabel: { bgcolor: isDark ? '#111827' : '#ffffff', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } }
                 };
 
                 const sentimentLayout = {
                     ...commonLayout,
-                    yaxis: { title: 'Net OI Change', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } },
+                    yaxis: { title: 'Net OI Change', gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' } },
                     yaxis2: { title: 'Index LTP', overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#fbbf24' } }
                 };
 
@@ -211,7 +263,7 @@
 
                 const trendLayout = {
                     ...commonLayout,
-                    yaxis: { title: 'OI Change', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } }
+                    yaxis: { title: 'OI Change', gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' } }
                 };
 
                 Plotly.react('trend-chart', [ceChgTrace, peChgTrace], trendLayout, { responsive: true, displayModeBar: false });
@@ -237,7 +289,7 @@
 
                 const totalLayout = {
                     ...commonLayout,
-                    yaxis: { title: 'Total OI', gridcolor: '#1e293b', tickfont: { color: '#94a3b8' } }
+                    yaxis: { title: 'Total OI', gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' } }
                 };
 
                 Plotly.react('total-oi-chart', [ceTotalTrace, peTotalTrace], totalLayout, { responsive: true, displayModeBar: false });
@@ -249,50 +301,49 @@
             };
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
-                    {/* Unified Sidebar Navigation */}
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen flex bg-background text-secondary-foreground antialiased overflow-hidden" style={{ transition: "background-color 0.2s" }}>
+
 
                     <main className="pl-28 pr-8 py-8 max-w-[1400px] mx-auto">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                             <div>
-                                <h1 className="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+                                <h1 className="text-2xl font-black text-foreground tracking-tight uppercase flex items-center gap-2">
                                     Cumulative <span className="text-emerald-500">OI Analysis</span>
                                 </h1>
-                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Aggregate Market Sentiment Tracker</p>
+                                <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Aggregate Market Sentiment Tracker</p>
                             </div>
 
                             <div className="flex flex-wrap gap-3">
-                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Symbol</span>
+                                <div className="glass px-3 py-1.5 rounded-xl border-border/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Symbol</span>
                                     <select
                                         className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={symbol}
                                         onChange={(e) => setSymbol(e.target.value)}
                                     >
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Expiry</span>
+                                <div className="glass px-3 py-1.5 rounded-xl border-border/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Expiry</span>
                                     <select
-                                        className="bg-transparent border-none text-slate-300 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        className="bg-transparent border-none text-secondary-foreground text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={expiry}
                                         onChange={(e) => setExpiry(e.target.value)}
                                     >
-                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-card">{formatDate(exp)}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Range</span>
+                                <div className="glass px-3 py-1.5 rounded-xl border-border/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Range</span>
                                     <select
                                         className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={strikeRange}
                                         onChange={(e) => setStrikeRange(Number(e.target.value))}
                                     >
-                                        {[2, 4, 6, 8, 10, 15, 20].map(r => <option key={r} value={r} className="bg-[#0b0f1a]">±{r} Strikes</option>)}
+                                        {[2, 4, 6, 8, 10, 15, 20].map(r => <option key={r} value={r} className="bg-card">±{r} Strikes</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -300,36 +351,36 @@
 
                         {/* KPI Cards */}
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Intraday Net Change</p>
+                            <div className="glass p-4 rounded-xl border-border/60 shadow-lg">
+                                <p className="text-muted-foreground text-[8px] font-black uppercase tracking-widest mb-1">Intraday Net Change</p>
                                 <h3 className={`text-xl font-black tracking-tighter ${kpis.net_chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                     {formatLargeNumber(kpis.net_chg)}
                                 </h3>
-                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">Sentiment: {kpis.net_chg >= 0 ? 'Bullish' : 'Bearish'}</div>
+                                <div className="mt-1 text-[8px] text-muted-foreground font-bold uppercase tracking-widest">Sentiment: {kpis.net_chg >= 0 ? 'Bullish' : 'Bearish'}</div>
                             </div>
 
-                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Cumulative PCR</p>
+                            <div className="glass p-4 rounded-xl border-border/60 shadow-lg">
+                                <p className="text-muted-foreground text-[8px] font-black uppercase tracking-widest mb-1">Cumulative PCR</p>
                                 <h3 className={`text-xl font-black tracking-tighter ${kpis.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                     {kpis.pcr || "---"}
                                 </h3>
-                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">{kpis.pcr >= 1 ? 'PUT HEAVY' : 'CALL HEAVY'}</div>
+                                <div className="mt-1 text-[8px] text-muted-foreground font-bold uppercase tracking-widest">{kpis.pcr >= 1 ? 'PUT HEAVY' : 'CALL HEAVY'}</div>
                             </div>
 
-                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg">
-                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Underlying LTP</p>
-                                <h3 className="text-xl font-black text-white tracking-tighter">₹{kpis.ltp?.toLocaleString() || "---"}</h3>
-                                <div className="mt-1 text-[8px] text-slate-600 font-bold uppercase tracking-widest">{symbol} Spot Price</div>
+                            <div className="glass p-4 rounded-xl border-border/60 shadow-lg">
+                                <p className="text-muted-foreground text-[8px] font-black uppercase tracking-widest mb-1">Underlying LTP</p>
+                                <h3 className="text-xl font-black text-foreground tracking-tighter">₹{kpis.ltp?.toLocaleString() || "---"}</h3>
+                                <div className="mt-1 text-[8px] text-muted-foreground font-bold uppercase tracking-widest">{symbol} Spot Price</div>
                             </div>
 
-                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg border-l-rose-500/30">
-                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Total Call OI</p>
+                            <div className="glass p-4 rounded-xl border-border/60 shadow-lg border-l-rose-500/30">
+                                <p className="text-muted-foreground text-[8px] font-black uppercase tracking-widest mb-1">Total Call OI</p>
                                 <h3 className="text-xl font-black text-rose-400 tracking-tighter">{formatLargeNumber(kpis.total_ce)}</h3>
                                 <div className="mt-1 text-[8px] text-rose-500/50 font-bold uppercase tracking-widest">Resistance Basis</div>
                             </div>
 
-                            <div className="glass p-4 rounded-xl border-slate-800/60 shadow-lg border-l-emerald-500/30">
-                                <p className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-1">Total Put OI</p>
+                            <div className="glass p-4 rounded-xl border-border/60 shadow-lg border-l-emerald-500/30">
+                                <p className="text-muted-foreground text-[8px] font-black uppercase tracking-widest mb-1">Total Put OI</p>
                                 <h3 className="text-xl font-black text-emerald-400 tracking-tighter">{formatLargeNumber(kpis.total_pe)}</h3>
                                 <div className="mt-1 text-[8px] text-emerald-500/50 font-bold uppercase tracking-widest">Support Basis</div>
                             </div>
@@ -338,7 +389,7 @@
                         {/* Strike Pills */}
                         {strikesUsed.length > 0 && (
                             <div className="mb-5 glass rounded-2xl px-4 py-3 flex flex-wrap items-center gap-2">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 mr-1">Strikes Included:</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mr-1">Strikes Included:</span>
                                 {strikesUsed.map(strike => {
                                     const isAtm = strike === atmStrike;
                                     const isBelow = strike < atmStrike;
@@ -358,17 +409,17 @@
                                         </span>
                                     );
                                 })}
-                                <span className="ml-auto text-[9px] text-slate-600 font-bold">
+                                <span className="ml-auto text-[9px] text-muted-foreground font-bold">
                                     ATM: <span className="text-amber-400">{atmStrike?.toLocaleString('en-IN')}</span>
-                                    {metadata.spot && <> · Spot: <span className="text-slate-400">{metadata.spot?.toLocaleString('en-IN', { minimumFractionDigits: 1 })}</span></>}
+                                    {metadata.spot && <> · Spot: <span className="text-muted-foreground">{metadata.spot?.toLocaleString('en-IN', { minimumFractionDigits: 1 })}</span></>}
                                 </span>
                             </div>
                         )}
 
                         {/* Charts Section */}
                         <div className="space-y-6">
-                            <div className="glass p-6 rounded-3xl border-slate-800/80 shadow-lg">
-                                <h3 className="text-sm font-black text-white tracking-tighter uppercase mb-4 py-2 border-b border-white/5">Net OI Change vs Index LTP</h3>
+                            <div className="glass p-6 rounded-3xl border-border/80 shadow-lg">
+                                <h3 className="text-sm font-black text-foreground tracking-tighter uppercase mb-4 py-2 border-b border-border">Net OI Change vs Index LTP</h3>
                                 <div id="sentiment-chart" className="w-full h-[380px]">
                                     {loading && (
                                         <div className="w-full h-full flex items-center justify-center">
@@ -379,8 +430,8 @@
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="glass p-6 rounded-3xl border-slate-800/80 shadow-lg">
-                                    <h3 className="text-sm font-black text-white tracking-tighter uppercase mb-4 py-2 border-b border-white/5">Intraday CE vs PE OI Change</h3>
+                                <div className="glass p-6 rounded-3xl border-border/80 shadow-lg">
+                                    <h3 className="text-sm font-black text-foreground tracking-tighter uppercase mb-4 py-2 border-b border-border">Intraday CE vs PE OI Change</h3>
                                     <div id="trend-chart" className="w-full h-[350px]">
                                         {loading && (
                                             <div className="w-full h-full flex items-center justify-center">
@@ -390,8 +441,8 @@
                                     </div>
                                 </div>
 
-                                <div className="glass p-6 rounded-3xl border-slate-800/80 shadow-lg">
-                                    <h3 className="text-sm font-black text-white tracking-tighter uppercase mb-4 py-2 border-b border-white/5">Total Cumulative Call vs Put OI</h3>
+                                <div className="glass p-6 rounded-3xl border-border/80 shadow-lg">
+                                    <h3 className="text-sm font-black text-foreground tracking-tighter uppercase mb-4 py-2 border-b border-border">Total Cumulative Call vs Put OI</h3>
                                     <div id="total-oi-chart" className="w-full h-[350px]">
                                         {loading && (
                                             <div className="w-full h-full flex items-center justify-center">
@@ -404,33 +455,33 @@
                         </div>
 
                         {/* Detailed Data Table */}
-                        <div className="mt-8 glass rounded-3xl border-slate-800/80 shadow-2xl overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-800/60 bg-slate-900/40 flex justify-between items-center">
-                                <h3 className="text-sm font-black text-white tracking-tighter uppercase">Detailed Intraday Analysis</h3>
-                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest bg-slate-800/40 px-2 py-0.5 rounded">Real-time Feed</span>
+                        <div className="mt-8 glass rounded-3xl border-border/80 shadow-2xl overflow-hidden">
+                            <div className="px-6 py-4 border-b border-border/60 bg-card/40 flex justify-between items-center">
+                                <h3 className="text-sm font-black text-foreground tracking-tighter uppercase">Detailed Intraday Analysis</h3>
+                                <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest bg-secondary/40 px-2 py-0.5 rounded">Real-time Feed</span>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
                                     <thead>
-                                        <tr className="bg-slate-900/60 border-b border-slate-800/60">
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Time</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">LTP</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Chng. In Call OI</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Chng. In Put OI</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Diff. In OI</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Direct. Of chng</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Chng. In Direction</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Direction of Chng %</th>
-                                            <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">PCR</th>
+                                        <tr className="bg-card/60 border-b border-border/60">
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">Time</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">LTP</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">Chng. In Call OI</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">Chng. In Put OI</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">Diff. In OI</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">Direct. Of chng</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap">Chng. In Direction</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap text-right">Direction of Chng %</th>
+                                            <th className="px-6 py-3 text-[10px] font-black text-muted-foreground uppercase tracking-widest whitespace-nowrap text-right">PCR</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800/40">
                                         {[...data].reverse().map((row, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-800/20 transition-colors">
+                                            <tr key={idx} className="hover:bg-secondary/20 transition-colors">
                                                 <td className="px-6 py-3 text-xs font-black text-emerald-400 tabular-nums">
                                                     {new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
                                                 </td>
-                                                <td className="px-6 py-3 text-xs font-bold text-white tabular-nums">
+                                                <td className="px-6 py-3 text-xs font-bold text-foreground tabular-nums">
                                                     {row.ltp?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                 </td>
                                                 <td className="px-6 py-3 text-xs font-bold text-rose-400 tabular-nums">

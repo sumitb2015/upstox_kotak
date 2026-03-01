@@ -10,24 +10,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
         }
 
         .glass-strong {
-            background: rgba(17, 24, 39, 0.9);
+            background: var(--card);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: 1px solid var(--border);
         }
 
         select {
@@ -58,9 +55,101 @@
             scrollbar-color: #1e293b transparent;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -73,6 +162,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTYIT", "MIDCPNIFTY", "SENSEX"];
 
         function StraddleAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -292,27 +388,27 @@
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     showlegend: true,
-                    legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', y: -0.15, x: 0 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 11 }, orientation: 'h', y: -0.15, x: 0 },
                     margin: { t: 20, b: 70, l: 70, r: 80 },
-                    font: { family: 'Inter', color: '#64748b' },
+                    font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     xaxis: {
-                        gridcolor: '#1e293b', zerolinecolor: '#334155',
-                        tickfont: { color: '#94a3b8', size: 10 }
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 }
                     },
                     yaxis: {
-                        title: { text: 'Total Premium (₹)', font: { color: '#94a3b8', size: 10 } },
-                        gridcolor: '#1e293b', zerolinecolor: '#334155',
-                        tickfont: { color: '#94a3b8' },
+                        title: { text: 'Total Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
                         autorange: true, rangemode: 'normal'
                     },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
-                        tickfont: { color: '#64748b', size: 9 },
-                        title: { text: 'Leg Price (₹)', font: { color: '#64748b', size: 9 } },
+                        tickfont: { color: isDark ? '#64748b' : '#64748b', size: 9 },
+                        title: { text: 'Leg Price (₹)', font: { color: isDark ? '#64748b' : '#64748b', size: 9 } },
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' },
+                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' },
                     // Open price reference line
                     shapes: openPrice > 0 ? [{
                         type: 'line', x0: 0, x1: 1, xref: 'paper', y0: openPrice, y1: openPrice,
@@ -320,7 +416,7 @@
                     }] : [],
                     annotations: openPrice > 0 ? [{
                         xref: 'paper', x: 0.01, y: openPrice, text: `Open ₹${openPrice.toFixed(0)}`,
-                        showarrow: false, font: { color: '#64748b', size: 9, family: 'Inter' },
+                        showarrow: false, font: { color: isDark ? '#64748b' : '#64748b', size: 9, family: 'Inter' },
                         bgcolor: 'rgba(15,23,42,0.7)', borderpad: 3
                     }] : [],
                 };
@@ -329,56 +425,55 @@
             };
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
-                    {/* Unified Sidebar Navigation */}
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
+                    
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 pr-28">
                             <div>
-                                <h1 className="text-4xl font-black text-white tracking-tight uppercase flex items-center gap-3">
+                                <h1 className="text-4xl font-black text-foreground tracking-tight uppercase flex items-center gap-3">
                                     Straddle <span className="text-emerald-500">Analysis</span>
                                 </h1>
-                                <p className="text-slate-500 text-xs font-bold uppercase tracking-[0.3em] mt-2">ATM COMBINED PREMIUM & VOLATILITY TRACKER</p>
+                                <p className="text-muted-foreground text-xs font-bold uppercase tracking-[0.3em] mt-2">ATM COMBINED PREMIUM & VOLATILITY TRACKER</p>
                             </div>
 
                             <div className="flex gap-4 pr-32">
-                                <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
+                                <div className="glass px-4 py-2 rounded-xl border-border/60 flex items-center gap-3">
                                     <select
                                         className="bg-transparent border-none text-emerald-400 text-sm font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={symbol}
                                         onChange={(e) => setSymbol(e.target.value)}
                                     >
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
+                                <div className="glass px-4 py-2 rounded-xl border-border/60 flex items-center gap-3">
                                     <select
-                                        className="bg-transparent border-none text-slate-300 text-sm font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        className="bg-transparent border-none text-muted-foreground text-sm font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={expiry}
                                         onChange={(e) => {
                                             setExpiry(e.target.value);
                                             setStrike(""); // Reset strike so it finds new ATM
                                         }}
                                     >
-                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-card">{formatDate(exp)}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-4 py-2 rounded-xl border-slate-800/60 flex items-center gap-3">
-                                    <span className="text-[10px] font-bold text-slate-500 uppercase">STRIKE</span>
+                                <div className="glass px-4 py-2 rounded-xl border-border/60 flex items-center gap-3">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase">STRIKE</span>
                                     <select
                                         className="bg-transparent border-none text-emerald-400 text-sm font-black focus:ring-0 cursor-pointer"
                                         value={strike}
                                         onChange={(e) => setStrike(e.target.value)}
                                     >
-                                        {allStrikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {allStrikes.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-6 py-2 rounded-xl border-slate-800/60 flex flex-col justify-center min-w-[140px]">
-                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">LIVE SPOT</span>
+                                <div className="glass px-6 py-2 rounded-xl border-border/60 flex flex-col justify-center min-w-[140px]">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">LIVE SPOT</span>
                                     <span className="text-emerald-400 text-lg font-black tracking-tight">
                                         {spotPrice ? spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "---"}
                                     </span>
@@ -393,35 +488,35 @@
                                 { label: 'Day High', value: `₹${kpis.high || '---'}`, sub: 'Maximum Premium', color: '#ef4444' },
                                 { label: 'Day Low', value: `₹${kpis.low || '---'}`, sub: 'Minimum Premium', color: '#10b981' },
                                 { label: 'Strike', value: metadata.target_strike || '---', sub: `Spot ${metadata.spot?.toFixed(1) || '---'}`, color: '#a78bfa' },
-                                { label: 'Open', value: kpis.open ? `₹${Number(kpis.open).toFixed(1)}` : '---', sub: '09:15 Premium', color: '#94a3b8' },
+                                { label: 'Open', value: kpis.open ? `₹${Number(kpis.open).toFixed(1)}` : '---', sub: '09:15 Premium', color: isDark ? '#94a3b8' : '#475569' },
                                 { label: 'VWAP', value: kpis.vwap ? `₹${Number(kpis.vwap).toFixed(1)}` : '---', sub: 'Volume Wtd Avg', color: '#38bdf8' },
                                 { label: 'CE LTP', value: kpis.ce_ltp ? `₹${Number(kpis.ce_ltp).toFixed(1)}` : '---', sub: 'Call Leg Price', color: '#34d399' },
                                 { label: 'PE LTP', value: kpis.pe_ltp ? `₹${Number(kpis.pe_ltp).toFixed(1)}` : '---', sub: 'Put Leg Price', color: '#c084fc' },
                             ].map(c => (
                                 <div key={c.label} className="glass rounded-2xl p-4 flex flex-col gap-1" style={{ borderTop: `2px solid ${c.color}` }}>
-                                    <p style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</p>
+                                    <p style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{c.label}</p>
                                     <p style={{ fontSize: c.big ? '1.8rem' : '1.35rem', fontWeight: 900, color: c.color, lineHeight: 1, letterSpacing: '-0.04em' }}>{c.value}</p>
-                                    <p style={{ fontSize: 8, color: '#94a3b8' }}>{c.sub}</p>
+                                    <p style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569' }}>{c.sub}</p>
                                 </div>
                             ))}
                         </div>
 
                         {/* Chart Section */}
-                        <div className={`glass p-8 rounded-[2.5rem] border-slate-800/80 shadow-[0_0_60px_rgba(0,0,0,0.6)] ${isFullscreen ? 'fixed inset-0 z-50 bg-[#030712] m-0 rounded-none' : 'relative'}`}>
+                        <div className={`glass p-8 rounded-[2.5rem] border-border/80 shadow-[0_0_60px_rgba(0,0,0,0.6)] ${isFullscreen ? 'fixed inset-0 z-50 bg-background m-0 rounded-none' : 'relative'}`}>
                             <div className="flex justify-between items-center mb-8">
-                                <h3 className="text-2xl font-black text-white tracking-tighter uppercase">Intraday Premium Decay</h3>
+                                <h3 className="text-2xl font-black text-foreground tracking-tighter uppercase">Intraday Premium Decay</h3>
                                 <div className="flex gap-4 items-center">
                                     <div className="flex items-center gap-2">
                                         <div className="w-3 h-3 bg-[#fbbf24] rounded-full"></div>
-                                        <span className="text-[10px] font-black text-slate-500 tracking-widest uppercase">Premium</span>
+                                        <span className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">Premium</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <div className="w-3 h-0.5 bg-[#ef4444] border-t border-dashed"></div>
-                                        <span className="text-[10px] font-black text-slate-500 tracking-widest uppercase">Straddle VWAP</span>
+                                        <span className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">Straddle VWAP</span>
                                     </div>
                                     <button
                                         onClick={() => setIsFullscreen(!isFullscreen)}
-                                        className="ml-4 p-2 bg-slate-800/50 hover:bg-emerald-500/20 rounded-lg text-slate-400 hover:text-emerald-400 transition-all"
+                                        className="ml-4 p-2 bg-secondary/50 hover:bg-emerald-500/20 rounded-lg text-muted-foreground hover:text-emerald-400 transition-all"
                                         title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -436,7 +531,7 @@
                             </div>
                             <div ref={chartRef} className={`w-full ${isFullscreen ? 'h-[90vh]' : 'h-[800px]'}`}>
                                 {loading && (
-                                    <div className="w-full h-full flex items-center justify-center bg-[#030712]/50 backdrop-blur-sm">
+                                    <div className="w-full h-full flex items-center justify-center bg-background/50 backdrop-blur-sm">
                                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-emerald-500"></div>
                                     </div>
                                 )}

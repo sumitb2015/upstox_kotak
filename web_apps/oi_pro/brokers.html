@@ -11,23 +11,21 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background: #02080f;
-            color: #f1f5f9;
             margin: 0;
             min-height: 100vh;
             padding-left: 6rem;
         }
 
         .glass {
-            background: rgba(8, 15, 30, 0.7);
+            background: var(--card);
             backdrop-filter: blur(32px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--border);
         }
 
         .glass-input {
-            background: rgba(3, 7, 18, 0.55);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: white;
+            background: var(--background);
+            border: 1px solid var(--border);
+            color: var(--foreground);
             outline: none;
             padding: 0.75rem 1rem;
             border-radius: 0.625rem;
@@ -52,17 +50,17 @@
 
         .btn-outline {
             background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #94a3b8;
+            border: 1px solid var(--border);
+            color: var(--muted-foreground);
             border-radius: 0.5rem;
             padding: 0.6rem 1.25rem;
             transition: all 0.2s;
         }
 
         .btn-outline:hover {
-            border-color: rgba(255, 255, 255, 0.3);
-            color: white;
-            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--foreground);
+            color: var(--foreground);
+            background: var(--muted);
         }
 
         .broker-table {
@@ -72,23 +70,23 @@
         }
 
         .broker-table th {
-            color: #64748b;
+            color: var(--muted-foreground);
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--border);
             text-align: left;
         }
 
         .broker-table td {
             padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border);
             font-size: 0.875rem;
         }
 
         .broker-table tr:hover {
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--muted);
         }
 
         .status-pill {
@@ -112,7 +110,7 @@
         .modal-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(2, 8, 18, 0.85);
+            background: rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(8px);
             display: none;
             align-items: center;
@@ -121,8 +119,8 @@
         }
 
         .modal-card {
-            background: #0b1221;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--card);
+            border: 1px solid var(--border);
             border-radius: 1.5rem;
             padding: 2.5rem;
             width: 100%;
@@ -157,16 +155,106 @@
         }
 
         .breadcrumb {
-            color: #64748b;
+            color: var(--muted-foreground);
             font-size: 0.875rem;
             margin-bottom: 1.5rem;
         }
 
         .breadcrumb span {
-            color: #f8fafc;
+            color: var(--foreground);
             font-weight: 500;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body class="p-8">
@@ -191,7 +279,7 @@
 
         <div class="glass rounded-2xl p-6 mb-8 flex flex-wrap items-end gap-6">
             <div class="flex-1 min-w-[200px]">
-                <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Select Broker</label>
+                <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Select Broker</label>
                 <select id="broker-select" class="glass-input w-full appearance-none">
                     <option value="Upstox">Upstox</option>
                     <option value="Kotak" disabled>Kotak (Coming Soon)</option>
@@ -229,30 +317,31 @@
     <!-- Add/Edit Broker Modal -->
     <div id="broker-modal" class="modal-overlay">
         <div class="modal-card">
-            <h2 id="modal-title" class="text-2xl font-bold text-white mb-6">Add Broker Credentials</h2>
+            <h2 id="modal-title" class="text-2xl font-bold text-foreground mb-6">Add Broker Credentials</h2>
             <input type="hidden" id="modal-broker-id" value="">
             <div class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Broker Name</label>
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Broker Name</label>
                     <input id="modal-broker-name" type="text" class="glass-input w-full opacity-60" value="Upstox"
                         readonly>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Name Tag (e.g. Primary
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Name Tag (e.g. Primary
                         Account)</label>
                     <input id="modal-name-tag" type="text" class="glass-input w-full" placeholder="Main Upstox">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">API Key</label>
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">API Key</label>
                     <input id="modal-api-key" type="text" class="glass-input w-full" placeholder="Enter your API Key">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">API Secret</label>
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">API Secret</label>
                     <input id="modal-api-secret" type="password" class="glass-input w-full"
                         placeholder="Enter your API Secret">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Redirect URI (must match broker
+                    <label class="block text-xs font-bold text-muted-foreground uppercase mb-2">Redirect URI (must match
+                        broker
                         portal)</label>
                     <input id="modal-redirect-uri" type="text" class="glass-input w-full"
                         placeholder="http://127.0.0.1:8001/api/brokers/callback/upstox">
@@ -274,8 +363,9 @@
                         d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
             </div>
-            <h3 class="text-xl font-bold text-white mb-2">Delete Broker</h3>
-            <p class="text-slate-400 text-sm mb-6">Are you sure you want to remove this broker credential? This action
+            <h3 class="text-xl font-bold text-foreground mb-2">Delete Broker</h3>
+            <p class="text-muted-foreground text-sm mb-6">Are you sure you want to remove this broker credential? This
+                action
                 cannot be undone.</p>
             <div class="flex gap-3">
                 <button onclick="closeConfirmModal()" class="btn-outline flex-1">Cancel</button>
@@ -305,21 +395,21 @@
 
                 const container = document.getElementById('broker-list');
                 if (currentBrokers.length === 0) {
-                    container.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-slate-500 italic">No broker credentials found. Click "Add Broker" to get started.</td></tr>`;
+                    container.innerHTML = `<tr><td colspan="10" class="text-center py-12 text-muted-foreground italic">No broker credentials found. Click "Add Broker" to get started.</td></tr>`;
                     return;
                 }
 
                 container.innerHTML = currentBrokers.map((b, idx) => `
                     <tr>
-                        <td class="text-slate-500 font-medium">${idx + 1}</td>
-                        <td class="font-bold text-white">${b.broker_name}</td>
-                        <td class="text-slate-300">${b.name_tag || '-'}</td>
+                        <td class="text-muted-foreground font-medium">${idx + 1}</td>
+                        <td class="font-bold text-foreground">${b.broker_name}</td>
+                        <td class="text-muted-foreground">${b.name_tag || '-'}</td>
                         <td class="font-mono text-zinc-500 text-xs">${b.api_key}</td>
                         <td class="font-mono text-zinc-500 text-xs">${b.api_secret}</td>
                         <td>
                             <span class="status-pill status-${b.status.toLowerCase()}">${b.status}</span>
                         </td>
-                        <td class="text-slate-400 text-xs">${b.last_token_at}</td>
+                        <td class="text-muted-foreground text-xs">${b.last_token_at}</td>
                         <td>
                             ${b.token_exists
                         ? `<span class="text-emerald-400 font-bold text-xs flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg> Token Generated</span>`
@@ -334,15 +424,15 @@
                         ? `<a href="/" class="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md text-xs font-bold hover:bg-emerald-500/20 transition-colors flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.15)]"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg> Dashboard</a>`
                         : ''
                     }
-                                <button onclick="openEditModal(${b.id})" class="text-slate-500 hover:text-emerald-500 transition-colors" title="Edit Broker">
+                                <button onclick="openEditModal(${b.id})" class="text-muted-foreground hover:text-emerald-500 transition-colors" title="Edit Broker">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                 </button>
-                                <button onclick="confirmDeleteBroker(${b.id})" class="text-slate-500 hover:text-rose-500 transition-colors" title="Delete Broker">
+                                <button onclick="confirmDeleteBroker(${b.id})" class="text-muted-foreground hover:text-rose-500 transition-colors" title="Delete Broker">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 </button>
                             </div>
                         </td>
-                        <td class="text-slate-500 text-xs">${b.created_at}</td>
+                        <td class="text-muted-foreground text-xs">${b.created_at}</td>
                     </tr>
                 `).join('');
             } catch (err) {

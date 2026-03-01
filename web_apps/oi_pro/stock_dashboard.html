@@ -9,32 +9,33 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class', // Enable manual dark mode toggle
             theme: {
                 extend: {
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
                     },
                     colors: {
-                        // Shadcn UI Zinc theme approximations
-                        background: '#09090b', // zinc-950
-                        foreground: '#fafafa', // zinc-50
-                        card: '#09090b',
-                        'card-foreground': '#fafafa',
-                        popover: '#09090b',
-                        'popover-foreground': '#fafafa',
-                        primary: '#fafafa',
-                        'primary-foreground': '#18181b',
-                        secondary: '#27272a',
-                        'secondary-foreground': '#fafafa',
-                        muted: '#27272a',
-                        'muted-foreground': '#a1a1aa',
-                        accent: '#27272a',
-                        'accent-foreground': '#fafafa',
-                        destructive: '#7f1d1d',
-                        'destructive-foreground': '#fafafa',
-                        border: '#27272a', // zinc-800
-                        input: '#27272a',
-                        ring: '#d4d4d8',
+                        // Semantic UI mapping to CSS Variables
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)',
                     }
                 }
             }
@@ -49,13 +50,76 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
+        /* Light Mode Defaults (Root Variables) */
+        :root {
+            --background: #ffffff;
+            --foreground: #09090b;
+
+            --card: #ffffff;
+            --card-foreground: #09090b;
+
+            --popover: #ffffff;
+            --popover-foreground: #09090b;
+
+            --primary: #18181b;
+            --primary-foreground: #fafafa;
+
+            --secondary: #f4f4f5;
+            --secondary-foreground: #18181b;
+
+            --muted: #f4f4f5;
+            --muted-foreground: #52525b;
+            /* Darkened for better contrast */
+
+            --accent: #f4f4f5;
+            --accent-foreground: #18181b;
+
+            --destructive: #ef4444;
+            --destructive-foreground: #fafafa;
+
+            --border: #e4e4e7;
+            --input: #e4e4e7;
+            --ring: #18181b;
+        }
+
+        /* Dark Mode Implementation */
+        .dark {
+            --background: #09090b;
+            --foreground: #fafafa;
+
+            --card: #09090b;
+            --card-foreground: #fafafa;
+
+            --popover: #09090b;
+            --popover-foreground: #fafafa;
+
+            --primary: #fafafa;
+            --primary-foreground: #18181b;
+
+            --secondary: #27272a;
+            --secondary-foreground: #fafafa;
+
+            --muted: #27272a;
+            --muted-foreground: #a1a1aa;
+
+            --accent: #27272a;
+            --accent-foreground: #fafafa;
+
+            --destructive: #7f1d1d;
+            --destructive-foreground: #fafafa;
+
+            --border: #27272a;
+            --input: #27272a;
+            --ring: #d4d4d8;
+        }
+
         body {
-            background-color: #09090b;
-            /* Zinc 950 */
-            color: #fafafa;
+            background-color: var(--background);
+            color: var(--foreground);
             min-height: 100vh;
             margin: 0;
             font-feature-settings: "rlig" 1, "calt" 1;
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
 
         .main-content {
@@ -74,12 +138,11 @@
 
         /* Shadcn Card borders */
         .shadcn-card {
-            background-color: #09090b;
-            border: 1px solid #27272a;
-            /* border */
+            background-color: var(--card);
+            border: 1px solid var(--border);
             border-radius: 0.5rem;
-            /* rounded-lg */
             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            color: var(--card-foreground);
         }
 
         .stock-card {
@@ -88,9 +151,8 @@
 
         /* Subtle hover instead of floating */
         .stock-card:hover {
-            background-color: #18181b;
-            /* max 5% lighter */
-            border-color: #3f3f46;
+            border-color: var(--accent);
+            background-color: var(--accent);
         }
 
         /* Progress Bar Animation */
@@ -100,7 +162,7 @@
     </style>
 </head>
 
-<body class="antialiased selection:bg-zinc-800 selection:text-white">
+<body class="antialiased selection:bg-secondary selection:text-foreground">
 
     <!-- Sidebar Integration -->
     <div id="sidebar-root"></div>
@@ -162,7 +224,7 @@
                     </div>
 
                     {/* Progress Bar Container */}
-                    <div className="relative h-1.5 bg-zinc-800 rounded-full overflow-hidden w-full">
+                    <div className="relative h-1.5 bg-secondary rounded-full overflow-hidden w-full">
                         <div
                             className="absolute top-0 left-0 h-full bg-emerald-500 progress-bar"
                             style={{ width: `${advancePct}%` }}
@@ -184,7 +246,7 @@
             let borderClass = "";
             let textClass = "text-muted-foreground";
             let IconBtn = IconMinus;
-            let bgAccent = "bg-zinc-800/40 text-zinc-400";
+            let bgAccent = "bg-secondary/40 text-muted-foreground";
             let chgColor = "text-zinc-500";
 
             if (isPositive) {
@@ -226,6 +288,12 @@
         };
 
         const Dashboard = () => {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
             const [stocks, setStocks] = useState({});
             const [isConnected, setIsConnected] = useState(false);
             const [activeIndex, setActiveIndex] = useState('NIFTY');
@@ -300,23 +368,23 @@
                             </div>
 
                             {/* Shadcn Segmented Control / Tabs */}
-                            <div className="flex items-center p-1 bg-zinc-900 border border-zinc-800 rounded-lg">
+                            <div className="flex items-center p-1 bg-card border border-border rounded-lg">
                                 <button
                                     onClick={() => setActiveIndex('NIFTY')}
-                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeIndex === 'NIFTY' ? 'bg-zinc-800 text-foreground shadow-sm' : 'text-zinc-400 hover:text-foreground hover:bg-zinc-800/50'}`}
+                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeIndex === 'NIFTY' ? 'bg-secondary text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
                                 >
                                     Nifty 50
                                 </button>
                                 <button
                                     onClick={() => setActiveIndex('BANKNIFTY')}
-                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeIndex === 'BANKNIFTY' ? 'bg-zinc-800 text-foreground shadow-sm' : 'text-zinc-400 hover:text-foreground hover:bg-zinc-800/50'}`}
+                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeIndex === 'BANKNIFTY' ? 'bg-secondary text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
                                 >
                                     Bank Nifty
                                 </button>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-2 text-[11px] font-medium bg-zinc-900 border border-border px-3 py-1.5 rounded-md shadow-sm">
+                        <div className="flex items-center gap-2 text-[11px] font-medium bg-card border border-border px-3 py-1.5 rounded-md shadow-sm">
                             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></div>
                             <span className={isConnected ? 'text-emerald-500 font-semibold' : 'text-rose-500 font-semibold'}>
                                 {isConnected ? 'LIVE' : 'DISCONNECTED'}
@@ -327,7 +395,7 @@
                     <AdvanceDeclineCard advances={advances} declines={declines} activeIndex={activeIndex} />
 
                     {sortedStocks.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 shadcn-card border border-dashed border-zinc-800">
+                        <div className="flex flex-col items-center justify-center py-20 shadcn-card border border-dashed border-border">
                             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-zinc-500 mb-4"></div>
                             <span className="text-muted-foreground text-sm font-medium tracking-wide">Fetching Quotes...</span>
                         </div>

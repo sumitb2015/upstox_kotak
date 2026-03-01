@@ -10,24 +10,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
         }
 
         .glass-strong {
-            background: rgba(17, 24, 39, 0.9);
+            background: var(--card);
             backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: 1px solid var(--border);
         }
 
         select {
@@ -58,9 +55,101 @@
             scrollbar-color: #1e293b transparent;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
 
     <!-- Scripts -->
@@ -74,6 +163,13 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY"];
 
         function GexAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -180,18 +276,18 @@
 
                 const layout = {
                     showlegend: true,
-                    legend: { orientation: 'h', y: 1.1, font: { color: '#94a3b8' } },
+                    legend: { orientation: 'h', y: 1.1, font: { color: isDark ? '#94a3b8' : '#475569' } },
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     margin: { t: 40, b: 40, l: 60, r: 60 },
                     xaxis: {
-                        gridcolor: '#1e293b',
-                        tickfont: { color: '#64748b' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        tickfont: { color: isDark ? '#64748b' : '#64748b' },
                         zeroline: false
                     },
                     yaxis: {
                         title: { text: 'Net GEX (Exposure)', font: { color: '#10b981', size: 10, weight: 800 } },
-                        gridcolor: '#1e293b',
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
                         tickfont: { color: '#10b981' },
                         zeroline: true,
                         zerolinecolor: '#ef4444',
@@ -205,52 +301,51 @@
                         tickfont: { color: '#6366f1' }
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#0b0f1a', font: { color: 'white' } }
+                    hoverlabel: { bgcolor: '#0b0f1a', font: { color: isDark ? 'white' : '#0f172a' } }
                 };
 
                 Plotly.newPlot('gex-chart', [traceGex, traceSpot], layout, { responsive: true, displayModeBar: false });
             }, [data]);
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
-                    {/* Unified Sidebar Navigation */}
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
+                    
 
                     <main className="pl-28 pr-8 py-8 w-full max-w-[1400px] mx-auto overflow-y-auto custom-scrollbar">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
                             <div>
-                                <h1 className="text-2xl font-black text-white tracking-tight uppercase flex items-center gap-2">
+                                <h1 className="text-2xl font-black text-foreground tracking-tight uppercase flex items-center gap-2">
                                     Net GEX <span className="text-emerald-500">Regime Analysis</span>
                                 </h1>
-                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Market Maker Positioning & Volatility Light</p>
+                                <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Market Maker Positioning & Volatility Light</p>
                             </div>
 
                             <div className="flex flex-wrap gap-3">
-                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Symbol</span>
+                                <div className="glass px-3 py-1.5 rounded-xl border-border/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Symbol</span>
                                     <select
                                         className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={symbol}
                                         onChange={(e) => setSymbol(e.target.value)}
                                     >
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-3 py-1.5 rounded-xl border-slate-800/60 flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase">Expiry</span>
+                                <div className="glass px-3 py-1.5 rounded-xl border-border/60 flex items-center gap-2">
+                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Expiry</span>
                                     <select
-                                        className="bg-transparent border-none text-slate-300 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
+                                        className="bg-transparent border-none text-muted-foreground text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
                                         value={expiry}
                                         onChange={(e) => setExpiry(e.target.value)}
                                     >
-                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-[#0b0f1a]">{formatDate(exp)}</option>)}
+                                        {expiries.map(exp => <option key={exp} value={exp} className="bg-card">{formatDate(exp)}</option>)}
                                     </select>
                                 </div>
 
-                                <div className="glass px-4 py-1.5 rounded-xl border-slate-800/50 flex items-center gap-3">
+                                <div className="glass px-4 py-1.5 rounded-xl border-border/50 flex items-center gap-3">
                                     <div className={`w-2 h-2 rounded-full animate-pulse ${loading ? 'bg-amber-500' : 'bg-emerald-500'}`}></div>
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
                                         {loading ? 'Polling...' : (lastUpdated ? `Last: ${lastUpdated.toLocaleTimeString()}` : 'Live')}
                                     </span>
                                 </div>
@@ -261,31 +356,31 @@
                             {/* Analytics Summary */}
                             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                 <div className="glass-strong p-5 rounded-3xl">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Current Net GEX</p>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Current Net GEX</p>
                                     <h3 className={`text-2xl font-black ${data.length > 0 && data[data.length - 1].net_gex >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                         {data.length > 0 ? formatCurrency(data[data.length - 1].net_gex) : '---'}
                                     </h3>
                                 </div>
                                 <div className="glass-strong p-5 rounded-3xl">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Spot Price</p>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Spot Price</p>
                                     <h3 className="text-2xl font-black text-indigo-400">
                                         {data.length > 0 ? data[data.length - 1].spot.toFixed(2) : '---'}
                                     </h3>
                                 </div>
                                 <div className="glass-strong p-5 rounded-3xl">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Flip Point</p>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Flip Point</p>
                                     <h3 className={`text-2xl font-black ${data.length > 0 && data[data.length - 1].flip_point > data[data.length - 1].spot ? 'text-rose-400' : 'text-amber-400'}`}>
                                         {data.length > 0 && data[data.length - 1].flip_point > 0 ? `₹${data[data.length - 1].flip_point.toLocaleString()}` : '---'}
                                     </h3>
                                 </div>
                                 <div className="glass-strong p-5 rounded-3xl">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Exposure</p>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Total Exposure</p>
                                     <h3 className="text-2xl font-black text-cyan-400">
                                         {data.length > 0 ? formatCurrency(data[data.length - 1].total_exposure) : '---'}
                                     </h3>
                                 </div>
                                 <div className="glass-strong p-5 rounded-3xl">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Regime Status</p>
+                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Regime Status</p>
                                     <div className="flex items-center gap-2 mt-1">
                                         {data.length > 0 ? (
                                             <>
@@ -300,7 +395,7 @@
                             </div>
 
                             {/* Chart Card */}
-                            <div className="glass-strong p-8 rounded-[2.5rem] min-h-[600px] border-slate-800/40 relative overflow-hidden">
+                            <div className="glass-strong p-8 rounded-[2.5rem] min-h-[600px] border-border/40 relative overflow-hidden">
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent"></div>
                                 {loading && data.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center gap-4 opacity-50">
@@ -319,21 +414,21 @@
                                         <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
                                         <h4 className="text-xs font-black text-emerald-400 uppercase tracking-widest">🟢 Positive Regime</h4>
                                     </div>
-                                    <p className="text-[11px] text-slate-400 leading-relaxed font-medium">Market makers are "Long Gamma". They suppress volatility by buying dips and selling rips. Safe to fade extremes.</p>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">Market makers are "Long Gamma". They suppress volatility by buying dips and selling rips. Safe to fade extremes.</p>
                                 </div>
                                 <div className="glass p-6 rounded-2xl border-amber-500/10">
                                     <div className="flex items-center gap-2 mb-3">
                                         <div className="w-3 h-3 rounded-full bg-amber-500"></div>
                                         <h4 className="text-xs font-black text-amber-400 uppercase tracking-widest">🟡 Transition Zone</h4>
                                     </div>
-                                    <p className="text-[11px] text-slate-400 leading-relaxed font-medium">Brakes are weakening. GEX is falling toward zero. Volatility expansion is likely. Be cautious with mean-reversion.</p>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">Brakes are weakening. GEX is falling toward zero. Volatility expansion is likely. Be cautious with mean-reversion.</p>
                                 </div>
                                 <div className="glass p-6 rounded-2xl border-rose-500/10">
                                     <div className="flex items-center gap-2 mb-3">
                                         <div className="w-3 h-3 rounded-full bg-rose-500"></div>
                                         <h4 className="text-xs font-black text-rose-400 uppercase tracking-widest">🔴 Negative Regime</h4>
                                     </div>
-                                    <p className="text-[11px] text-slate-400 leading-relaxed font-medium">Market makers flip to "Short Gamma". They chase the move, amplifying volatility. Major crashes happen here.</p>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">Market makers flip to "Short Gamma". They chase the move, amplifying volatility. Major crashes happen here.</p>
                                 </div>
                             </div>
                         </div>

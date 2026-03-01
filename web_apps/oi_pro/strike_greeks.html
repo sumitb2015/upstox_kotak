@@ -11,17 +11,18 @@
         rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f8fafc;
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
 
         .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: var(--card);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
         }
 
         select {
@@ -64,9 +65,101 @@
             box-shadow: 0 0 40px rgba(16, 185, 129, 0.08);
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -85,32 +178,40 @@
             iv: { label: 'IV', ce: '#34d399', pe: '#f87171', desc: 'Implied Volatility (%)' },
         };
 
-        /* ── Chart layout factory ────────────────────────────────────────── */
-        const mkLayout = (title, yTitle, extra = {}) => ({
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            title: { text: title, font: { color: '#e2e8f0', size: 13, family: 'Inter' }, x: 0.02 },
-            showlegend: true,
-            legend: { font: { color: '#94a3b8', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
-            margin: { t: 40, b: 60, l: 65, r: 30 },
-            font: { family: 'Inter', color: '#64748b' },
-            hovermode: 'x unified',
-            hoverlabel: { bgcolor: '#0f172a', bordercolor: '#1e293b', font: { color: '#e2e8f0', family: 'Inter' } },
-            xaxis: { gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 9 }, zeroline: false },
-            yaxis: { title: { text: yTitle, font: { color: '#94a3b8', size: 9 } }, gridcolor: '#1e293b', tickfont: { color: '#94a3b8', size: 9 }, zeroline: true, zerolinecolor: '#334155', zerolinewidth: 1, tickformat: '.4f' },
-            ...extra,
-        });
-
-        /* ── Trace builder ─────────────────────────────────────────────── */
-        const mkTrace = (name, times, vals, color, dash = 'solid') => ({
-            x: times, y: vals, name,
-            type: 'scatter', mode: 'lines',
-            line: { color, width: dash === 'solid' ? 2.5 : 1.5, dash, shape: 'spline', smoothing: 0.6 },
-            hovertemplate: `<b>${name}</b>: %{y:.4f}<extra></extra>`,
-        });
-
         /* ── Component ─────────────────────────────────────────────────── */
         function StrikeGreeksAnalytics() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+
+            /* ── Chart layout factory ────────────────────────────────────────── */
+            const mkLayout = (title, yTitle, extra = {}) => ({
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                title: { text: title, font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 13, family: 'Inter' }, x: 0.02 },
+                showlegend: true,
+                legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18, x: 0 },
+                margin: { t: 40, b: 60, l: 65, r: 30 },
+                font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
+                hovermode: 'x unified',
+                hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#1e293b' : '#f1f5f9', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter' } },
+                xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: false },
+                yaxis: { title: { text: yTitle, font: { color: isDark ? '#94a3b8' : '#475569', size: 9 } }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, zeroline: true, zerolinecolor: isDark ? '#334155' : '#e2e8f0', zerolinewidth: 1, tickformat: '.4f' },
+                ...extra,
+            });
+
+            /* ── Trace builder ─────────────────────────────────────────────── */
+            const mkTrace = (name, times, vals, color, dash = 'solid') => ({
+                x: times, y: vals, name,
+                type: 'scatter', mode: 'lines',
+                line: { color, width: dash === 'solid' ? 2.5 : 1.5, dash, shape: 'spline', smoothing: 0.6 },
+                hovertemplate: `<b>${name}</b>: %{y:.4f}<extra></extra>`,
+            });
+
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -234,8 +335,8 @@
             ];
 
             return (
-                <div className="min-h-screen bg-[#030712] text-slate-300 antialiased flex overflow-hidden">
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
+
 
                     <main className="pl-28 pr-4 py-8 w-full overflow-y-auto">
 
@@ -243,7 +344,7 @@
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-5 mb-7">
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <h1 className="text-3xl font-black text-white tracking-tight uppercase">
+                                    <h1 className="text-3xl font-black text-foreground tracking-tight uppercase">
                                         Strike&nbsp;<span className="text-emerald-400">Greeks</span>
                                     </h1>
                                     {!loading && data.length > 0 && <span className="pulse-dot"></span>}
@@ -254,7 +355,7 @@
                                         </svg>
                                     )}
                                 </div>
-                                <p style={{ fontSize: 10, color: '#475569', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                                <p style={{ fontSize: 10, color: isDark ? '#475569' : '#cbd5e1', fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase' }}>
                                     Δ Γ ν Θ  ·  Historical intraday time-series
                                     {lastUpdated && <span className="ml-3 text-slate-600">· Updated {lastUpdated.toLocaleTimeString()}</span>}
                                 </p>
@@ -265,21 +366,21 @@
                                 {/* Spot badge */}
                                 {spotPrice > 0 && (
                                     <div className="glass px-3 py-1.5 rounded-xl flex flex-col">
-                                        <span style={{ fontSize: 8, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Spot</span>
+                                        <span style={{ fontSize: 8, color: isDark ? '#475569' : '#cbd5e1', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Spot</span>
                                         <span className="text-amber-400 font-black text-sm tracking-tight">{spotPrice.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                     </div>
                                 )}
                                 <select value={symbol} onChange={e => setSymbol(e.target.value)}
                                     className="glass px-3 py-2 rounded-xl text-emerald-400 text-sm font-black tracking-widest outline-none pr-8">
-                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
                                 <select value={expiry} onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-3 py-2 rounded-xl text-slate-300 text-sm font-black outline-none pr-8">
-                                    {expiries.map(e => <option key={e} value={e} className="bg-[#0b0f1a]">{formatDate(e)}</option>)}
+                                    className="glass px-3 py-2 rounded-xl text-muted-foreground text-sm font-black outline-none pr-8">
+                                    {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
                                 <select value={selectedStrike} onChange={e => setSelectedStrike(e.target.value)}
                                     className="glass px-3 py-2 rounded-xl text-emerald-400 text-sm font-black outline-none pr-8">
-                                    {strikes.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                    {strikes.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
                                 <button onClick={fetchHistory}
                                     className="glass px-4 py-2 rounded-xl text-emerald-400 text-sm font-black tracking-widest hover:bg-emerald-500/10 transition-all border border-emerald-500/20 hover:border-emerald-500/50">
@@ -293,7 +394,7 @@
                             <div className="grid grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
                                 {kpis.map(k => (
                                     <div key={k.label} className="glass rounded-2xl p-3 flex flex-col gap-1" style={{ borderTop: `2px solid ${k.color}` }}>
-                                        <span style={{ fontSize: 8, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{k.label}</span>
+                                        <span style={{ fontSize: 8, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{k.label}</span>
                                         <span style={{ fontSize: '1.15rem', fontWeight: 900, color: k.color, lineHeight: 1, letterSpacing: '-0.03em' }}>{k.value}</span>
                                         {k.change != null && (
                                             <span style={{ fontSize: 8, color: Number(k.change) >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>
@@ -314,14 +415,14 @@
                                         <div className="w-4 h-0.5 mt-1.5 rounded" style={{ background: m.pe, opacity: 0.6 }}></div>
                                     </div>
                                     <div>
-                                        <span style={{ fontSize: 10, color: '#e2e8f0', fontWeight: 800 }}>{m.label}</span>
-                                        <span style={{ fontSize: 9, color: '#475569', marginLeft: 4 }}>{m.desc}</span>
+                                        <span style={{ fontSize: 10, color: isDark ? '#e2e8f0' : '#0f172a', fontWeight: 800 }}>{m.label}</span>
+                                        <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1', marginLeft: 4 }}>{m.desc}</span>
                                     </div>
                                 </div>
                             ))}
                             <div className="ml-auto flex items-center gap-2">
                                 <div className="w-6 h-0.5 border-t border-dashed border-slate-600"></div>
-                                <span style={{ fontSize: 9, color: '#475569' }}>PE leg (dashed) · CE leg (solid)</span>
+                                <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>PE leg (dashed) · CE leg (solid)</span>
                             </div>
                         </div>
 
@@ -348,7 +449,7 @@
                         ) : !loading ? (
                             <div className="glass p-16 rounded-3xl text-center">
                                 <p className="text-5xl mb-4">Δ</p>
-                                <p className="text-xl text-slate-400 font-black">No Greek history yet for {selectedStrike} {symbol}</p>
+                                <p className="text-xl text-muted-foreground font-black">No Greek history yet for {selectedStrike} {symbol}</p>
                                 <p className="text-sm text-slate-600 mt-2">Data is logged every minute when the poller is active. Select a different strike or check back soon.</p>
                             </div>
                         ) : (

@@ -11,9 +11,9 @@
         rel="stylesheet">
     <style>
         :root {
-            --bg: #030712;
-            --surface: rgba(15, 23, 42, 0.8);
-            --border: rgba(255, 255, 255, 0.07);
+            --bg: var(--background);
+            --surface: var(--card);
+            --border: var(--border);
             --ce: #f87171;
             --pe: #34d399;
             --spot: #fbbf24;
@@ -134,9 +134,101 @@
             color: #475569;
         }
     </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --popover: #ffffff;
+            --popover-foreground: #020817;
+            --primary: #020817;
+            --primary-foreground: #f8fafc;
+            --secondary: #f8fafc;
+            --secondary-foreground: #1e293b;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --accent: #f1f5f9;
+            --accent-foreground: #020817;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --input: #e2e8f0;
+            --ring: #020817;
+            --radius: 0.5rem;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --popover: #020817;
+            --popover-foreground: #f8fafc;
+            --primary: #f8fafc;
+            --primary-foreground: #020817;
+            --secondary: #1e293b;
+            --secondary-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --accent: #1e293b;
+            --accent-foreground: #f8fafc;
+            --destructive: #ef4444;
+            --destructive-foreground: #f8fafc;
+            --border: #334155;
+            --input: #334155;
+            --ring: #f8fafc;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+
 </head>
 
 <body>
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
     <div id="root"></div>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -147,24 +239,32 @@
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"];
         const MAX_POINTS = 23400; // 1 tick/sec * 6.5hr full trading session
 
-        // ─── Plotly base layout ──────────────────────────────────────────────────────
-        const baseLayout = {
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            margin: { t: 8, b: 45, l: 58, r: 60 },
-            font: { family: 'Inter', color: '#64748b', size: 11 },
-            xaxis: {
-                gridcolor: '#1e293b', tickfont: { color: '#64748b', size: 10 },
-                showgrid: true, type: 'category', nticks: 12
-            },
-            hovermode: 'x unified',
-            hoverlabel: { bgcolor: '#0f172a', bordercolor: '#334155', font: { color: '#e2e8f0', family: 'Inter', size: 12 } },
-            showlegend: true,
-            legend: { font: { color: '#94a3b8', size: 11 }, orientation: 'h', x: 0, y: -0.18 },
-        };
 
         // ─── Main Component ──────────────────────────────────────────────────────────
         function CumulativePrices() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
+            // ─── Plotly base layout ──────────────────────────────────────────────────────
+            const baseLayout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { t: 8, b: 45, l: 58, r: 60 },
+                font: { family: 'Inter', color: isDark ? '#94a3b8' : '#1e293b', size: 11 },
+                xaxis: {
+                    gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 },
+                    showgrid: true, type: 'category', nticks: 12
+                },
+                hovermode: 'x unified',
+                hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : '#e2e8f0', font: { color: isDark ? '#e2e8f0' : '#0f172a', family: 'Inter', size: 12 } },
+                showlegend: true,
+                legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 11 }, orientation: 'h', x: 0, y: -0.18 },
+            };
+
             const [symbol, setSymbol] = useState("NIFTY");
             const [expiry, setExpiry] = useState("");
             const [expiries, setExpiries] = useState([]);
@@ -274,8 +374,8 @@
                 ], {
                     ...baseLayout,
                     yaxis: {
-                        title: { text: 'Cumulative Premium (₹)', font: { color: '#94a3b8', size: 10 } },
-                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
+                        title: { text: 'Cumulative Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' },
                         zeroline: false, autorange: true, rangemode: 'normal',
                         tickformat: ',.0f'
                     },
@@ -283,7 +383,7 @@
 
                 // ── Chart 1 (% change) ────────────────────────────────────────────────
                 // Both CE & PE start at 0. Divergence shows which is rising faster.
-                const zeroLine = { type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: '#334155', width: 1.5, dash: 'dot' } };
+                const zeroLine = { type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', width: 1.5, dash: 'dot' } };
 
                 Plotly.react('chart-pct', [
                     {
@@ -311,9 +411,9 @@
                 ], {
                     ...baseLayout,
                     yaxis: {
-                        title: { text: '% Change from Open', font: { color: '#94a3b8', size: 10 } },
-                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
-                        ticksuffix: '%', zeroline: true, zerolinecolor: '#334155', zerolinewidth: 1.5,
+                        title: { text: '% Change from Open', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        ticksuffix: '%', zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', zerolinewidth: 1.5,
                         autorange: true
                     },
                     yaxis2: {
@@ -343,8 +443,8 @@
                 ], {
                     ...baseLayout,
                     yaxis: {
-                        title: { text: 'Avg LTP per Strike (₹)', font: { color: '#94a3b8', size: 10 } },
-                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
+                        title: { text: 'Avg LTP per Strike (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' },
                         zeroline: false, autorange: true, rangemode: 'normal'
                     }
                 }, { responsive: true, displayModeBar: false });
@@ -373,17 +473,17 @@
                 ], {
                     ...baseLayout,
                     yaxis: {
-                        title: { text: 'CE − PE (₹)', font: { color: '#94a3b8', size: 10 } },
-                        gridcolor: '#1e293b', tickfont: { color: '#94a3b8' },
-                        zeroline: true, zerolinecolor: '#475569', zerolinewidth: 1.5,
+                        title: { text: 'CE − PE (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        zeroline: true, zerolinecolor: isDark ? '#475569' : '#cbd5e1', zerolinewidth: 1.5,
                         autorange: true
                     },
-                    shapes: [{ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: '#475569', width: 1, dash: 'dash' } }]
+                    shapes: [{ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 0, line: { color: isDark ? '#475569' : '#cbd5e1', width: 1, dash: 'dash' } }]
                 }, { responsive: true, displayModeBar: false });
             }, []);
 
             // ─── Helpers ──────────────────────────────────────────────────────────────
-            const statusColor = { idle: '#64748b', loading: '#fbbf24', ready: '#10b981', error: '#ef4444' };
+            const statusColor = { idle: isDark ? '#64748b' : '#64748b', loading: '#fbbf24', ready: '#10b981', error: '#ef4444' };
             const statusText = { idle: 'Idle', loading: 'Loading…', ready: 'Live', error: 'Error' };
             const sentiment = kpi.sentiment || 'Neutral';
             const sentimentClass = sentiment === 'Bullish' ? 'badge-bullish' : sentiment === 'Bearish' ? 'badge-bearish' : 'badge-neutral';
@@ -392,8 +492,8 @@
             const peChg = kpi.pe_chg ?? 0;
 
             return (
-                <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
-                    <div id="sidebar-root"></div>
+                <div className="min-h-screen flex bg-background" style={{ transition: "background-color 0.2s" }}>
+
 
                     <main className="flex-1 pl-28 pr-4 py-7">
 
@@ -401,12 +501,12 @@
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-7">
                             <div>
                                 <div className="flex items-center gap-3 mb-1">
-                                    <h1 className="text-xl font-black text-white tracking-tight uppercase">
+                                    <h1 className="text-xl font-black text-foreground tracking-tight uppercase">
                                         Cumulative&nbsp;<span style={{ color: '#10b981' }}>Option Prices</span>
                                     </h1>
                                     {wsStatus === 'ready' && <span className="live-dot"></span>}
                                 </div>
-                                <p style={{ color: '#475569', fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+                                <p style={{ color: isDark ? '#475569' : '#cbd5e1', fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
                                     Real-time CE vs PE premium flow · % change · avg per strike
                                 </p>
                             </div>
@@ -417,17 +517,17 @@
                                     {statusText[wsStatus]}
                                 </span>
                                 <div className="card flex items-center gap-2 px-3 py-1.5">
-                                    <span style={{ fontSize: 9, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Symbol</span>
+                                    <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Symbol</span>
                                     <select className="bg-transparent border-none text-xs font-black focus:ring-0 cursor-pointer pr-5"
                                         style={{ color: '#10b981' }} value={symbol} onChange={e => setSymbol(e.target.value)}>
-                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-[#0b0f1a]">{s}</option>)}
+                                        {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
                                 <div className="card flex items-center gap-2 px-3 py-1.5">
-                                    <span style={{ fontSize: 9, color: '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Expiry</span>
-                                    <select className="bg-transparent border-none text-slate-300 text-xs font-black focus:ring-0 cursor-pointer pr-5"
+                                    <span style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Expiry</span>
+                                    <select className="bg-transparent border-none text-muted-foreground text-xs font-black focus:ring-0 cursor-pointer pr-5"
                                         value={expiry} onChange={e => setExpiry(e.target.value)}>
-                                        {expiries.map(ex => <option key={ex} value={ex} className="bg-[#0b0f1a]">{ex}</option>)}
+                                        {expiries.map(ex => <option key={ex} value={ex} className="bg-card">{ex}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -437,34 +537,34 @@
                         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
 
                             <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #f87171' }}>
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Call Premium</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Call Premium</p>
                                 <div className="kpi-value" style={{ color: '#f87171' }}>₹{fmtK(kpi.ce_sum)}</div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>{kpi.ce_count ?? '—'} live CE strikes</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>{kpi.ce_count ?? '—'} live CE strikes</p>
                             </div>
 
                             <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #34d399' }}>
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Put Premium</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Put Premium</p>
                                 <div className="kpi-value" style={{ color: '#34d399' }}>₹{fmtK(kpi.pe_sum)}</div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>{kpi.pe_count ?? '—'} live PE strikes</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>{kpi.pe_count ?? '—'} live PE strikes</p>
                             </div>
 
                             <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: `3px solid ${diff >= 0 ? '#f87171' : '#34d399'}` }}>
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>CE − PE Difference</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>CE − PE Difference</p>
                                 <div className="kpi-value" style={{ color: diff >= 0 ? '#f87171' : '#34d399' }}>
                                     {diff >= 0 ? '+' : ''}{fmtK(diff)}
                                 </div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>{diff > 0 ? 'Call dominant' : 'Put dominant'}</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>{diff > 0 ? 'Call dominant' : 'Put dominant'}</p>
                             </div>
 
                             <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #fbbf24' }}>
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{symbol} Spot</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>{symbol} Spot</p>
                                 <div className="kpi-value" style={{ color: '#fbbf24' }}>₹{fmt(kpi.spot, 2)}</div>
-                                <p style={{ fontSize: 9, color: '#475569' }}>Index Last Price</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#475569' : '#cbd5e1' }}>Index Last Price</p>
                             </div>
 
                             <div className="card p-4 flex flex-col gap-1.5" style={{ borderLeft: '3px solid #818cf8' }}>
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Market Sentiment</p>
-                                <div className="kpi-value" style={{ fontSize: '1.35rem', color: sentiment === 'Bullish' ? '#34d399' : sentiment === 'Bearish' ? '#f87171' : '#94a3b8' }}>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Market Sentiment</p>
+                                <div className="kpi-value" style={{ fontSize: '1.35rem', color: sentiment === 'Bullish' ? '#34d399' : sentiment === 'Bearish' ? '#f87171' : isDark ? '#94a3b8' : '#475569' }}>
                                     {sentiment === 'Bullish' ? '🟢' : sentiment === 'Bearish' ? '🔴' : '⚪'} {sentiment}
                                 </div>
                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full w-fit ${sentimentClass}`}>
@@ -476,23 +576,23 @@
                         {/* ── KPI Cards — Row 2: % change + avg premium ── */}
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
                             <div className="card p-4 flex flex-col gap-1">
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>CE Δ from Open</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>CE Δ from Open</p>
                                 <div className="kpi-sm" style={{ color: ceChg >= 0 ? '#f87171' : '#34d399' }}>
                                     {ceChg >= 0 ? '▲' : '▼'} {Math.abs(ceChg).toFixed(3)}%
                                 </div>
                             </div>
                             <div className="card p-4 flex flex-col gap-1">
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>PE Δ from Open</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>PE Δ from Open</p>
                                 <div className="kpi-sm" style={{ color: peChg >= 0 ? '#34d399' : '#f87171' }}>
                                     {peChg >= 0 ? '▲' : '▼'} {Math.abs(peChg).toFixed(3)}%
                                 </div>
                             </div>
                             <div className="card p-4 flex flex-col gap-1">
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Avg CE per Strike</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Avg CE per Strike</p>
                                 <div className="kpi-sm" style={{ color: '#f87171' }}>₹{fmt(kpi.avg_ce, 2)}</div>
                             </div>
                             <div className="card p-4 flex flex-col gap-1">
-                                <p style={{ fontSize: 9, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Avg PE per Strike</p>
+                                <p style={{ fontSize: 9, color: isDark ? '#94a3b8' : '#475569', fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Avg PE per Strike</p>
                                 <div className="kpi-sm" style={{ color: '#34d399' }}>₹{fmt(kpi.avg_pe, 2)}</div>
                             </div>
                         </div>
@@ -500,11 +600,11 @@
                         {/* ── Chain Coverage bar ── */}
                         {optInfo.ce_count > 0 && (
                             <div className="card mb-5 px-5 py-2.5 flex items-center gap-6 text-xs">
-                                <span style={{ color: '#475569', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Chain Coverage</span>
+                                <span style={{ color: isDark ? '#475569' : '#cbd5e1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Chain Coverage</span>
                                 <span style={{ color: '#f87171' }}><strong>{optInfo.ce_count}</strong> CE legs</span>
                                 <span style={{ color: '#34d399' }}><strong>{optInfo.pe_count}</strong> PE legs</span>
-                                <span style={{ color: '#94a3b8' }}>Total: <strong>{optInfo.ce_count + optInfo.pe_count}</strong> options</span>
-                                <div className="ml-auto" style={{ color: '#475569', fontSize: 9 }}>Updates every 1s</div>
+                                <span style={{ color: isDark ? '#94a3b8' : '#475569' }}>Total: <strong>{optInfo.ce_count + optInfo.pe_count}</strong> options</span>
+                                <div className="ml-auto" style={{ color: isDark ? '#475569' : '#cbd5e1', fontSize: 9 }}>Updates every 1s</div>
                             </div>
                         )}
 
@@ -515,7 +615,7 @@
                                     <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full"></span>
                                     <span className="text-sm font-semibold">Fetching option chain &amp; subscribing to {symbol}…</span>
                                 </div>
-                                <p style={{ color: '#475569', fontSize: 11, marginTop: 8 }}>This takes 3–10 seconds. Please wait.</p>
+                                <p style={{ color: isDark ? '#475569' : '#cbd5e1', fontSize: 11, marginTop: 8 }}>This takes 3–10 seconds. Please wait.</p>
                             </div>
                         )}
 
@@ -523,8 +623,8 @@
                         <div className="card card-lg p-6 mb-5">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Cumulative CE vs PE Prices</h3>
-                                    <p style={{ fontSize: 10, color: '#475569' }}>Total option chain premium — CE above PE gap shows call dominance; narrowing gap is bullish</p>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">Cumulative CE vs PE Prices</h3>
+                                    <p style={{ fontSize: 10, color: isDark ? '#475569' : '#cbd5e1' }}>Total option chain premium — CE above PE gap shows call dominance; narrowing gap is bullish</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
                                     <span style={{ color: '#f87171' }}>■ CE Total</span>
@@ -544,8 +644,8 @@
                         <div className="card card-lg p-6 mb-5">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">CE &amp; PE % Change from Open</h3>
-                                    <p style={{ fontSize: 10, color: '#475569' }}>Both start at 0 — divergence shows which premium is rising faster vs session start</p>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">CE &amp; PE % Change from Open</h3>
+                                    <p style={{ fontSize: 10, color: isDark ? '#475569' : '#cbd5e1' }}>Both start at 0 — divergence shows which premium is rising faster vs session start</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
                                     <span style={{ color: '#f87171' }}>▲ CE</span>
@@ -565,8 +665,8 @@
                         <div className="card card-lg p-6 mb-5">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">Average Premium per Strike</h3>
-                                    <p style={{ fontSize: 10, color: '#475569' }}>Mean LTP across all active CE and PE strikes — tracks actual market price movement</p>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">Average Premium per Strike</h3>
+                                    <p style={{ fontSize: 10, color: isDark ? '#475569' : '#cbd5e1' }}>Mean LTP across all active CE and PE strikes — tracks actual market price movement</p>
                                 </div>
                                 <div className="flex gap-4 text-[10px] font-bold">
                                     <span style={{ color: '#f87171' }}>■ Avg CE</span>
@@ -585,8 +685,8 @@
                         <div className="card card-lg p-6">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
-                                    <h3 className="text-sm font-black text-white uppercase tracking-tight">CE − PE Price Difference</h3>
-                                    <p style={{ fontSize: 10, color: '#475569' }}>
+                                    <h3 className="text-sm font-black text-foreground uppercase tracking-tight">CE − PE Price Difference</h3>
+                                    <p style={{ fontSize: 10, color: isDark ? '#475569' : '#cbd5e1' }}>
                                         <span style={{ color: '#f87171' }}>Positive ↑ = Call dominant (Bearish bias)</span>
                                         &nbsp;·&nbsp;
                                         <span style={{ color: '#34d399' }}>Negative ↓ = Put dominant (Bullish bias)</span>
