@@ -26,6 +26,12 @@ A robust, modular algorithmic trading framework designed for Indian stock market
   - **Greeks Exposure Analysis**: Real-time tracking of systemic Delta and Gamma exposure per strike.
   - **Net GEX Regime Analysis**: Identification of Market Volatility Regimes (Traffic Light logic) and the Zero Gamma Flip Point.
 - **Extensive Strategy Library**: Over 20+ detailed strategy implementations with comprehensive `README.md` guides covering entry/exit logic, risk management, and execution examples.
+- **OI Pro Dashboards**: 15+ Advanced analytics pages including:
+  - **Option PCR Grid**: Real-time Strike-wise PCR with Bull/Bear Sentiment indicators.
+  - **Max Pain & Volatility Smile**: Automated Max Pain calculation with IV smile visualization.
+  - **Cumulative GEX**: Systemic Gamma Exposure tracking with Regime Identification.
+  - **Multi-Strike Comparison**: Contrast OI and Price action across up to 5 strikes simultaneously.
+  - **Live Straddle Premium**: Real-time ATM straddle tracking with Mean Reversion indicators.
 
 ## 📂 Project Structure
 

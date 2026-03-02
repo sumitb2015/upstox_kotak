@@ -83,6 +83,11 @@
             const [loading, setLoading] = useState(true);
             const [lastUpdated, setLastUpdated] = useState("");
 
+            // New KPI State
+            const [currentFuture, setCurrentFuture] = useState(0);
+            const [currentSpot, setCurrentSpot] = useState(0);
+            const [currentOi, setCurrentOi] = useState(0);
+
             const wsRef = useRef(null);
             const chartDataRef = useRef({ times: [], prices: [], ois: [] });
 
@@ -129,6 +134,14 @@
                             });
 
                             chartDataRef.current = { times, prices, ois };
+
+                            // Initialize KPIs
+                            if (prices.length > 0) {
+                                setCurrentFuture(prices[prices.length - 1]);
+                                setCurrentOi(ois[ois.length - 1]);
+                                setCurrentSpot(result.spot_price || 0);
+                            }
+
                             if (times.length > 0) {
                                 setLastUpdated(times[times.length - 1].toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
                             }
@@ -158,22 +171,50 @@
                         if (data.type === "future-price-oi") {
                             const time = new Date(data.time);
 
-                            const chartDiv = document.getElementById('plotly-chart');
-                            if (chartDiv && chartDiv.data) {
-                                // Update local ref for range calculation
-                                chartDataRef.current.times.push(time);
-                                chartDataRef.current.prices.push(data.price);
-                                chartDataRef.current.ois.push(data.oi);
+                            // Update KPIs
+                            setCurrentFuture(data.price);
+                            setCurrentSpot(data.spot || 0);
+                            setCurrentOi(data.oi);
 
-                                Plotly.extendTraces('plotly-chart', {
-                                    x: [[time], [time]],
-                                    y: [[data.price], [data.oi]]
-                                }, [0, 1]);
+                            const chartDiv = document.getElementById('plotly-chart');
+
+                            if (chartDiv && chartDiv.data) {
+                                const { times, prices, ois } = chartDataRef.current;
+                                const lastIdx = times.length - 1;
+
+                                // Bucketing Logic: 
+                                // Check if the new tick belongs to the SAME minute as the last point
+                                const isSameMinute = lastIdx >= 0 &&
+                                    times[lastIdx].getHours() === time.getHours() &&
+                                    times[lastIdx].getMinutes() === time.getMinutes();
+
+                                if (isSameMinute) {
+                                    // UPDATE the latest point (candle rounding)
+                                    times[lastIdx] = time;
+                                    prices[lastIdx] = data.price;
+                                    ois[lastIdx] = data.oi;
+
+                                    // Efficiently update the LAST point in Plotly
+                                    Plotly.restyle('plotly-chart', {
+                                        x: [[...times]],
+                                        y: [[...prices], [...ois]]
+                                    });
+                                } else {
+                                    // APPEND a new minute point
+                                    times.push(time);
+                                    prices.push(data.price);
+                                    ois.push(data.oi);
+
+                                    Plotly.extendTraces('plotly-chart', {
+                                        x: [[time], [time]],
+                                        y: [[data.price], [data.oi]]
+                                    }, [0, 1]);
+                                }
 
                                 // Maintain 15-min padding
                                 const endRange = new Date(time.getTime() + 15 * 60 * 1000);
                                 Plotly.relayout('plotly-chart', {
-                                    'xaxis.range': [chartDataRef.current.times[0], endRange]
+                                    'xaxis.range': [times[0], endRange]
                                 });
 
                                 setLastUpdated(time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
@@ -295,12 +336,30 @@
             return (
                 <div className="min-h-screen bg-transparent p-6 pr-10 pl-28">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                        <h1 className="text-2xl font-black flex items-center gap-3">
-                            <span className="text-blue-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                            </span>
-                            Future Price vs OI
-                        </h1>
+                        <div className="flex items-center gap-6">
+                            <h1 className="text-2xl font-black flex items-center gap-3">
+                                <span className="text-blue-500">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                                </span>
+                                Future Price vs OI
+                            </h1>
+
+                            {/* KPI Grid */}
+                            <div className="hidden lg:flex items-center gap-4 border-l border-border/50 pl-6">
+                                <div className="glass px-4 py-2 rounded-xl flex flex-col">
+                                    <span className="text-[9px] font-black uppercase tracking-tighter text-amber-500/80">Future Price</span>
+                                    <span className="text-sm font-black text-foreground">₹{currentFuture?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="glass px-4 py-2 rounded-xl flex flex-col border-l-2 border-emerald-500">
+                                    <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-500/80">Spot Price</span>
+                                    <span className="text-sm font-black text-foreground">₹{currentSpot?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="glass px-4 py-2 rounded-xl flex flex-col border-l-2 border-blue-500">
+                                    <span className="text-[9px] font-black uppercase tracking-tighter text-blue-500/80">Total OI</span>
+                                    <span className="text-sm font-black text-foreground">{formatNumber(currentOi)}</span>
+                                </div>
+                            </div>
+                        </div>
 
                         <div className="flex items-center gap-4">
                             <select
