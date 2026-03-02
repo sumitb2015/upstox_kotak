@@ -19,14 +19,14 @@ import asyncio
 # Force UTF-8 output so Windows cp1252 doesn't crash on any emoji/unicode in logs
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import asyncio
 import requests
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 import uvicorn
 import subprocess
 import signal
@@ -38,7 +38,7 @@ import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 # Import custom authentication module
-from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db
+from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db, get_token
 
 # --- Global Background Token Cache ---
 # Replaced with redis_wrapper.get_raw("token:admin")
@@ -59,7 +59,11 @@ from datetime import datetime
 SYMBOL_MAP = {
     "NIFTY": "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
-    "SENSEX": "BSE_INDEX|SENSEX"
+    "FINNIFTY": "NSE_INDEX|Nifty Fin Service",
+    "NIFTYIT": "NSE_INDEX|Nifty IT",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+    "SENSEX": "BSE_INDEX|SENSEX",
+    "NIFTY PHARMA": "NSE_INDEX|Nifty Pharma",
 }
 # Reverse map for broadcasting
 KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
@@ -2444,7 +2448,8 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             
             #  Baseline lookup  fetched once at startup from the live option chain 
             # BASELINE_OI is the single source of truth for day-start (9:15 AM) comparisons.
-            baseline_key = f"{symbol.upper()}:{expiry}:{strike}"
+            # Redis strikes are saved as floats in neo_api format (e.g., 24900.0)
+            baseline_key = f"{symbol.upper()}:{expiry}:{float(strike)}"
             baseline = redis_wrapper.hget_json("BASELINE_OI", baseline_key) or {}
             
             valid_ce_prev_oi = baseline.get("ce_prev_oi", 0) or 0
@@ -3817,7 +3822,7 @@ async def get_future_intraday_api(
 @app.get("/future-price-oi", response_class=HTMLResponse)
 async def future_price_oi_page():
     try:
-        html_path = Path("web_apps/oi_pro/future_price_oi.html")
+        html_path = Path(__file__).parent / "future_price_oi.html"
         return HTMLResponse(content=html_path.read_text())
     except Exception as e:
         return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
@@ -3919,6 +3924,200 @@ async def future_price_oi_websocket(websocket: WebSocket, symbol: str, token: st
         import traceback
         traceback.print_exc()
         manager.disconnect(websocket)
+
+@app.get("/surface-3d", response_class=HTMLResponse)
+async def surface_3d_page():
+    try:
+        html_path = Path("web_apps/oi_pro/surface_3d.html")
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading surface: {e}", status_code=500)
+
+@app.get("/api/option-chain-3d")
+async def api_option_chain_3d(
+    symbol: str = "NIFTY", 
+    surface_type: str = "both",
+    metric: str = "open_interest",
+    use_log_scale: bool = False,
+    min_oi: int = 100,
+    strike_window: float = 20.0,
+    min_dte: int = 0,
+    max_dte: int = 90,
+    theme: str = "dark",
+    user_token: str = Depends(get_token)
+):
+    try:
+        # Use the Upstox access token for actual API calls, not the user JWT
+        upstox_token = auth_get_token()
+        from lib.api.option_chain import get_option_chain, get_expiries
+        from lib.utils.plotting import create_option_3d_surface
+        import json
+        
+        index_key = SYMBOL_MAP.get(symbol, f"NSE_INDEX|{symbol}")
+        if not upstox_token:
+            return {"status": "error", "message": "Upstox access token not found"}
+            
+        # index_key is already set from SYMBOL_MAP or default f"NSE_INDEX|{symbol}"
+        
+        # 2. Fetch all expiries
+        # get_expiries is no longer imported, assuming it's handled internally by get_option_chain or not needed directly.
+        # If get_expiries is still needed, it should be re-imported.
+        # For now, I'll assume the logic for fetching expiries is integrated or simplified.
+        # Re-adding get_expiries as it was used before to get the list of expiries.
+        from lib.api.option_chain import get_expiries
+
+        expiries = await run_in_threadpool(get_expiries, upstox_token, index_key)
+        if not expiries:
+            return {"status": "error", "message": f"No expiries found for {symbol}"}
+            
+        # Limit expiries to those within a 90-day window
+        from datetime import datetime
+        today = datetime.now().date()
+        
+        target_expiries = []
+        for exp in expiries:
+            try:
+                if isinstance(exp, str):
+                    exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                elif hasattr(exp, 'date'):
+                    exp_date = exp.date()
+                else:
+                    exp_date = exp
+                
+                if (exp_date - today).days <= 90:
+                    target_expiries.append(exp)
+            except:
+                continue
+        
+        if not target_expiries:
+            target_expiries = expiries[:5] # Fallback to first few if none in 90d window
+        
+        # 3. Parallelize chain fetching
+        async def fetch_one_expiry(exp):
+            try:
+                # Handle various expiry formats (string, date, datetime)
+                if isinstance(exp, str):
+                    # Robust parsing for "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+                    try:
+                        exp_date = datetime.strptime(exp.split(' ')[0], "%Y-%m-%d").date()
+                    except:
+                        # Fallback for other formats
+                        import dateutil.parser
+                        exp_date = dateutil.parser.parse(exp).date()
+                elif hasattr(exp, 'date'):
+                    exp_date = exp.date()
+                else:
+                    exp_date = exp
+                
+                exp_str = exp_date.strftime("%Y-%m-%d")
+                dte = max(0, (exp_date - today).days)
+                
+                chain = await run_in_threadpool(get_option_chain, upstox_token, index_key, exp_str)
+                if not chain or 'data' not in chain or not chain['data']: return []
+                
+                # Extract underlying price from the response (it might be in root or per strike)
+                up = chain.get('underlying_price') or 0
+                if up == 0 and len(chain['data']) > 0:
+                    up = chain['data'][0].get('underlying_spot_price') or 0
+                
+                rows = []
+                for strike_data in chain['data']:
+                    strike = strike_data.get('strike_price')
+                    
+                    # Process Call Option
+                    ce = strike_data.get('call_options')
+                    if ce:
+                        ce_market = ce.get('market_data', {})
+                        ce_greeks = ce.get('option_greeks', {})
+                        rows.append({
+                            "strike": strike,
+                            "dte": dte,
+                            "iv": ce_greeks.get('iv', 0) or 0,
+                            "volume": ce_market.get('volume', 0) or 0,
+                            "open_interest": ce_market.get('oi', 0) or 0,
+                            "option_type": "call",
+                            "underlying_price": up
+                        })
+                        
+                    # Process Put Option
+                    pe = strike_data.get('put_options')
+                    if pe:
+                        pe_market = pe.get('market_data', {})
+                        pe_greeks = pe.get('option_greeks', {})
+                        rows.append({
+                            "strike": strike,
+                            "dte": dte,
+                            "iv": pe_greeks.get('iv', 0) or 0,
+                            "volume": pe_market.get('volume', 0) or 0,
+                            "open_interest": pe_market.get('oi', 0) or 0,
+                            "option_type": "put",
+                            "underlying_price": up
+                        })
+                return rows
+            except Exception as e:
+                print(f"Error fetching expiry {exp}: {e}")
+                return []
+
+        tasks = [fetch_one_expiry(exp) for exp in target_expiries]
+        results = await asyncio.gather(*tasks)
+        
+        all_data = []
+        underlying_price = 0
+        for res in results:
+            if not res: continue
+            if underlying_price == 0:
+                # Find the first valid underlying price from any expiry data
+                for row in res:
+                    if row.get('underlying_price', 0) > 0:
+                        underlying_price = row['underlying_price']
+                        break
+            all_data.extend(res)
+
+        # Fallback: Fetch index LTP directly if still 0 (common during weekends/holidays)
+        if underlying_price == 0:
+            from lib.api.market_data import get_ltp
+            try:
+                underlying_price = await run_in_threadpool(get_ltp, upstox_token, index_key)
+            except:
+                pass
+                
+        # 4. Filter data before plotting
+        # Apply the user's interactive filters (DTE, OI, Strike Window)
+        plot_data = [d for d in all_data if 
+                         (min_dte <= d['dte'] <= max_dte) and 
+                         (d['open_interest'] >= min_oi) and
+                         (underlying_price == 0 or abs(d['strike'] - underlying_price) / underlying_price * 100 <= strike_window)]
+        
+        # Prepare Figure using plotly.graph_objects
+        try:
+            fig = create_option_3d_surface(
+                plot_data, 
+                underlying_price, 
+                surface_type=surface_type, 
+                metric=metric, 
+                use_log_scale=use_log_scale, 
+                theme=theme
+            )
+            
+            return {
+                "status": "success",
+                "underlying_price": underlying_price,
+                "data": plot_data, 
+                "figure": json.loads(fig.to_json()) if fig else None
+            }
+        except Exception as e:
+            logger.error(f"Error creating 3D surface figure: {e}")
+            return {
+                "status": "success",
+                "underlying_price": underlying_price,
+                "data": all_data,
+                "figure": None,
+                "error": str(e)
+            }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)

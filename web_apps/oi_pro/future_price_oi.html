@@ -86,10 +86,21 @@
             const wsRef = useRef(null);
             const chartDataRef = useRef({ times: [], prices: [], ois: [] });
 
+            // Handle Theme Changes (Make chart reactive)
+            useEffect(() => {
+                const handleThemeChange = () => {
+                    if (chartDataRef.current.times.length > 0) {
+                        renderChart();
+                    }
+                };
+                window.addEventListener('themeToggled', handleThemeChange);
+                return () => window.removeEventListener('themeToggled', handleThemeChange);
+            }, []);
+
             useEffect(() => {
                 let isMounted = true;
 
-                const fetchHistoryAndConnectWs = async () => {
+                const fetchHistory = async () => {
                     setLoading(true);
                     try {
                         const token = localStorage.getItem("oi_pro_jwt") || localStorage.getItem("token");
@@ -98,6 +109,7 @@
                         // 1. Fetch History
                         const res = await fetch(`/api/future-price-oi-history?symbol=${symbol}`, { headers });
                         const result = await res.json();
+                        console.log("Future OI History Result:", result);
 
                         if (!isMounted) return;
 
@@ -117,9 +129,10 @@
                             });
 
                             chartDataRef.current = { times, prices, ois };
-                            renderChart();
-
-                            // Initialize WebSocket
+                            if (times.length > 0) {
+                                setLastUpdated(times[times.length - 1].toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+                            }
+                            // connectWebSocket will happen in its own effect or after loading
                             connectWebSocket(token);
                         }
                     } catch (e) {
@@ -145,20 +158,33 @@
                         if (data.type === "future-price-oi") {
                             const time = new Date(data.time);
 
-                            // Live update the chart
-                            Plotly.extendTraces('plotly-chart', {
-                                x: [[time], [time]],
-                                y: [[data.price], [data.oi]]
-                            }, [0, 1]);
+                            const chartDiv = document.getElementById('plotly-chart');
+                            if (chartDiv && chartDiv.data) {
+                                // Update local ref for range calculation
+                                chartDataRef.current.times.push(time);
+                                chartDataRef.current.prices.push(data.price);
+                                chartDataRef.current.ois.push(data.oi);
 
-                            setLastUpdated(time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+                                Plotly.extendTraces('plotly-chart', {
+                                    x: [[time], [time]],
+                                    y: [[data.price], [data.oi]]
+                                }, [0, 1]);
+
+                                // Maintain 15-min padding
+                                const endRange = new Date(time.getTime() + 15 * 60 * 1000);
+                                Plotly.relayout('plotly-chart', {
+                                    'xaxis.range': [chartDataRef.current.times[0], endRange]
+                                });
+
+                                setLastUpdated(time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+                            }
                         }
                     };
 
                     ws.onclose = () => console.log("WS closed");
                 };
 
-                fetchHistoryAndConnectWs();
+                fetchHistory();
 
                 return () => {
                     isMounted = false;
@@ -166,65 +192,104 @@
                 };
             }, [symbol]);
 
+            // Separate Effect for Rendering the Chart (Ensures DOM element exists)
+            useEffect(() => {
+                if (!loading && chartDataRef.current.times.length > 0) {
+                    renderChart();
+                }
+            }, [loading, symbol]);
+
             const renderChart = () => {
                 const { times, prices, ois } = chartDataRef.current;
 
-                const isDark = document.body.classList.contains('dark') ||
-                    window.matchMedia('(prefers-color-scheme: dark)').matches;
+                // FIX: Check documentElement for theme as per sidebar.js
+                const isDark = document.documentElement.classList.contains('dark');
 
                 const textColor = isDark ? '#f8fafc' : '#020817';
-                const gridColor = isDark ? '#334155' : '#e2e8f0';
+                const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+                const accentColor = isDark ? '#3b82f6' : '#2563eb'; // Blue for OI
+                const priceColor = '#f59e0b'; // Amber/Gold for Price - Professional
 
                 const priceTrace = {
                     x: times,
                     y: prices,
-                    name: 'Price',
+                    name: 'Future Price',
                     mode: 'lines',
-                    line: { color: isDark ? '#94a3b8' : '#64748b', width: 2, dash: 'dot' },
-                    yaxis: 'y1'
+                    line: { color: priceColor, width: 2 },
+                    yaxis: 'y1',
+                    hovertemplate: `<b>Price:</b> %{y:,.2f}<extra></extra>`
                 };
 
                 const oiTrace = {
                     x: times,
                     y: ois,
-                    name: 'OI',
+                    name: 'Open Interest',
                     mode: 'lines',
-                    line: { color: '#3b82f6', width: 2 },
-                    yaxis: 'y2'
+                    line: { color: accentColor, width: 3 },
+                    yaxis: 'y2',
+                    hovertemplate: `<b>OI:</b> %{y:,.0f}<extra></extra>`
                 };
+
+                // Calculate X-axis range for padding (15 mins on the right)
+                const lastTime = times[times.length - 1];
+                const endRange = new Date(lastTime.getTime() + 15 * 60 * 1000);
 
                 const layout = {
                     title: false,
                     showlegend: true,
-                    legend: { orientation: 'h', x: 0, y: 1.1 },
-                    margin: { t: 40, r: 60, b: 40, l: 60 },
+                    legend: {
+                        orientation: 'h',
+                        x: 0,
+                        y: 1.1,
+                        font: { size: 11, color: textColor },
+                        bgcolor: 'transparent'
+                    },
+                    margin: { t: 40, r: 80, b: 40, l: 80 },
                     paper_bgcolor: 'transparent',
                     plot_bgcolor: 'transparent',
-                    font: { color: textColor },
+                    font: { color: textColor, family: 'Inter, sans-serif' },
                     xaxis: {
                         type: 'date',
+                        range: [times[0], endRange],
                         tickformat: '%I:%M %p',
                         showgrid: true,
-                        gridcolor: gridColor
+                        gridcolor: gridColor,
+                        tickfont: { color: textColor, size: 10 },
+                        linecolor: gridColor
                     },
                     yaxis: {
-                        title: 'Price',
+                        title: { text: 'Future Price', font: { size: 12, color: priceColor, weight: 'bold' } },
                         side: 'left',
                         showgrid: true,
                         gridcolor: gridColor,
-                        tickformat: ','
+                        tickformat: ',',
+                        tickfont: { color: textColor, size: 10 },
+                        zeroline: false
                     },
                     yaxis2: {
-                        title: 'Open Interest',
+                        title: { text: 'Open Interest', font: { size: 12, color: accentColor, weight: 'bold' } },
                         side: 'right',
                         overlaying: 'y',
                         showgrid: false,
-                        tickformat: '.2s'
+                        tickformat: '.2s',
+                        tickfont: { color: textColor, size: 10 },
+                        zeroline: false
                     },
-                    hovermode: 'x unified'
+                    hovermode: 'x unified',
+                    hoverlabel: {
+                        bgcolor: isDark ? '#1e293b' : '#ffffff',
+                        bordercolor: gridColor,
+                        font: { color: textColor, family: 'Inter' }
+                    }
                 };
 
-                Plotly.newPlot('plotly-chart', [priceTrace, oiTrace], layout, { responsive: true, displayModeBar: false });
+                const config = {
+                    responsive: true,
+                    displayModeBar: false,
+                    scrollZoom: false
+                };
+
+                Plotly.newPlot('plotly-chart', [priceTrace, oiTrace], layout, config);
             };
 
             return (
@@ -232,7 +297,7 @@
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                         <h1 className="text-2xl font-black flex items-center gap-3">
                             <span className="text-blue-500">
-                                <svg xmlns="http://www.0000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                             </span>
                             Future Price vs OI
                         </h1>
@@ -269,15 +334,8 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<FuturePriceOi />);
-
-        const sidebarScript = document.createElement('script');
-        sidebarScript.src = 'sidebar.js';
-        sidebarScript.onload = () => {
-            const sidebarRoot = ReactDOM.createRoot(document.getElementById('sidebar-root'));
-            sidebarRoot.render(<Sidebar activePage="Future Price vs OI" />);
-        };
-        document.body.appendChild(sidebarScript);
     </script>
+    <script src="/sidebar.js"></script>
 </body>
 
 </html>

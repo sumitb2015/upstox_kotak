@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Options Surface | OI Pro</title>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        border: "var(--border)",
+                        input: "var(--input)",
+                        ring: "var(--ring)",
+                        background: "var(--background)",
+                        foreground: "var(--foreground)",
+                        primary: {
+                            DEFAULT: "var(--primary)",
+                            foreground: "var(--primary-foreground)",
+                        },
+                        secondary: {
+                            DEFAULT: "var(--secondary)",
+                            foreground: "var(--secondary-foreground)",
+                        },
+                        destructive: {
+                            DEFAULT: "var(--destructive)",
+                            foreground: "var(--destructive-foreground)",
+                        },
+                        muted: {
+                            DEFAULT: "var(--muted)",
+                            foreground: "var(--muted-foreground)",
+                        },
+                        accent: {
+                            DEFAULT: "var(--accent)",
+                            foreground: "var(--accent-foreground)",
+                        },
+                        popover: {
+                            DEFAULT: "var(--popover)",
+                            foreground: "var(--popover-foreground)",
+                        },
+                        card: {
+                            DEFAULT: "var(--card)",
+                            foreground: "var(--card-foreground)",
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+        }
+
+        .plotly-graph-div {
+            background: transparent !important;
+        }
+
+        select {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-foreground overflow-hidden transition-colors duration-300">
+    <div id="sidebar-root"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const formatNumber = (num) => {
+            if (num >= 10000000) return (num / 10000000).toFixed(2) + 'Cr';
+            if (num >= 100000) return (num / 100000).toFixed(2) + 'L';
+            if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
+            return num.toString();
+        };
+
+        // Icon component for refresh
+        const RefreshCw = (props) => (
+            <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                {...props}
+            >
+                <path d="M23 4v6h-6"></path>
+                <path d="M20.49 15H10c-1.5 0-2.88-.59-3.9-1.5L2 9"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9H14c1.5 0 2.88.59 3.9 1.5L22 15"></path>
+            </svg>
+        );
+
+        function Surface3D() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [loading, setLoading] = useState(true);
+            const [data, setData] = useState(null);
+            const [error, setError] = useState(null);
+            const [surfaceType, setSurfaceType] = useState("both");
+            const [metric, setMetric] = useState("open_interest");
+            const [useLogScale, setUseLogScale] = useState(false);
+            const [autoRefresh, setAutoRefresh] = useState(false);
+            const [theme, setTheme] = useState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+
+            // Filter States
+            const [minDTE, setMinDTE] = useState(0);
+            const [maxDTE, setMaxDTE] = useState(90);
+            const [minOI, setMinOI] = useState(100);
+            const [strikeWindow, setStrikeWindow] = useState(20);
+
+            useEffect(() => {
+                const handleThemeToggle = () => setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                window.addEventListener('themeToggled', handleThemeToggle);
+                return () => window.removeEventListener('themeToggled', handleThemeToggle);
+            }, []);
+
+            const fetchData = async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const token = localStorage.getItem("oi_pro_jwt") || localStorage.getItem("token");
+                    if (!token) throw new Error("Authentication token missing. Please log in.");
+
+                    const params = new URLSearchParams({
+                        symbol, surface_type: surfaceType, metric,
+                        use_log_scale: useLogScale, min_oi: minOI,
+                        strike_window: strikeWindow, min_dte: minDTE,
+                        max_dte: maxDTE, theme
+                    });
+
+                    const res = await fetch(`/api/option-chain-3d?${params.toString()}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+
+                    if (!res.ok) {
+                        if (res.status === 401) throw new Error("Session expired. Please re-login.");
+                        throw new Error(`Server Error (${res.status})`);
+                    }
+
+                    const result = await res.json();
+                    if (result.status === "success") {
+                        setData(result);
+                    } else {
+                        throw new Error(result.message || "Failed to analyze data");
+                    }
+                } catch (e) {
+                    setError(e.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+            }, [symbol, surfaceType, metric, useLogScale, minDTE, maxDTE, minOI, strikeWindow, theme]);
+
+            useEffect(() => {
+                let interval;
+                if (autoRefresh) interval = setInterval(fetchData, 60000);
+                return () => clearInterval(interval);
+            }, [autoRefresh]);
+
+            const summary = useMemo(() => {
+                if (!data || !data.data || data.data.length === 0) return null;
+                const list = data.data;
+                const totalOI = list.reduce((acc, curr) => acc + curr.open_interest, 0);
+                const dtes = list.map(d => d.dte);
+                const firstExp = Math.min(...dtes);
+                const firstRows = list.filter(d => d.dte === firstExp);
+                const atm = firstRows.reduce((prev, curr) => Math.abs(curr.strike - data.underlying_price) < Math.abs(prev.strike - data.underlying_price) ? curr : prev, firstRows[0]);
+                const highOI = list.reduce((prev, curr) => curr.open_interest > prev.open_interest ? curr : prev, list[0]);
+
+                return {
+                    totalOI,
+                    atmIv: atm ? atm.iv : 0,
+                    highOIStrike: highOI ? highOI.strike : 0
+                };
+            }, [data]);
+
+            useEffect(() => {
+                if (!data || !data.figure) return;
+                const { data: traces, layout } = data.figure;
+                Plotly.react('surface-chart', traces, layout, { responsive: true });
+            }, [data]);
+
+            return (
+                <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground transition-colors duration-300">
+                    {/* Header Controls */}
+                    <div className="flex flex-wrap items-center gap-4 p-4 border-b bg-card z-10">
+                        <div className="flex items-center gap-2">
+                            <label className="text-[10px] font-bold opacity-50 uppercase tracking-widest pl-24">Index</label>
+                            <select value={symbol} onChange={(e) => setSymbol(e.target.value)} className="bg-muted px-3 py-1.5 rounded-md text-sm border-none outline-none">
+                                <option value="NIFTY">NIFTY</option>
+                                <option value="BANKNIFTY">BANKNIFTY</option>
+                                <option value="FINNIFTY">FINNIFTY</option>
+                            </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <label className="text-[10px] font-bold opacity-50 uppercase tracking-widest">Surface</label>
+                            <div className="flex bg-muted p-1 rounded-md">
+                                {['both', 'call', 'put'].map(t => (
+                                    <button key={t} onClick={() => setSurfaceType(t)} className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all ${surfaceType === t ? 'bg-primary text-primary-foreground' : 'hover:bg-background/40'}`}>
+                                        {t}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <label className="text-[10px] font-bold opacity-50 uppercase tracking-widest">Metric</label>
+                            <select value={metric} onChange={(e) => setMetric(e.target.value)} className="bg-muted px-3 py-1.5 rounded-md text-sm border-none outline-none">
+                                <option value="open_interest">Open Interest</option>
+                                <option value="volume">Volume</option>
+                                <option value="iv">IV (%)</option>
+                            </select>
+                        </div>
+
+                        <div className="h-4 w-px bg-border mx-2"></div>
+
+                        {/* Sliders Area */}
+                        <div className="flex flex-wrap items-center gap-8">
+                            <div className="flex flex-col gap-1 w-28">
+                                <label className="text-[9px] font-bold opacity-40 uppercase">Strike ±{strikeWindow}%</label>
+                                <input type="range" min="5" max="50" step="5" value={strikeWindow} onChange={(e) => setStrikeWindow(Number(e.target.value))} className="h-1 bg-muted accent-primary cursor-pointer rounded-full" />
+                            </div>
+                            <div className="flex flex-col gap-1 w-28">
+                                <label className="text-[9px] font-bold opacity-40 uppercase">Min OI: {formatNumber(minOI)}</label>
+                                <input type="range" min="0" max="25000" step="500" value={minOI} onChange={(e) => setMinOI(Number(e.target.value))} className="h-1 bg-muted accent-primary cursor-pointer rounded-full" />
+                            </div>
+                            <div className="flex flex-col gap-1 w-32">
+                                <label className="text-[9px] font-bold opacity-40 uppercase">Max DTE: {maxDTE}</label>
+                                <input type="range" min="1" max="90" step="1" value={maxDTE} onChange={(e) => setMaxDTE(Number(e.target.value))} className="h-1 bg-muted accent-primary cursor-pointer rounded-full" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 ml-auto">
+                            <button onClick={() => setUseLogScale(!useLogScale)} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${useLogScale ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-muted'}`}>Log</button>
+                            <button onClick={() => setAutoRefresh(!autoRefresh)} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${autoRefresh ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30' : 'bg-muted'}`}>Auto</button>
+                            <button onClick={fetchData} className="p-1.5 rounded-md bg-muted hover:bg-muted/80"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin opacity-50' : ''}`} /></button>
+                        </div>
+                    </div>
+
+                    {/* Chart Container */}
+                    <div className="flex-1 relative bg-[#020617]">
+                        {/* Loading/Error State Overlay */}
+                        {(loading || error || (data && !data.figure)) && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-all duration-300">
+                                <div className="bg-slate-800/90 p-8 rounded-2xl border border-slate-700 shadow-2xl text-center max-w-sm transform scale-110">
+                                    {loading ? (
+                                        <>
+                                            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                                            <p className="text-blue-400 font-bold text-lg animate-pulse">Fetching 3D Surface Data...</p>
+                                            <p className="text-slate-400 text-sm mt-2 font-mono">Parallel processing chain snapshots</p>
+                                        </>
+                                    ) : error ? (
+                                        <>
+                                            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/50">
+                                                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                </svg>
+                                            </div>
+                                            <p className="text-red-400 font-bold text-lg">Analysis Failed</p>
+                                            <p className="text-slate-400 text-sm mt-2">{error}</p>
+                                            <button onClick={fetchData} className="mt-6 px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white transition-colors border border-slate-600">Retry Analysis</button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-orange-500/50">
+                                                <svg className="w-8 h-8 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                            </div>
+                                            <p className="text-orange-400 font-bold text-lg">No Sufficient Data</p>
+                                            <p className="text-slate-400 text-sm mt-2">Adjust filters to widen the strike range or DTE window.</p>
+                                            <button onClick={() => { setMinOI(0); setStrikeWindow(30); }} className="mt-6 px-6 py-2 bg-orange-500/20 hover:bg-orange-500/30 rounded-lg text-orange-400 transition-colors border border-orange-500/50">Reset Filters</button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        <div id="surface-chart" className="w-full h-full" />
+
+                        {/* HUD */}
+                        <div className="absolute top-6 left-28 flex flex-col gap-2 pointer-events-none">
+                            <div className="px-4 py-2 bg-black/60 backdrop-blur-xl rounded-xl border border-white/5 shadow-2xl">
+                                <div className="text-[8px] uppercase tracking-widest opacity-40 font-black mb-0.5">Underlying</div>
+                                <div className="text-xl font-black tabular-nums leading-none">
+                                    ₹{data?.underlying_price?.toLocaleString() || '---'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {summary && (
+                            <div className="absolute bottom-8 left-8 right-8 flex justify-center pointer-events-none">
+                                <div className="bg-black/40 backdrop-blur-2xl border border-white/10 p-4 rounded-2xl flex items-center gap-10 shadow-2xl pointer-events-auto">
+                                    <div className="flex flex-col"><span className="text-[8px] opacity-40 font-black uppercase tracking-widest">ATM IV</span><span className="text-sm font-black text-blue-400">{summary.atmIv.toFixed(2)}%</span></div>
+                                    <div className="w-px h-6 bg-white/10"></div>
+                                    <div className="flex flex-col"><span className="text-[8px] opacity-40 font-black uppercase tracking-widest">Max OI Strike</span><span className="text-sm font-black text-emerald-400">{summary.highOIStrike}</span></div>
+                                    <div className="w-px h-6 bg-white/10"></div>
+                                    <div className="flex flex-col"><span className="text-[8px] opacity-40 font-black uppercase tracking-widest">Agg OI</span><span className="text-sm font-black text-orange-400">{formatNumber(summary.totalOI)}</span></div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const sidebarScript = document.createElement('script');
+        sidebarScript.src = 'sidebar.js';
+        sidebarScript.onload = () => {
+            const sidebarRoot = ReactDOM.createRoot(document.getElementById('sidebar-root'));
+            sidebarRoot.render(<Sidebar activePage="3D Surface Analysis" />);
+        };
+        document.body.appendChild(sidebarScript);
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Surface3D />);
+    </script>
+</body>
+
+</html>

@@ -310,11 +310,19 @@
                                             {strikes.map(item => {
                                                 const pe = item.PE || {};
                                                 const buildup = pe.buildup || "Neutral";
+                                                const ltp = pe.ltp || 0;
+                                                const prevLtp = pe.prev_ltp || ltp || 1;
+                                                const priceChgPct = ((ltp - prevLtp) / prevLtp * 100).toFixed(2);
+                                                const oi = pe.oi || 0;
+                                                const prevOi = pe.prev_oi || oi || 1;
+                                                const oiChgPct = ((oi - prevOi) / prevOi * 100).toFixed(2);
+                                                const vol = pe.volume?.toLocaleString() || "0";
+                                                const titleStr = `${item.strike} PE | ${buildup}\nPrice: ${ltp.toFixed(2)} (${priceChgPct > 0 ? '+' : ''}${priceChgPct}%)\nOI: ${oi.toLocaleString()} (${oiChgPct > 0 ? '+' : ''}${oiChgPct}%)\nVolume: ${vol}`;
                                                 return (
                                                     <div
                                                         key={`pe-${item.strike}`}
                                                         className={`w-[13px] h-32 flex-shrink-0 transition-all cursor-crosshair border-r border-slate-300/20 buildup-cell ${getBuildupStyle(buildup, false)} shadow-[inset_0_0_2px_rgba(255,255,255,0.1)] first:rounded-l-sm`}
-                                                        title={`${item.strike} PE | ${buildup} | OI: ${pe.oi?.toLocaleString()}`}
+                                                        title={titleStr}
                                                     >
                                                     </div>
                                                 );
@@ -327,11 +335,19 @@
                                             {strikes.map(item => {
                                                 const ce = item.CE || {};
                                                 const buildup = ce.buildup || "Neutral";
+                                                const ltp = ce.ltp || 0;
+                                                const prevLtp = ce.prev_ltp || ltp || 1;
+                                                const priceChgPct = ((ltp - prevLtp) / prevLtp * 100).toFixed(2);
+                                                const oi = ce.oi || 0;
+                                                const prevOi = ce.prev_oi || oi || 1;
+                                                const oiChgPct = ((oi - prevOi) / prevOi * 100).toFixed(2);
+                                                const vol = ce.volume?.toLocaleString() || "0";
+                                                const titleStr = `${item.strike} CE | ${buildup}\nPrice: ${ltp.toFixed(2)} (${priceChgPct > 0 ? '+' : ''}${priceChgPct}%)\nOI: ${oi.toLocaleString()} (${oiChgPct > 0 ? '+' : ''}${oiChgPct}%)\nVolume: ${vol}`;
                                                 return (
                                                     <div
                                                         key={`ce-${item.strike}`}
                                                         className={`w-[13px] h-32 flex-shrink-0 transition-all cursor-crosshair border-r border-slate-300/20 buildup-cell ${getBuildupStyle(buildup, true)} shadow-[inset_0_0_2px_rgba(255,255,255,0.1)] first:rounded-l-sm`}
-                                                        title={`${item.strike} CE | ${buildup} | OI: ${ce.oi?.toLocaleString()}`}
+                                                        title={titleStr}
                                                     >
                                                     </div>
                                                 );
