@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OI Trend Analyzer | OI Pro</title>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+
+        /* Cell active state on hover */
+        .buildup-cell:hover {
+            z-index: 50;
+            box-shadow: 0 0 0 2px white;
+            filter: brightness(1.2);
+        }
+
+        .tape-container {
+            mask-image: linear-gradient(to right, transparent, black 1%, black 99%, transparent);
+            -webkit-mask-image: linear-gradient(to right, transparent, black 1%, black 99%, transparent);
+        }
+
+        .slanting-text {
+            transform: rotate(-60deg) translateX(-10px);
+            transform-origin: left top;
+            white-space: nowrap;
+        }
+
+        .vertical-text {
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        border: 'var(--border)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        secondary: 'var(--secondary)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --secondary: #f8fafc;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --border: #e2e8f0;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --secondary: #1e293b;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --border: #334155;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s, color 0.2s;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-foreground overflow-hidden">
+    <!-- Sidebar -->
+    <div id="sidebar-root"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        function OITrendAnalyzer() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [expiryList, setExpiryList] = useState([]);
+            const [selectedExpiry, setSelectedExpiry] = useState("");
+            const [chainData, setChainData] = useState([]);
+            const [spotPrice, setSpotPrice] = useState(0);
+            const [loading, setLoading] = useState(false);
+            const [strikeRange, setStrikeRange] = useState(40);
+            const [refreshInterval, setRefreshInterval] = useState(60000); // 1 minute
+
+            // Fetch Expiries
+            useEffect(() => {
+                const fetchExpiries = async () => {
+                    try {
+                        const res = await fetchWithAuth(`/api/expiries?symbol=${symbol}`);
+                        const data = await res.json();
+                        setExpiryList(data.expiries || []);
+                        if (data.expiries && data.expiries.length > 0) {
+                            setSelectedExpiry(data.expiries[0]);
+                        }
+                    } catch (err) {
+                        console.error("Failed to fetch expiries", err);
+                    }
+                };
+                fetchExpiries();
+            }, [symbol]);
+
+            // Fetch Option Chain
+            const fetchData = async (isInitial = false) => {
+                if (!selectedExpiry) return;
+                if (isInitial) setLoading(true);
+
+                try {
+                    const res = await fetchWithAuth(`/api/option-chain/${symbol}?expiry=${selectedExpiry}`);
+                    const data = await res.json();
+                    setChainData(data.chain || []);
+                    setSpotPrice(data.spot || 0);
+                } catch (err) {
+                    console.error("Failed to fetch chain", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData(true);
+            }, [selectedExpiry, symbol]);
+
+            useEffect(() => {
+                if (refreshInterval > 0) {
+                    const interval = setInterval(() => fetchData(false), refreshInterval);
+                    return () => clearInterval(interval);
+                }
+            }, [selectedExpiry, symbol, refreshInterval]);
+
+            const { strikes, atmStrike } = useMemo(() => {
+                if (!chainData.length) return { strikes: [], atmStrike: null };
+
+                const strikesMap = {};
+                chainData.forEach(item => {
+                    if (!strikesMap[item.strike_price]) {
+                        strikesMap[item.strike_price] = { strike: item.strike_price };
+                    }
+                    if (item.type === 'call') strikesMap[item.strike_price].CE = item;
+                    if (item.type === 'put') strikesMap[item.strike_price].PE = item;
+                });
+
+                const sorted = Object.values(strikesMap).sort((a, b) => a.strike - b.strike);
+                if (sorted.length === 0) return { strikes: [], atmStrike: null };
+
+                const atmNode = sorted.reduce((prev, curr) => {
+                    return (Math.abs(curr.strike - spotPrice) < Math.abs(prev.strike - spotPrice) ? curr : prev);
+                });
+                const atmStrikeVal = atmNode.strike;
+                const atmIndex = sorted.findIndex(item => item.strike === atmStrikeVal);
+
+                let data = sorted;
+                if (strikeRange !== 'Full') {
+                    const r = parseInt(strikeRange);
+                    const start = Math.max(0, atmIndex - r);
+                    const end = Math.min(sorted.length, atmIndex + r + 1);
+                    data = sorted.slice(start, end);
+                }
+
+                return { strikes: data, atmStrike: atmStrikeVal };
+            }, [chainData, spotPrice, strikeRange]);
+
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "";
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            };
+
+            const getBuildupStyle = (type, isCalls = false) => {
+                switch (type) {
+                    case "Long Buildup": return "bg-[#008000]";
+                    case "Short Covering": return "bg-[#90EE90]";
+                    case "Short Buildup": return "bg-[#FF0000]";
+                    case "Long Unwinding": return "bg-[#FFA500]";
+                    default: return "bg-[#A9A9A9]";
+                }
+            };
+
+            return (
+                <div className="h-screen bg-transparent text-foreground antialiased flex flex-col pl-24 overflow-hidden">
+                    {/* Header Controls */}
+                    <div className="flex-shrink-0 z-[60] bg-background/80 backdrop-blur-md border-b border-border px-6 py-2">
+                        <div className="flex flex-row justify-between items-center max-w-full mx-auto pr-32">
+                            <div className="flex items-center gap-6">
+                                <h1 className="text-xl font-bold text-foreground uppercase tracking-tight flex items-center gap-2">
+                                    OI Trend Analyzer
+                                </h1>
+
+                                <div className="h-6 w-px bg-border"></div>
+
+                                {/* LIVE SPOT - MOVED TO LEFT FOR OVERLAP SAFETY */}
+                                <div className="flex flex-col items-start leading-none">
+                                    <span className="text-[10px] uppercase font-bold text-muted-foreground">LIVE SPOT</span>
+                                    <span className="text-lg font-bold font-mono tracking-tighter text-foreground tabular-nums">
+                                        {spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+
+                                <div className="h-6 w-px bg-border"></div>
+
+                                {/* Controls */}
+                                <div className="flex items-center gap-4">
+                                    <div className="flex bg-secondary p-0.5 rounded-lg border border-border">
+                                        {["NIFTY", "BANKNIFTY", "FINNIFTY"].map(s => (
+                                            <button
+                                                key={s}
+                                                onClick={() => setSymbol(s)}
+                                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${symbol === s ? 'bg-background shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'}`}
+                                            >
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    <select
+                                        value={selectedExpiry}
+                                        onChange={(e) => setSelectedExpiry(e.target.value)}
+                                        className="bg-secondary border border-border text-[10px] font-bold rounded-lg px-2 py-1 focus:outline-none"
+                                    >
+                                        {expiryList.map(exp => (
+                                            <option key={exp} value={exp}>{formatDate(exp).toUpperCase()}</option>
+                                        ))}
+                                    </select>
+
+                                    <div className="flex bg-secondary p-0.5 rounded-lg border border-border">
+                                        {[20, 40, 60, "Full"].map(r => (
+                                            <button
+                                                key={r}
+                                                onClick={() => setStrikeRange(r)}
+                                                className={`px-2 py-1 text-[9px] font-bold rounded-md transition-all ${strikeRange === r ? 'bg-cyan-600 text-white shadow-sm' : 'text-muted-foreground'}`}
+                                            >
+                                                ±{r}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-6 pr-4">
+                                <button onClick={() => fetchData(true)} className={`p-2 rounded-xl hover:bg-muted border border-border transition-colors ${loading ? 'opacity-50' : ''}`}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={loading ? "animate-spin text-cyan-600" : ""}><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12c0-5.5 4.5-10 10-10 1.8 0 3.5.5 4.9 1.5M22 12c0 5.5-4.5 10-10 10-1.8 0-3.5-.5-4.9-1.5" /></svg>
+                                </button>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground cursor-pointer hover:text-foreground"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <div className="flex-1 flex flex-col justify-center items-start p-10 bg-background overflow-hidden relative">
+
+                        <div className="flex flex-row w-full max-w-full overflow-hidden">
+                            {/* Left Y-axis Label */}
+                            <div className="w-16 flex-shrink-0 flex items-center justify-center border-r border-border">
+                                <span className="vertical-text text-[14px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap">Price Action / OI</span>
+                            </div>
+
+                            {/* Tape Area */}
+                            <div className="flex-1 flex flex-col overflow-x-auto custom-scrollbar tape-container pt-4 px-4">
+                                {(strikes.length > 0) ? (
+                                    <div className="inline-flex flex-col min-w-max">
+
+                                        {/* PE LAYER (Top) */}
+                                        <div className="flex items-center">
+                                            <div className="w-10 h-32 flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-foreground/60 mr-2">PE</div>
+                                            {strikes.map(item => {
+                                                const pe = item.PE || {};
+                                                const buildup = pe.buildup || "Neutral";
+                                                const ltp = pe.ltp || 0;
+                                                const prevLtp = pe.prev_ltp || ltp || 1;
+                                                const priceChgPct = ((ltp - prevLtp) / prevLtp * 100).toFixed(2);
+                                                const oi = pe.oi || 0;
+                                                const prevOi = pe.prev_oi || oi || 1;
+                                                const oiChgPct = ((oi - prevOi) / prevOi * 100).toFixed(2);
+                                                const vol = pe.volume?.toLocaleString() || "0";
+                                                const titleStr = `${item.strike} PE | ${buildup}\nPrice: ${ltp.toFixed(2)} (${priceChgPct > 0 ? '+' : ''}${priceChgPct}%)\nOI: ${oi.toLocaleString()} (${oiChgPct > 0 ? '+' : ''}${oiChgPct}%)\nVolume: ${vol}`;
+                                                return (
+                                                    <div
+                                                        key={`pe-${item.strike}`}
+                                                        className={`w-[13px] h-32 flex-shrink-0 transition-all cursor-crosshair border-r border-slate-300/20 buildup-cell ${getBuildupStyle(buildup, false)} shadow-[inset_0_0_2px_rgba(255,255,255,0.1)] first:rounded-l-sm`}
+                                                        title={titleStr}
+                                                    >
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* CE LAYER (Bottom) */}
+                                        <div className="flex items-center">
+                                            <div className="w-10 h-32 flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-foreground/60 mr-2">CE</div>
+                                            {strikes.map(item => {
+                                                const ce = item.CE || {};
+                                                const buildup = ce.buildup || "Neutral";
+                                                const ltp = ce.ltp || 0;
+                                                const prevLtp = ce.prev_ltp || ltp || 1;
+                                                const priceChgPct = ((ltp - prevLtp) / prevLtp * 100).toFixed(2);
+                                                const oi = ce.oi || 0;
+                                                const prevOi = ce.prev_oi || oi || 1;
+                                                const oiChgPct = ((oi - prevOi) / prevOi * 100).toFixed(2);
+                                                const vol = ce.volume?.toLocaleString() || "0";
+                                                const titleStr = `${item.strike} CE | ${buildup}\nPrice: ${ltp.toFixed(2)} (${priceChgPct > 0 ? '+' : ''}${priceChgPct}%)\nOI: ${oi.toLocaleString()} (${oiChgPct > 0 ? '+' : ''}${oiChgPct}%)\nVolume: ${vol}`;
+                                                return (
+                                                    <div
+                                                        key={`ce-${item.strike}`}
+                                                        className={`w-[13px] h-32 flex-shrink-0 transition-all cursor-crosshair border-r border-slate-300/20 buildup-cell ${getBuildupStyle(buildup, true)} shadow-[inset_0_0_2px_rgba(255,255,255,0.1)] first:rounded-l-sm`}
+                                                        title={titleStr}
+                                                    >
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* STRIKES LAYER (Slanting at Bottom) */}
+                                        <div className="flex items-start mt-4">
+                                            <div className="w-10 flex-shrink-0 mr-2"></div>
+                                            {strikes.map((item, idx) => (
+                                                <div key={`st-${item.strike}`} className={`w-[13px] flex-shrink-0 flex flex-col items-center group`}>
+                                                    {(item.strike % 100 === 0) && (
+                                                        <div className="h-3 w-px bg-slate-200 mb-2"></div>
+                                                    )}
+                                                    {(item.strike % 100 === 0) && (
+                                                        <span className="slanting-text text-[11px] font-bold text-foreground/70 dark:text-foreground/80">
+                                                            {item.strike}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-64 w-full text-slate-400 animate-pulse uppercase text-xs font-bold tracking-widest italic">
+                                        Loading Trend Analyzer...
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Summary Legend (Tucked below Chart with no gap) */}
+                        <div className="w-full mt-4 flex justify-center gap-8 bg-secondary/50 py-3 border-t border-border">
+                            {[
+                                { label: "Long Buildup", color: "bg-[#008000]" },
+                                { label: "Short Covering", color: "bg-[#90EE90]" },
+                                { label: "Short Buildup", color: "bg-[#FF0000]" },
+                                { label: "Long Unwinding", color: "bg-[#FFA500]" }
+                            ].map(l => (
+                                <div key={l.label} className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${l.color}`}></div>
+                                    <span className="text-[10px] font-bold text-foreground/70 dark:text-foreground/80 uppercase tracking-tight">{l.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Footer Status Bar */}
+                    <div className="bg-background border-t border-border px-8 py-2 flex justify-between items-center text-[10px]">
+                        <div className="flex gap-6 items-center">
+                            <div className="flex items-center gap-2 font-bold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full">
+                                <div className={`w-2 h-2 rounded-full bg-emerald-500 ${loading ? 'animate-ping' : 'animate-pulse'}`}></div>
+                                {loading ? 'SYNCING' : 'REAL-TIME'}
+                            </div>
+                            <span className="text-muted-foreground/80 font-bold tracking-tight uppercase">
+                                {symbol} | INTERVAL: 1 MIN
+                            </span>
+                        </div>
+                        <div className="flex gap-6 font-bold tracking-widest text-muted-foreground/60 uppercase items-center">
+                            <span>Market Intel Stream</span>
+                            <div className="h-3 w-px bg-muted"></div>
+                            <span>V1.3 ULTIMATE</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<OITrendAnalyzer />);
+    </script>
+    <script src="/sidebar.js"></script>
+</body>
+
+</html>

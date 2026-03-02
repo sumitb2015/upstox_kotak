@@ -17,10 +17,12 @@ This skill provides standardized logic for calculating and tracking Option Greek
 | **MIDCPNIFTY** | 50 |
 | **SENSEX** | 10 |
 
-## 💾 Persistence (CSV Storage)
+## 💾 Persistence (Redis & CSV Storage)
 
-Option Greeks are persisted to daily CSV files to allow for historical trend analysis.
+Option Greeks are persisted using a dual-layer approach for speed and historical trend analysis.
 
+- **Primary Cache (Speed)**: Redis Lists `redis_wrapper.push_json_list()`. Keys are suffixed with `symbol:expiry:date`.
+- **Secondary Storage**: Daily CSV files appended via pandas.
 - **Storage Class**: `lib.utils.greeks_storage.greeks_storage`
 - **Location**: `c:/algo/upstox/data/greeks_history/`
 - **File Format**: `greeks_[SYMBOL]_[YYYY-MM-DD].csv`
@@ -28,8 +30,9 @@ Option Greeks are persisted to daily CSV files to allow for historical trend ana
 
 ### Data Flow
 1. **Polling**: `poll_major_greeks` in `main.py` fetches data every 60s.
-2. **Saving**: Data is saved via `greeks_storage.save_snapshot(symbol, expiry, snapshot_df)`.
-3. **Retrieving**: Use `greeks_storage.get_strike_history(symbol, expiry, strike)` for time-series extraction.
+2. **Serializing**: Ensure any Pandas Timestamps or complex objects are stringified or handled safely before saving to Redis to prevent `Object of type Timestamp is not JSON serializable` errors.
+3. **Saving**: Data is saved via `greeks_storage.save_snapshot(symbol, expiry, snapshot_df)`. This pushes to Redis list (capped at max length) and appends to CSV.
+4. **Retrieving**: Use `greeks_storage.get_strike_history(symbol, expiry, strike)` which instantly returns cached Redis data if available, falling back to CSV.
 
 ## 📊 Strike-wise Historical Tracking
 

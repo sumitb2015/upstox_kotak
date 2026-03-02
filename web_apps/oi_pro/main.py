@@ -15,18 +15,27 @@ import os
 import time
 from datetime import datetime, timedelta
 import asyncio
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger("OIPRO")
 
 # Force UTF-8 output so Windows cp1252 doesn't crash on any emoji/unicode in logs
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Depends, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import asyncio
 import requests
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 import uvicorn
 import subprocess
 import signal
@@ -38,7 +47,7 @@ import re
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 # Import custom authentication module
-from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db
+from web_apps.oi_pro.auth import router as auth_router, init_db, get_current_user, check_admin, User, BrokerCredential, db, get_token
 
 # --- Global Background Token Cache ---
 # Replaced with redis_wrapper.get_raw("token:admin")
@@ -59,7 +68,11 @@ from datetime import datetime
 SYMBOL_MAP = {
     "NIFTY": "NSE_INDEX|Nifty 50",
     "BANKNIFTY": "NSE_INDEX|Nifty Bank",
-    "SENSEX": "BSE_INDEX|SENSEX"
+    "FINNIFTY": "NSE_INDEX|Nifty Fin Service",
+    "NIFTYIT": "NSE_INDEX|Nifty IT",
+    "MIDCPNIFTY": "NSE_INDEX|NIFTY MID SELECT",
+    "SENSEX": "BSE_INDEX|SENSEX",
+    "NIFTY PHARMA": "NSE_INDEX|Nifty Pharma",
 }
 # Reverse map for broadcasting
 KEY_TO_SYMBOL = {v: k for k, v in SYMBOL_MAP.items()}
@@ -247,7 +260,12 @@ STRATEGIES_INFO = {
 }
 
 class StrategyManager:
+    """
+    Manages background strategy processes.
+    Handles starting, stopping, monitoring logs, and tracking PnL state.
+    """
     def __init__(self):
+        """Initializes the StrategyManager with empty tracking dicts."""
         self.processes: Dict[str, subprocess.Popen] = {}
         self.start_times: Dict[str, datetime] = {}
         self.log_files: Dict[str, object] = {}
@@ -415,7 +433,7 @@ class StrategyManager:
                 except HTTPException as he:
                     raise he
                 except Exception as e:
-                    print(f"Error sending stop signal: {e}")
+                    logger.error(f"[CORE] Error sending stop signal: {e}")
 
             # B. Force Terminate if still running
             if proc.poll() is None:
@@ -529,7 +547,7 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
     """
     Get data for Premium vs PoP Scatter Plot.
     """
-    print(f" [CORE] [PoP API] Request received for {symbol} expiry {expiry}")
+    logger.info(f"[CORE] [PoP API] Request received for {symbol} expiry {expiry}")
     try:
         instrument_key = SYMBOL_MAP.get(symbol.upper())
         if not instrument_key:
@@ -538,14 +556,14 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
         token = await get_access_token(current_user)
         
         # Run blocking call in threadpool to prevent freezing the server
-        print(f" [PoP API] Fetching option chain for {instrument_key}...")
+        logger.info(f"[UPSTOX] [PoP API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
         
         if df is None or df.empty:
-            print(f" [PoP API] No data found for {symbol}")
+            logger.warning(f"[UPSTOX] [PoP API] No data found for {symbol}")
             return {"data": []}
             
-        print(f" [PoP API] Processing {len(df)} rows...")
+        logger.info(f"[CORE] [PoP API] Processing {len(df)} rows...")
         
         # Process DataFrame for Chart
         points = []
@@ -594,7 +612,7 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
         # Sort by PoP for clean rendering if needed
         points.sort(key=lambda x: x['pop'], reverse=True)
         
-        print(f" [PoP API] Returning {len(points)} data points")
+        logger.info(f"[CORE] [PoP API] Returning {len(points)} data points")
         return {"data": points}
         
     except HTTPException as he:
@@ -894,7 +912,7 @@ class ConnectionManager:
     async def subscribe(self, websocket: WebSocket, instrument_keys: List[str]):
         """Subscribe a websocket to specific instrument keys"""
         normalized_keys = [k.replace(':', '|') for k in instrument_keys]
-        print(f" [WS] Subscribing socket to: {normalized_keys}")
+        logger.info(f"[UPSTOX] [WS] Subscribing socket to: {normalized_keys}")
         for key in normalized_keys:
             if key not in self.subscriptions:
                 self.subscriptions[key] = []
@@ -908,7 +926,7 @@ class ConnectionManager:
             except HTTPException as he:
                 raise he
             except Exception as e:
-                print(f" [WS] Error subscribing to keys {normalized_keys}: {e}")
+                logger.error(f"[UPSTOX] [WS] Error subscribing to keys {normalized_keys}: {e}")
 
     async def broadcast(self, message: dict):
         """
@@ -929,7 +947,7 @@ class ConnectionManager:
                 except HTTPException as he:
                     raise he
                 except Exception as e:
-                    print(f" [WS] Disconnecting broken pipe for {instrument_key}")
+                    logger.warning(f"[UPSTOX] [WS] Disconnecting broken pipe for {instrument_key}")
                     to_remove.append(connection)
             for conn in to_remove:
                 self.disconnect(conn)
@@ -1003,7 +1021,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
          return
 
     await manager.connect(websocket)
-    print(" [WS] New Straddle WS Connection")
+    logger.info("[CORE] [WS] New Straddle WS Connection")
     try:
         while True:
             # Flexible: accept text or json
@@ -1015,9 +1033,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
                     keys = [k.replace(':', '|') for k in msg.get("keys", [])]
                     await manager.subscribe(websocket, keys)
             except json.JSONDecodeError:
-                print(f" [WS] Invalid JSON received: {data}")
+                logger.warning(f"[CORE] [WS] Invalid JSON received: {data}")
     except WebSocketDisconnect:
-        print(" [WS] Straddle WS Disconnected")
+        logger.info("[CORE] [WS] Straddle WS Disconnected")
         manager.disconnect(websocket)
 
 @app.websocket("/ws/cumulative-prices")
@@ -1037,7 +1055,7 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
          await websocket.close(code=1008)
          return
     await manager.connect(websocket)
-    print(" [WS] [CumulativePrices] New connection")
+    logger.info("[CORE] [WS] [CumulativePrices] New connection")
 
     ce_keys = []
     pe_keys = []
@@ -1058,7 +1076,7 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                         symbol = msg.get("symbol", "NIFTY").upper()
                         expiry = msg.get("expiry")
                         if symbol and expiry:
-                            print(f" [WS] [CumulativePrices] Subscribing {symbol} {expiry}...")
+                            logger.info(f"[UPSTOX] [WS] [CumulativePrices] Subscribing {symbol} {expiry}...")
                             await websocket.send_json({"type": "status", "status": "loading", "symbol": symbol})
 
                             token = await get_access_token(current_user)
@@ -1078,16 +1096,16 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                                     try:
                                         streamer.subscribe_market_data(all_option_keys, mode="ltpc")
                                     except Exception as sub_err:
-                                        print(f" [WS] [CumulativePrices] Subscription error: {sub_err}")
+                                        logger.error(f"[UPSTOX] [WS] [CumulativePrices] Subscription error: {sub_err}")
 
                                 # Also subscribe the index key so Spot price is always available
                                 if streamer and index_key:
                                     try:
                                         streamer.subscribe_market_data([index_key], mode="ltpc")
                                     except Exception as idx_err:
-                                        print(f" [WS] [CumulativePrices] Index key subscription error: {idx_err}")
+                                        logger.error(f"[UPSTOX] [WS] [CumulativePrices] Index key subscription error: {idx_err}")
 
-                                print(f" [WS] [CumulativePrices] {len(ce_keys)} CE + {len(pe_keys)} PE keys for {symbol}")
+                                logger.info(f"[CORE] [WS] [CumulativePrices] {len(ce_keys)} CE + {len(pe_keys)} PE keys for {symbol}")
                                 # Reset open baseline whenever user re-subscribes
                                 ce_open = None
                                 pe_open = None
@@ -1181,12 +1199,12 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
             except HTTPException as he:
                 raise he
             except Exception as e:
-                print(f" [WS] [CumulativePrices] Loop Error: {e}")
+                logger.error(f"[CORE] [WS] [CumulativePrices] Loop Error: {e}")
                 import traceback; traceback.print_exc()
                 await asyncio.sleep(1)
     finally:
         manager.disconnect(websocket)
-        print(" [WS] [CumulativePrices] Disconnected")
+        logger.info("[CORE] [WS] [CumulativePrices] Disconnected")
 
 async def startup_event_ws():
     """
@@ -1195,12 +1213,12 @@ async def startup_event_ws():
     """
     global streamer, loop
     loop = asyncio.get_event_loop()
-    print(" Starting Upstox WebSocket Bridge...")
+    logger.info("[UPSTOX] [WS] Starting Upstox WebSocket Bridge...")
     try:
         # Initialize streamer with access token
         token = await get_access_token()
         if not token:
-            print(" [WS] No token available yet. Streamer will initialize on first user login.")
+            logger.info("[UPSTOX] [WS] No token available yet. Streamer will initialize on first user login.")
             return
 
         streamer = UpstoxStreamer(token)
@@ -1212,10 +1230,10 @@ async def startup_event_ws():
                 
         # Connect streamer
         indices_keys = list(SYMBOL_MAP.values())
-        print(f" Subscribing to Dashboard Indices: {indices_keys}")
+        logger.info(f"[UPSTOX] [WS] Subscribing to Dashboard Indices: {indices_keys}")
 
         # --- Pre-fetch Previous Closes for Indices ---
-        print(" Pre-fetching previous closes for indices...")
+        logger.info("[UPSTOX] [WS] Pre-fetching previous closes for indices...")
         for sym, key in SYMBOL_MAP.items():
             try:
                 # Fetch last 5 days daily candles
@@ -1243,13 +1261,13 @@ async def startup_event_ws():
                         prev_close = last_row['close']
                     if prev_close > 0:
                         redis_wrapper.hset_json("PREV_CLOSES", sym, prev_close)
-                        print(f"    {sym}: Prev Close = {prev_close}")
+                        logger.info(f"[UPSTOX] [WS]    {sym}: Prev Close = {prev_close}")
                 else:
-                    print(f"    {sym}: No historical data found")
+                    logger.warning(f"[UPSTOX] [WS]    {sym}: No historical data found")
             except HTTPException as he:
                 raise he
             except Exception as e:
-                print(f"    {sym}: Failed to fetch history: {e}")
+                logger.error(f"[UPSTOX] [WS]    {sym}: Failed to fetch history: {e}")
 
         # --- Prefetch Option Master for LTP Lookup ---
         asyncio.create_task(prefetch_option_master())
@@ -1264,20 +1282,20 @@ async def startup_event_ws():
             mode="ltpc", 
             on_message=on_market_update
         )
-        print(" Upstox Streamer Connected & Listening")
+        logger.info("[UPSTOX] [WS] Upstox Streamer Connected & Listening")
         
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f" Failed to initialize Upstox Streamer: {e}")
+        logger.error(f"[UPSTOX] [WS] Failed to initialize Upstox Streamer: {e}")
 
 async def prefetch_option_master():
     """Fetches option chains for all indices to populate symbol_lookup in Redis."""  
-    print(" [Dashboard] Prefetching Option Master for LTP Lookup...")
+    logger.info("[CORE] [Dashboard] Prefetching Option Master for LTP Lookup...")
     try:
         token = await get_access_token()
         if not token:
-            print(" [Dashboard] [Warning] No access token available for prefetch_option_master. Skipping.")
+            logger.warning("[CORE] [Dashboard] [Warning] No access token available for prefetch_option_master. Skipping.")
             return
         
         for symbol, index_key in SYMBOL_MAP.items():
@@ -1307,16 +1325,16 @@ async def prefetch_option_master():
                                     redis_wrapper.set_raw(f"symbol_lookup:PE {int(strike)}", pe_k)
                                     count += 1
 
-                print(f"   Mapped {count} options for {symbol}")
+                logger.info(f"[CORE] [Dashboard]   Mapped {count} options for {symbol}")
             except HTTPException as he:
                 raise he
             except Exception as e:
-                print(f"    Failed to prefetch {symbol}: {e}")
+                logger.error(f"[CORE] [Dashboard]    Failed to prefetch {symbol}: {e}")
                 
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f" Prefetch failed: {e}")
+        logger.error(f"[CORE] [Dashboard] Prefetch failed: {e}")
 
 async def load_todays_data():
     """
@@ -1333,11 +1351,11 @@ async def fetch_baseline_oi():
     are always relative to the previous session's closing OI regardless of
     when the server was started or restarted during the trading day.
     """
-    print("IN [CORE] [Baseline OI] Fetching previous session OI...")
+    logger.info("[CORE] [Baseline OI] Fetching previous session OI...")
     try:
         token = await get_access_token()
         if not token:
-            print("[CORE] [Warning] No access token available for fetch_baseline_oi. Skipping.")
+            logger.warning("[CORE] [Baseline OI] [Warning] No access token available for fetch_baseline_oi. Skipping.")
             return
         for symbol in SYMBOL_MAP.keys():
             index_key = SYMBOL_MAP.get(symbol)
@@ -1366,14 +1384,14 @@ async def fetch_baseline_oi():
                 redis_wrapper.hset_json("BASELINE_OI", key, baseline_data)
                 count += 1
 
-            print(f"    [Baseline OI] {symbol} {expiry}: Stored {count} strikes")
+            logger.info(f"[CORE] [Baseline OI] {symbol} {expiry}: Stored {count} strikes")
 
-        print(f" [CORE] [Baseline OI] Done.")
+        logger.info("[CORE] [Baseline OI] Done.")
     except HTTPException as he:
         raise he
     except Exception as e:
         import traceback; traceback.print_exc()
-        print(f" [CORE] [Baseline OI] Failed: {e}")
+        logger.error(f"[CORE] [Baseline OI] Failed: {e}")
 
 async def unified_background_poller():
     """
@@ -1383,7 +1401,7 @@ async def unified_background_poller():
     3. Handles daily cache rollover.
     This consolidation reduces concurrent tasks and simplifies logging.
     """
-    print(" [CORE] Unified Background Poller started (1-min interval)")
+    logger.info("[CORE] Unified Background Poller started (1-min interval)")
     global LAST_CACHE_RESET_DATE
     from lib.utils.greeks_helper import LOT_SIZE_MAP
     
@@ -1397,7 +1415,7 @@ async def unified_background_poller():
             # --- Daily Cache Reset ---
             today = datetime.now().date()
             if today > LAST_CACHE_RESET_DATE:
-                print(f" [CORE] New day detected ({today}). Resetting all caches.")
+                logger.info(f"[CORE] New day detected ({today}). Resetting all caches.")
                 keys = redis_wrapper.keys("greeks_chain:*") + redis_wrapper.keys("heatmap:*")
                 for k in keys:
                     redis_wrapper.client.delete(k)
@@ -1406,7 +1424,7 @@ async def unified_background_poller():
             token = await get_access_token()
             if not token:
                 if cycle_count == 0 or cycle_count % 30 == 0:
-                    print(" [CORE] [Poller] Waiting for an authorized user to log in...")
+                    logger.info("[CORE] [Poller] Waiting for an authorized user to log in...")
                 await asyncio.sleep(60)
                 continue
 
@@ -1450,7 +1468,7 @@ async def unified_background_poller():
                 try:
                     await run_in_threadpool(greeks_storage.save_snapshot, symbol, expiry, snapshot_df)
                 except Exception as storage_err:
-                    print(f" [Poller] {symbol} Storage error: {storage_err}")
+                    logger.error(f"[CORE] [Poller] {symbol} Storage error: {storage_err}")
 
                 # 2. Delta Heatmap Processing (NIFTY Only)
                 if symbol == "NIFTY":
@@ -1500,7 +1518,7 @@ async def unified_background_poller():
 
             # --- Quiet Mode Logging (Every 5 cycles) ---
             if cycle_count % 5 == 0:
-                print(f" [CORE] Poller Cycle {cycle_count} completed successfully at {datetime.now().strftime('%H:%M:%S')}")
+                logger.info(f"[CORE] Poller Cycle {cycle_count} completed successfully at {datetime.now().strftime('%H:%M:%S')}")
             elif is_nifty_heatmap_updated and cycle_count % 1 == 0:
                  # Even quieter: just a single line if user wants to see movement, else comment out.
                  # Let's keep it very quiet as requested.
@@ -1509,32 +1527,32 @@ async def unified_background_poller():
             await asyncio.sleep(60) 
         except Exception as e:
             import traceback
-            print(f" [CORE] Unified Poller Error: {e}")
-            print(traceback.format_exc())
+            logger.error(f"[CORE] Unified Poller Error: {e}")
+            logger.error(traceback.format_exc())
             await asyncio.sleep(30)
 
 @app.on_event("startup")
 async def startup_event():
     """Consolidated startup sequence: Initialize DB, then let pollers handle the rest lazily."""
-    print("START [CORE] Dashboard Server Starting...")
+    logger.info("[CORE] Dashboard Server Starting...")
     
     # 1. Initialize Authentication Database
     try:
         init_db()
-        print(" [AUTH] Database initialized")
+        logger.info("[AUTH] Database initialized")
     except Exception as e:
-        print(f" [AUTH] [Error] Failed to init DB: {e}")
+        logger.error(f"[AUTH] [Error] Failed to init DB: {e}")
 
     # 2. Launch Background Poller (which will handle lazy init once token is available)
-    print(" [CORE] Launching Background Poller...")
+    logger.info("[CORE] Launching Background Poller...")
     asyncio.create_task(unified_background_poller())
-    print(" [CORE] Server standby mode active.")
+    logger.info("[CORE] Server standby mode active.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     global streamer
     if streamer:
-        print(" Disconnecting Upstox Streamer...")
+        logger.info("[UPSTOX] [WS] Disconnecting Upstox Streamer...")
         streamer.disconnect_all()
 
 @app.websocket("/ws/market-watch")
@@ -1591,7 +1609,7 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Market Watch WS Error: {e}")
+        logger.error(f"[CORE] Market Watch WS Error: {e}")
         manager.disconnect(websocket)
 
 @app.get("/stock-dashboard", response_class=HTMLResponse)
@@ -1608,6 +1626,24 @@ async def get_indices_dashboard(request: Request):
     """Serves the Unified HTML for the Indices Dashboard"""
     try:
         html_path = Path(__file__).parent / "indices_dashboard.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/market-watch", response_class=HTMLResponse)
+async def get_market_watch(request: Request):
+    """Serves the Unified HTML for the Market Watch Dashboard"""
+    try:
+        html_path = Path(__file__).parent / "market_watch.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/future-intraday", response_class=HTMLResponse)
+async def get_future_intraday(request: Request):
+    """Serves the Unified HTML for the Future Intraday Buildup"""
+    try:
+        html_path = Path(__file__).parent / "future_intraday.html"
         return HTMLResponse(content=html_path.read_text())
     except Exception as e:
         return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
@@ -1672,7 +1708,7 @@ async def get_market_quote(
         
     except Exception as e:
         import traceback
-        print(f"Error fetching market quote API: {e}")
+        logger.error(f"[UPSTOX] [Dashboard] Error fetching market quote API: {e}")
         return {"status": "error", "message": str(e)}
 
 # Duplicate consolidated (see line 647)
@@ -1713,7 +1749,7 @@ async def get_access_token(user: User = None):
                 if is_valid:
                     return token
                 else:
-                    print(f" [CORE] [Auth] Database token for {user.email} is invalid. Clearing.")
+                    logger.warning(f"[CORE] [Auth] Database token for {user.email} is invalid. Clearing.")
                     broker.access_token = None
                     broker.status = "Expired"
                     broker.save()
@@ -1740,23 +1776,23 @@ async def get_access_token(user: User = None):
                 token = broker.access_token
                 is_valid = await run_in_threadpool(validate_token, token)
                 if is_valid:
-                    print(f" [CORE] [Auth] [Background] Using token from active user: {broker.user.email}")
+                    logger.info(f"[CORE] [Auth] [Background] Using token from active user: {broker.user.email}")
                     if token:
                         redis_wrapper.set_raw("token:admin", token, ex=300)
                     return token
                 else:
-                    print(f" [CORE] [Auth] [Background] Token for {broker.user.email} invalid. Clearing.")
+                    logger.warning(f"[CORE] [Auth] [Background] Token for {broker.user.email} invalid. Clearing.")
                     broker.access_token = None
                     broker.status = "Expired"
                     broker.save()
         except Exception as e:
-            print(f" [CORE] [Auth] Error in User-Powered Background Polling: {e}")
+            logger.error(f"[CORE] [Auth] Error in User-Powered Background Polling: {e}")
 
     # --- Case 3: Fallback to .env ---
     try:
         token = await run_in_threadpool(auth_get_token, auto_refresh=True)
     except Exception as e:
-        print(f" [CORE] [Auth] .env Auth fallback failed: {e}")
+        logger.error(f"[CORE] [Auth] .env Auth fallback failed: {e}")
         token = None
     if not token:
         # If specific user requested, we raise error
@@ -2080,6 +2116,22 @@ async def serve_option_chain_page():
     content = await run_in_threadpool(read_file, html_path)
     return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
+@app.get("/oi-buildup", response_class=HTMLResponse)
+async def serve_oi_buildup_page():
+    """
+    Serves the OI Buildup Visualization page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "oi_buildup.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="oi_buildup.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
 @app.get("/privacy", response_class=HTMLResponse)
 async def serve_privacy_page():
     """
@@ -2193,7 +2245,7 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
     Get Greeks (Delta, Gamma) data per strike.
     Appends new data to a global cache history.
     """
-    print(f" [CORE] [Greeks API] Request received for {symbol} expiry {expiry}")
+    logger.info(f"[CORE] [Greeks API] Request received for {symbol} expiry {expiry}")
     try:
         instrument_key = SYMBOL_MAP.get(symbol.upper())
         if not instrument_key:
@@ -2202,7 +2254,7 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
         token = await get_access_token(current_user)
         
         # 1. Fetch Option Chain
-        print(f" [Greeks API] Fetching option chain for {instrument_key}...")
+        logger.info(f"[UPSTOX] [Greeks API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
         
         if df is None or df.empty:
@@ -2244,9 +2296,9 @@ async def get_greeks_data(current_user: User = Depends(get_current_user),
         try:
             await run_in_threadpool(greeks_storage.save_snapshot, symbol, expiry, snapshot_df)
         except Exception as storage_err:
-            print(f" [Greeks API] Storage error: {storage_err}")
+            logger.error(f"[CORE] [Greeks API] Storage error: {storage_err}")
                 
-        print(f" [Greeks API] Storage complete for {symbol}")
+        logger.info(f"[CORE] [Greeks API] Storage complete for {symbol}")
         # 3. Prepare Response (Return LATEST snapshot for the chart)
         # Clean NaNs/Infs
         snapshot_df = snapshot_df.replace([float('inf'), float('-inf')], 0).fillna(0)
@@ -2341,8 +2393,7 @@ async def get_gex_history(symbol: str = "NIFTY", expiry: str = None, current_use
     except HTTPException as he:
         raise he
     except Exception as e:
-        import traceback; traceback.print_exc()
-        print(f"Error fetching GEX history: {e}")
+        logger.error(f"[CORE] Error fetching GEX history: {e}")
         return {"status": "error", "message": str(e)}
 
 # Duplicate heatmap handler removed (already defined at line 1701)
@@ -2410,7 +2461,8 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
             
             #  Baseline lookup  fetched once at startup from the live option chain 
             # BASELINE_OI is the single source of truth for day-start (9:15 AM) comparisons.
-            baseline_key = f"{symbol.upper()}:{expiry}:{strike}"
+            # Redis strikes are saved as floats in neo_api format (e.g., 24900.0)
+            baseline_key = f"{symbol.upper()}:{expiry}:{float(strike)}"
             baseline = redis_wrapper.hget_json("BASELINE_OI", baseline_key) or {}
             
             valid_ce_prev_oi = baseline.get("ce_prev_oi", 0) or 0
@@ -2505,7 +2557,7 @@ async def get_delta_heatmap(symbol: str = "NIFTY", expiry: str = None, resolutio
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
-        print(err_msg, file=sys.stderr)
+        logger.error(err_msg)
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/strike-greeks-history")
@@ -2541,7 +2593,7 @@ async def get_strike_greeks_history(symbol: str = Query(..., description="Symbol
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Error fetching strike greeks history: {e}")
+        logger.error(f"[CORE] Error fetching strike greeks history: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/pcr-data")
@@ -2552,7 +2604,7 @@ async def get_pcr_data(current_user: User = Depends(get_current_user),
     Get data for PCR by Strike Grid.
     Returns list of {strike, pcr, sentiment, ce_oi, pe_oi, call_writer_domination, put_writer_domination}
     """
-    print(f" [CORE] [PCR API] Request received for {symbol} expiry {expiry}")
+    logger.info(f"[CORE] [PCR API] Request received for {symbol} expiry {expiry}")
     try:
         instrument_key = SYMBOL_MAP.get(symbol.upper())
         if not instrument_key:
@@ -2560,7 +2612,7 @@ async def get_pcr_data(current_user: User = Depends(get_current_user),
             
         token = await get_access_token(current_user)
         
-        print(f" [UPSTOX] [PCR API] Fetching option chain for {instrument_key}...")
+        logger.info(f"[UPSTOX] [PCR API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
         
         if df is None or df.empty:
@@ -2623,7 +2675,7 @@ async def get_pcr_data(current_user: User = Depends(get_current_user),
         # Sort by Strike
         grid_data.sort(key=lambda x: x['strike'])
         
-        print(f" [CORE] [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
+        logger.info(f"[CORE] [PCR API] Returning {len(grid_data)} rows, spot={spot_price}")
         return {"data": grid_data, "spot_price": spot_price}
         
     except HTTPException as he:
@@ -2645,7 +2697,7 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
     - iv_data: Array of {strike, ce_iv, pe_iv}
     - spot_price: Current spot price
     """
-    print(f" [CORE] [Max Pain API] Request received for {symbol} expiry {expiry}")
+    logger.info(f"[CORE] [Max Pain API] Request received for {symbol} expiry {expiry}")
     try:
         instrument_key = SYMBOL_MAP.get(symbol.upper())
         if not instrument_key:
@@ -2653,7 +2705,7 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
             
         token = await get_access_token(current_user)
         
-        print(f" [Max Pain API] Fetching option chain for {instrument_key}...")
+        logger.info(f"[UPSTOX] [Max Pain API] Fetching option chain for {instrument_key}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, instrument_key, expiry)
         
         if df is None or df.empty:
@@ -2669,13 +2721,16 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
             ce_iv = row.get('ce_iv') or 0
             pe_iv = row.get('pe_iv') or 0
             
-            # Only include strikes with valid IV data
-            if ce_iv > 0 or pe_iv > 0:
-                iv_data.append({
-                    "strike": strike,
-                    "ce_iv": round(ce_iv, 2) if ce_iv else 0,
-                    "pe_iv": round(pe_iv, 2) if pe_iv else 0
-                })
+            # Include all strikes; filtering will be done on the frontend to allow more flexibility
+            iv_data.append({
+                "strike": strike,
+                "ce_iv": round(ce_iv, 2) if ce_iv else 0,
+                "pe_iv": round(pe_iv, 2) if pe_iv else 0,
+                "ce_oi": row.get('ce_oi') or 0,
+                "pe_oi": row.get('pe_oi') or 0,
+                "ce_volume": row.get('ce_volume') or 0,
+                "pe_volume": row.get('pe_volume') or 0
+            })
         
         # Sort by strike
         iv_data.sort(key=lambda x: x['strike'])
@@ -2683,7 +2738,7 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
         # Get spot price
         spot_price = df['spot_price'].iloc[0] if not df.empty else 0
         
-        print(f" [Max Pain API] Max Pain Strike: {max_pain_result['max_pain_strike']}, IV Data Points: {len(iv_data)}")
+        logger.info(f"[CORE] [Max Pain API] Max Pain Strike: {max_pain_result['max_pain_strike']}, IV Data Points: {len(iv_data)}")
         
         return {
             "status": "success",
@@ -2874,7 +2929,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
     Returns:
         JSON containing time-series data for chart and KPI metrics.
     """
-    print(f" [CORE] [Straddle API] Request for {symbol} expiry {expiry}")
+    logger.info(f"[CORE] [Straddle API] Request for {symbol} expiry {expiry}")
     try:
         token = await get_access_token(current_user)
         key = SYMBOL_MAP.get(symbol.upper())
@@ -2910,7 +2965,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         # Get list of all strikes for the dropdown
         all_strikes = sorted(df['strike_price'].unique().tolist())
         
-        print(f" Target Strike: {target_strike} | CE: {ce_key} | PE: {pe_key}")
+        logger.info(f"[CORE] [Straddle API] Target Strike: {target_strike} | CE: {ce_key} | PE: {pe_key}")
         
         # 2. Fetch Intraday Data for both legs
         ce_candles = await run_in_threadpool(get_intraday_data_v3, token, ce_key, "minute", 1)
@@ -3023,7 +3078,7 @@ async def get_strike_data(symbol: str = "NIFTY", expiry: str = None, strike: flo
     Fetches intraday data for a specific strike's CE and PE legs.
     Returns: {ce_oi, pe_oi, ce_ltp, pe_ltp} time-series.
     """
-    print(f" [UPSTOX] [Strike API] Request for {symbol} {strike} {expiry}")
+    logger.info(f"[CORE] [Strike API] Request for {symbol} {strike} {expiry}")
     try:
         token = await get_access_token(current_user)
         key = SYMBOL_MAP.get(symbol.upper())
@@ -3157,7 +3212,7 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
             except HTTPException as he:
                 raise he
             except Exception as e:
-                print(f"Error fetching {leg.instrument_key}: {e}")
+                logger.error(f"[CORE] Error fetching {leg.instrument_key}: {e}")
                 return {"leg": leg, "data": None}
 
     tasks = [fetch_candle(leg) for leg in legs]
@@ -3244,7 +3299,7 @@ async def get_cumulative_oi(symbol: str = "NIFTY", expiry: str = None, strike_ra
     4. Calculates cumulative change using Yesterday's close (prev_oi) as baseline.
     5. Computes momentum (Direction of Change) and PCR metrics.
     """
-    print(f" [UPSTOX] [Cumulative OI] Fetching data for {symbol} expiry {expiry}")
+    logger.info(f"[CORE] [Cumulative OI] Fetching data for {symbol} expiry {expiry}")
     try:
         token = await get_access_token(current_user)
         key = SYMBOL_MAP.get(symbol.upper())
@@ -3516,12 +3571,12 @@ async def get_multi_strike_oi_data(
     """
     Fetches intraday OI history for multiple selected strikes (CE and PE).
     """
-    print(f" [UPSTOX] [Multi-Strike OI] Request: {symbol} | {expiry} | Strikes: {strikes}")
+    logger.info(f"[CORE] [Multi-Strike OI] Request: {symbol} | {expiry} | Strikes: {strikes}")
     try:
         token = await get_access_token(current_user)
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
-            print(f" [UPSTOX] [Multi-Strike OI] Invalid symbol: {symbol}")
+            logger.warning(f"[CORE] [Multi-Strike OI] Invalid symbol: {symbol}")
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
         strike_list = [float(s.strip()) for s in strikes.split(",") if s.strip()]
@@ -3529,22 +3584,22 @@ async def get_multi_strike_oi_data(
             raise HTTPException(status_code=400, detail="No strikes provided")
 
         # 1. Get Option Chain to find keys for all strikes
-        print(f" [UPSTOX] [Multi-Strike OI] Fetching chain for {symbol} {expiry}...")
+        logger.info(f"[UPSTOX] [Multi-Strike OI] Fetching chain for {symbol} {expiry}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, underlying_key, expiry)
         if df is None or df.empty:
-            print(f" [UPSTOX] [Multi-Strike OI] No option chain found")
+            logger.warning("[UPSTOX] [Multi-Strike OI] No option chain found")
             raise HTTPException(status_code=404, detail="No option chain data")
             
         df_subset = df[df['strike_price'].isin(strike_list)].copy()
         if df_subset.empty:
-            print(f" [UPSTOX] [Multi-Strike OI] Strikes {strike_list} not found in chain")
+            logger.warning(f"[UPSTOX] [Multi-Strike OI] Strikes {strike_list} not found in chain")
             raise HTTPException(status_code=404, detail="Selected strikes not found in chain")
             
         # 2. Fetch Intraday data for all selected legs
         _sem = asyncio.Semaphore(5)
         async def fetch_candle(instr_key, strike, type):
             async with _sem:
-                print(f" [UPSTOX] [Multi-Strike OI] Fetching {strike} {type} ({instr_key})")
+                logger.info(f"[UPSTOX] [Multi-Strike OI] Fetching {strike} {type} ({instr_key})")
                 res = await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
                 await asyncio.sleep(0.05)
                 return res
@@ -3560,7 +3615,7 @@ async def get_multi_strike_oi_data(
             tasks.append(fetch_candle(row['pe_key'], row['strike_price'], "PE"))
             
         results = await asyncio.gather(*tasks)
-        print(f" [UPSTOX] [Multi-Strike OI] Gathered {len(results)} legs")
+        logger.info(f"[UPSTOX] [Multi-Strike OI] Gathered {len(results)} legs")
         
         # 3. Process and Align
         all_dfs = []
@@ -3569,7 +3624,7 @@ async def get_multi_strike_oi_data(
             col_name = f"{int(m['strike'])}_{m['type']}"
             
             if not candles: 
-                print(f" [UPSTOX] [Multi-Strike OI] No data for {col_name}")
+                logger.warning(f"[UPSTOX] [Multi-Strike OI] No data for {col_name}")
                 continue
             
             df_leg = pd.DataFrame(candles)[['timestamp', 'oi']].rename(columns={'oi': col_name})
@@ -3577,7 +3632,7 @@ async def get_multi_strike_oi_data(
             all_dfs.append(df_leg)
             
         if not all_dfs:
-            print(f" [UPSTOX] [Multi-Strike OI] All legs returned empty")
+            logger.warning("[UPSTOX] [Multi-Strike OI] All legs returned empty")
             return {"status": "success", "data": [], "metadata": {"strikes": strike_list}}
             
         # Outer merge all dataframes on timestamp
@@ -3589,7 +3644,7 @@ async def get_multi_strike_oi_data(
         merged = merged.sort_values('timestamp').ffill().fillna(0)
         merged['timestamp'] = merged['timestamp'].dt.strftime('%H:%M')
         
-        print(f" [UPSTOX] [Multi-Strike OI] Success. Rows: {len(merged)}")
+        logger.info(f"[UPSTOX] [Multi-Strike OI] Success. Rows: {len(merged)}")
         return {
             "status": "success",
             "metadata": {
@@ -3606,7 +3661,7 @@ async def get_multi_strike_oi_data(
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f" [UPSTOX] [Multi-Strike OI] Error: {str(e)}")
+        logger.error(f"[UPSTOX] [Multi-Strike OI] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/multi-strike-price-data")
@@ -3619,12 +3674,12 @@ async def get_multi_strike_price_data(
     """
     Fetches intraday Price history for multiple selected strikes (CE and PE).
     """
-    print(f" [UPSTOX] [Multi-Strike Price] Request: {symbol} | {expiry} | Strikes: {strikes}")
+    logger.info(f"[UPSTOX] [Multi-Strike Price] Request: {symbol} | {expiry} | Strikes: {strikes}")
     try:
         token = await get_access_token(current_user)
         underlying_key = SYMBOL_MAP.get(symbol.upper())
         if not underlying_key:
-            print(f" [UPSTOX] [Multi-Strike Price] Invalid symbol: {symbol}")
+            logger.warning(f"[UPSTOX] [Multi-Strike Price] Invalid symbol: {symbol}")
             raise HTTPException(status_code=400, detail="Invalid symbol")
             
         strike_list = [float(s.strip()) for s in strikes.split(",") if s.strip()]
@@ -3632,22 +3687,22 @@ async def get_multi_strike_price_data(
             raise HTTPException(status_code=400, detail="No strikes provided")
 
         # 1. Get Option Chain to find keys for all strikes
-        print(f" [UPSTOX] [Multi-Strike Price] Fetching chain for {symbol} {expiry}...")
+        logger.info(f"[UPSTOX] [Multi-Strike Price] Fetching chain for {symbol} {expiry}...")
         df = await run_in_threadpool(get_option_chain_dataframe, token, underlying_key, expiry)
         if df is None or df.empty:
-            print(f" [UPSTOX] [Multi-Strike Price] No option chain found")
+            logger.warning("[UPSTOX] [Multi-Strike Price] No option chain found")
             raise HTTPException(status_code=404, detail="No option chain data")
             
         df_subset = df[df['strike_price'].isin(strike_list)].copy()
         if df_subset.empty:
-            print(f" [UPSTOX] [Multi-Strike Price] Strikes {strike_list} not found in chain")
+            logger.warning(f"[UPSTOX] [Multi-Strike Price] Strikes {strike_list} not found in chain")
             raise HTTPException(status_code=404, detail="Selected strikes not found in chain")
             
         # 2. Fetch Intraday data for all selected legs
         _sem = asyncio.Semaphore(5)
         async def fetch_candle(instr_key, strike, type):
             async with _sem:
-                print(f" [UPSTOX] [Multi-Strike Price] Fetching {strike} {type} ({instr_key})")
+                logger.info(f"[UPSTOX] [Multi-Strike Price] Fetching {strike} {type} ({instr_key})")
                 res = await run_in_threadpool(get_intraday_data_v3, token, instr_key, "minute", 1)
                 await asyncio.sleep(0.05)
                 return res
@@ -3663,7 +3718,7 @@ async def get_multi_strike_price_data(
             tasks.append(fetch_candle(row['pe_key'], row['strike_price'], "PE"))
             
         results = await asyncio.gather(*tasks)
-        print(f" [UPSTOX] [Multi-Strike Price] Gathered {len(results)} legs")
+        logger.info(f"[UPSTOX] [Multi-Strike Price] Gathered {len(results)} legs")
         
         # 3. Process and Align
         all_dfs = []
@@ -3672,7 +3727,7 @@ async def get_multi_strike_price_data(
             col_name = f"{int(m['strike'])}_{m['type']}"
             
             if not candles: 
-                print(f" [UPSTOX] [Multi-Strike Price] No data for {col_name}")
+                logger.warning(f"[UPSTOX] [Multi-Strike Price] No data for {col_name}")
                 continue
             
             df_leg = pd.DataFrame(candles)[['timestamp', 'close']].rename(columns={'close': col_name})
@@ -3680,7 +3735,7 @@ async def get_multi_strike_price_data(
             all_dfs.append(df_leg)
             
         if not all_dfs:
-            print(f" [UPSTOX] [Multi-Strike Price] All legs returned empty")
+            logger.warning("[UPSTOX] [Multi-Strike Price] All legs returned empty")
             return {"status": "success", "data": [], "metadata": {"strikes": strike_list}}
             
         # Outer merge all dataframes on timestamp
@@ -3692,7 +3747,7 @@ async def get_multi_strike_price_data(
         merged = merged.sort_values('timestamp').ffill().fillna(0)
         merged['timestamp'] = merged['timestamp'].dt.strftime('%H:%M')
         
-        print(f" [UPSTOX] [Multi-Strike Price] Success. Rows: {len(merged)}")
+        logger.info(f"[UPSTOX] [Multi-Strike Price] Success. Rows: {len(merged)}")
         return {
             "status": "success",
             "metadata": {
@@ -3709,8 +3764,391 @@ async def get_multi_strike_price_data(
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f" [UPSTOX] [Multi-Strike Price] Error: {str(e)}")
+        logger.error(f"[UPSTOX] [Multi-Strike Price] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/future-intraday")
+async def get_future_intraday_api(
+    symbol: str = Query("NIFTY"),
+    timeframe: int = Query(3)
+):
+    """Fetch intraday future buildup data"""
+    try:
+        from lib.api.historical import get_intraday_data_v3
+        from lib.utils.instrument_utils import get_future_instrument_key
+        # get_access_token and calculate_buildup are in the global scope of main.py
+        
+        access_token = await get_access_token()
+        if not access_token:
+            return {"status": "error", "message": "Access token not found"}
+            
+        from lib.api.market_data import download_nse_market_data
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        
+        instrument_key = get_future_instrument_key(symbol, nse_data)
+        if not instrument_key:
+            return {"status": "error", "message": f"Future key not found for {symbol}"}
+            
+        # Fetch Intraday Data
+        candles = await run_in_threadpool(get_intraday_data_v3, access_token, instrument_key, "minute", timeframe)
+        if not candles:
+            # Fallback to daily data if intraday fails or market hasn't opened?
+            return {"status": "error", "message": f"No intraday data found for {symbol} {timeframe}m"}
+            
+        # Process Buildup
+        processed = []
+        for i in range(1, len(candles)):
+            curr = candles[i]
+            prev = candles[i-1]
+            
+            # Use close-to-close for buildup
+            price_chg = curr['close'] - prev['close']
+            price_chg_pct = (price_chg / prev['close']) * 100 if prev['close'] != 0 else 0
+            oi_chg = curr['oi'] - prev['oi']
+            oi_chg_pct = (oi_chg / prev['oi']) * 100 if prev['oi'] != 0 else 0
+            
+            sentiment = calculate_buildup(price_chg_pct, oi_chg_pct)
+            
+            processed.append({
+                "time": curr['timestamp'], 
+                "price": curr['close'],
+                "price_chg": round(price_chg, 2),
+                "oi": curr['oi'],
+                "oi_chg": oi_chg,
+                "sentiment": sentiment
+            })
+            
+        # Sort by time descending (latest first)
+        processed.sort(key=lambda x: x['time'], reverse=True)
+        
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "data": processed
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.get("/future-price-oi", response_class=HTMLResponse)
+async def future_price_oi_page():
+    try:
+        html_path = Path(__file__).parent / "future_price_oi.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/api/future-price-oi-history")
+async def get_future_price_oi_history(symbol: str = Query("NIFTY")):
+    """Fetch 1m intraday historical data for Future Price vs OI chart"""
+    try:
+        from lib.api.historical import get_intraday_data_v3
+        from lib.utils.instrument_utils import get_future_instrument_key
+        
+        access_token = await get_access_token()
+        if not access_token:
+            return {"status": "error", "message": "Access token not found"}
+            
+        from lib.api.market_data import download_nse_market_data
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        
+        instrument_key = get_future_instrument_key(symbol, nse_data)
+        if not instrument_key:
+            return {"status": "error", "message": f"Future key not found for {symbol}"}
+            
+        # Fetch Intraday 1-minute Data
+        candles = await run_in_threadpool(get_intraday_data_v3, access_token, instrument_key, "minute", 1)
+        if not candles:
+            return {"status": "error", "message": f"No intraday data found for {symbol}"}
+            
+        # 2. Get Spot Price for Header
+        index_key = SYMBOL_MAP.get(symbol, f"NSE_INDEX|{symbol}")
+        spot_price = 0
+        try:
+            from lib.api.market_data import get_full_market_quote
+            quotes = await run_in_threadpool(get_full_market_quote, access_token, [index_key])
+            if quotes and index_key in quotes:
+                spot_price = quotes[index_key].get('last_price', 0)
+        except:
+            pass
+
+        processed = []
+        for curr in candles:
+            processed.append({
+                "time": curr['timestamp'], 
+                "price": curr['close'],
+                "oi": curr['oi']
+            })
+            
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "instrument_key": instrument_key,
+            "index_key": index_key,
+            "spot_price": spot_price,
+            "data": processed
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
+
+@app.websocket("/ws/future-price-oi/{symbol}")
+async def future_price_oi_websocket(websocket: WebSocket, symbol: str, token: str = Query(None)):
+    current_user = None
+    try:
+        if token:
+            from web_apps.oi_pro.auth import verify_jwt, get_user
+            email = verify_jwt(token)
+            current_user = get_user(email)
+    except:
+         await websocket.close(code=1008)
+         return
+         
+    global streamer
+    await manager.connect(websocket)
+    
+    try:
+        from lib.utils.instrument_utils import get_future_instrument_key
+        from lib.api.market_data import download_nse_market_data
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        future_key = get_future_instrument_key(symbol, nse_data)
+        index_key = SYMBOL_MAP.get(symbol, f"NSE_INDEX|{symbol}")
+        
+        if not future_key:
+            raise Exception("Future key not found")
+            
+        if streamer is None:
+            token_upstox = await get_access_token(current_user)
+            streamer = UpstoxStreamer(token_upstox)
+            
+        # Ensure we subscribe to full mode for futures so we get OI
+        streamer.connect_market_data(
+            instrument_keys=[future_key],
+            mode="full"
+        )
+        streamer.subscribe_market_data([future_key], mode="full")
+        streamer.subscribe_market_data([index_key], mode="ltpc")
+
+        while True:
+            await asyncio.sleep(1) # Update every second
+            if streamer:
+                f_data = streamer.get_latest_data(future_key)
+                s_data = streamer.get_latest_data(index_key)
+                
+                if f_data and 'ltp' in f_data and 'oi' in f_data:
+                    import time
+                    ts = int(time.time() * 1000)
+                    
+                    await websocket.send_json({
+                        "type": "future-price-oi", 
+                        "time": ts,
+                        "price": f_data['ltp'],
+                        "spot": s_data.get('ltp', 0) if s_data else 0,
+                        "oi": f_data['oi']
+                    })
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        manager.disconnect(websocket)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        manager.disconnect(websocket)
+
+@app.get("/surface-3d", response_class=HTMLResponse)
+async def surface_3d_page():
+    try:
+        html_path = Path("web_apps/oi_pro/surface_3d.html")
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading surface: {e}", status_code=500)
+
+@app.get("/api/option-chain-3d")
+async def api_option_chain_3d(
+    symbol: str = "NIFTY", 
+    surface_type: str = "both",
+    metric: str = "open_interest",
+    use_log_scale: bool = False,
+    min_oi: int = 100,
+    strike_window: float = 20.0,
+    min_dte: int = 0,
+    max_dte: int = 90,
+    theme: str = "dark",
+    user_token: str = Depends(get_token)
+):
+    try:
+        # Use the Upstox access token for actual API calls, not the user JWT
+        upstox_token = auth_get_token()
+        from lib.api.option_chain import get_option_chain, get_expiries
+        from lib.utils.plotting import create_option_3d_surface
+        import json
+        
+        index_key = SYMBOL_MAP.get(symbol, f"NSE_INDEX|{symbol}")
+        if not upstox_token:
+            return {"status": "error", "message": "Upstox access token not found"}
+            
+        # index_key is already set from SYMBOL_MAP or default f"NSE_INDEX|{symbol}"
+        
+        # 2. Fetch all expiries
+        # get_expiries is no longer imported, assuming it's handled internally by get_option_chain or not needed directly.
+        # If get_expiries is still needed, it should be re-imported.
+        # For now, I'll assume the logic for fetching expiries is integrated or simplified.
+        # Re-adding get_expiries as it was used before to get the list of expiries.
+        from lib.api.option_chain import get_expiries
+
+        expiries = await run_in_threadpool(get_expiries, upstox_token, index_key)
+        if not expiries:
+            return {"status": "error", "message": f"No expiries found for {symbol}"}
+            
+        # Limit expiries to those within a 90-day window
+        from datetime import datetime
+        today = datetime.now().date()
+        
+        target_expiries = []
+        for exp in expiries:
+            try:
+                if isinstance(exp, str):
+                    exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                elif hasattr(exp, 'date'):
+                    exp_date = exp.date()
+                else:
+                    exp_date = exp
+                
+                if (exp_date - today).days <= 90:
+                    target_expiries.append(exp)
+            except:
+                continue
+        
+        if not target_expiries:
+            target_expiries = expiries[:5] # Fallback to first few if none in 90d window
+        
+        # 3. Parallelize chain fetching
+        async def fetch_one_expiry(exp):
+            try:
+                # Handle various expiry formats (string, date, datetime)
+                if isinstance(exp, str):
+                    # Robust parsing for "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+                    try:
+                        exp_date = datetime.strptime(exp.split(' ')[0], "%Y-%m-%d").date()
+                    except:
+                        # Fallback for other formats
+                        import dateutil.parser
+                        exp_date = dateutil.parser.parse(exp).date()
+                elif hasattr(exp, 'date'):
+                    exp_date = exp.date()
+                else:
+                    exp_date = exp
+                
+                exp_str = exp_date.strftime("%Y-%m-%d")
+                dte = max(0, (exp_date - today).days)
+                
+                chain = await run_in_threadpool(get_option_chain, upstox_token, index_key, exp_str)
+                if not chain or 'data' not in chain or not chain['data']: return []
+                
+                # Extract underlying price from the response (it might be in root or per strike)
+                up = chain.get('underlying_price') or 0
+                if up == 0 and len(chain['data']) > 0:
+                    up = chain['data'][0].get('underlying_spot_price') or 0
+                
+                rows = []
+                for strike_data in chain['data']:
+                    strike = strike_data.get('strike_price')
+                    
+                    # Process Call Option
+                    ce = strike_data.get('call_options')
+                    if ce:
+                        ce_market = ce.get('market_data', {})
+                        ce_greeks = ce.get('option_greeks', {})
+                        rows.append({
+                            "strike": strike,
+                            "dte": dte,
+                            "iv": ce_greeks.get('iv', 0) or 0,
+                            "volume": ce_market.get('volume', 0) or 0,
+                            "open_interest": ce_market.get('oi', 0) or 0,
+                            "option_type": "call",
+                            "underlying_price": up
+                        })
+                        
+                    # Process Put Option
+                    pe = strike_data.get('put_options')
+                    if pe:
+                        pe_market = pe.get('market_data', {})
+                        pe_greeks = pe.get('option_greeks', {})
+                        rows.append({
+                            "strike": strike,
+                            "dte": dte,
+                            "iv": pe_greeks.get('iv', 0) or 0,
+                            "volume": pe_market.get('volume', 0) or 0,
+                            "open_interest": pe_market.get('oi', 0) or 0,
+                            "option_type": "put",
+                            "underlying_price": up
+                        })
+                return rows
+            except Exception as e:
+                logger.error(f"[UPSTOX] [Master Data] Error fetching expiry {exp}: {e}")
+                return []
+
+        tasks = [fetch_one_expiry(exp) for exp in target_expiries]
+        results = await asyncio.gather(*tasks)
+        
+        all_data = []
+        underlying_price = 0
+        for res in results:
+            if not res: continue
+            if underlying_price == 0:
+                # Find the first valid underlying price from any expiry data
+                for row in res:
+                    if row.get('underlying_price', 0) > 0:
+                        underlying_price = row['underlying_price']
+                        break
+            all_data.extend(res)
+
+        # Fallback: Fetch index LTP directly if still 0 (common during weekends/holidays)
+        if underlying_price == 0:
+            from lib.api.market_data import get_ltp
+            try:
+                underlying_price = await run_in_threadpool(get_ltp, upstox_token, index_key)
+            except:
+                pass
+                
+        # 4. Filter data before plotting
+        # Apply the user's interactive filters (DTE, OI, Strike Window)
+        plot_data = [d for d in all_data if 
+                         (min_dte <= d['dte'] <= max_dte) and 
+                         (d['open_interest'] >= min_oi) and
+                         (underlying_price == 0 or abs(d['strike'] - underlying_price) / underlying_price * 100 <= strike_window)]
+        
+        # Prepare Figure using plotly.graph_objects
+        try:
+            fig = create_option_3d_surface(
+                plot_data, 
+                underlying_price, 
+                surface_type=surface_type, 
+                metric=metric, 
+                use_log_scale=use_log_scale, 
+                theme=theme
+            )
+            
+            return {
+                "status": "success",
+                "underlying_price": underlying_price,
+                "data": plot_data, 
+                "figure": json.loads(fig.to_json()) if fig else None
+            }
+        except Exception as e:
+            logger.error(f"Error creating 3D surface figure: {e}")
+            return {
+                "status": "success",
+                "underlying_price": underlying_price,
+                "data": all_data,
+                "figure": None,
+                "error": str(e)
+            }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)

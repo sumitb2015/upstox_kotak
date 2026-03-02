@@ -356,9 +356,12 @@
 
             // Update spot price from websocket
             useEffect(() => {
-                if (marketPrices[symbol]) {
-                    const ltp = marketPrices[symbol].ltp || marketPrices[symbol];
-                    if (typeof ltp === 'number') setSpotPrice(ltp);
+                if (marketPrices && marketPrices[symbol]) {
+                    const priceData = marketPrices[symbol];
+                    const ltp = typeof priceData === 'object' ? priceData.ltp : priceData;
+                    if (typeof ltp === 'number' && ltp > 0) {
+                        setSpotPrice(ltp);
+                    }
                 }
             }, [marketPrices, symbol]);
 

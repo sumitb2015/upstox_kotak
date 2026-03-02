@@ -42,3 +42,9 @@ Thumbs.db
 .gemini/
 .vscode/
 .idea/
+
+# Web App Dependencies
+web_apps/oi_pro/node_modules/
+web_apps/oi_pro/users.db
+web_apps/oi_pro/users.db-shm
+web_apps/oi_pro/users.db-wal

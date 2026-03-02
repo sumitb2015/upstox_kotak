@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Future Intraday Buildup | OI Pro</title>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        border: 'var(--border)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        secondary: 'var(--secondary)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #f8fafc;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --secondary: #ffffff;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --border: #e2e8f0;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --secondary: #1e293b;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --border: #334155;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s, color 0.2s;
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            /* As requested: font-weight to 700 */
+        }
+
+        .glass {
+            background: rgba(var(--card-rgb), 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-foreground overflow-hidden">
+    <div id="sidebar-root"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const fetchWithAuth = async (url, options = {}) => {
+            const token = localStorage.getItem("oi_pro_jwt") || localStorage.getItem("token");
+            const headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${token}`
+            };
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401) {
+                localStorage.removeItem("oi_pro_jwt");
+                localStorage.removeItem("token");
+                window.location.href = "/login";
+            }
+            return response;
+        };
+
+        function FutureIntraday() {
+            const [symbol, setSymbol] = useState("NIFTY");
+            const [timeframe, setTimeframe] = useState(3);
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [lastUpdated, setLastUpdated] = useState("");
+
+            const fetchData = async () => {
+                try {
+                    const res = await fetchWithAuth(`/api/future-intraday?symbol=${symbol}&timeframe=${timeframe}`);
+                    const result = await res.json();
+                    if (result.status === "success") {
+                        setData(result.data);
+                        setLastUpdated(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch future data", err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+                const interval = setInterval(fetchData, 60000);
+                return () => clearInterval(interval);
+            }, [symbol, timeframe]);
+
+            const stats = useMemo(() => {
+                const counts = {
+                    "Long Buildup": 0,
+                    "Short Covering": 0,
+                    "Short Buildup": 0,
+                    "Long Unwinding": 0
+                };
+                data.forEach(d => {
+                    if (counts[d.sentiment] !== undefined) counts[d.sentiment]++;
+                });
+
+                const total = data.length || 1;
+                const bull = counts["Long Buildup"] + counts["Short Covering"];
+                const bear = counts["Short Buildup"] + counts["Long Unwinding"];
+
+                return {
+                    counts,
+                    bullPct: Math.round((bull / total) * 100),
+                    bearPct: Math.round((bear / total) * 100),
+                    sentiment: bull > bear ? "Bullish" : bear > bull ? "Bearish" : "Neutral"
+                };
+            }, [data]);
+
+            const formatTime = (ts) => {
+                const date = new Date(ts);
+                return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            };
+
+            const getSentimentColor = (s) => {
+                switch (s) {
+                    case "Long Buildup": return "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
+                    case "Short Covering": return "text-emerald-400 bg-emerald-400/5 border-emerald-400/10";
+                    case "Short Buildup": return "text-rose-500 bg-rose-500/10 border-rose-500/20";
+                    case "Long Unwinding": return "text-orange-500 bg-orange-500/10 border-orange-500/20";
+                    default: return "text-muted-foreground bg-muted border-border";
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-transparent p-6 pr-10 pl-28">
+                    {/* Header Controls */}
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                        <div className="flex gap-2 bg-card/40 p-1 rounded-xl border border-border/40">
+                            {[3, 5, 15].map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => setTimeframe(t)}
+                                    className={`px-6 py-2 rounded-lg text-sm font-black transition-all ${timeframe === t
+                                            ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                                            : "hover:bg-muted text-muted-foreground"
+                                        }`}
+                                >
+                                    {t} Minutes
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <select
+                                value={symbol}
+                                onChange={(e) => setSymbol(e.target.value)}
+                                className="bg-card border-border rounded-xl px-4 py-2 text-sm font-black focus:ring-2 focus:ring-blue-500 outline-none"
+                            >
+                                <option value="NIFTY">NIFTY</option>
+                                <option value="BANKNIFTY">BANKNIFTY</option>
+                                <option value="FINNIFTY">FINNIFTY</option>
+                            </select>
+                            <div className="text-[10px] text-muted-foreground text-right">
+                                <p className="font-black uppercase tracking-widest">Last updated</p>
+                                <p className="text-foreground text-sm">{lastUpdated || "--:--"}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Summary Card */}
+                    <div className="glass bg-card/60 rounded-3xl border border-border/50 p-6 mb-8 shadow-2xl">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                            <div className="flex flex-col gap-1">
+                                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">Long Buildup</p>
+                                <p className="text-2xl font-black text-emerald-500">{stats.counts["Long Buildup"]}</p>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">Short Covering</p>
+                                <p className="text-2xl font-black text-emerald-400">{stats.counts["Short Covering"]}</p>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">Short Buildup</p>
+                                <p className="text-2xl font-black text-rose-500">{stats.counts["Short Buildup"]}</p>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest">Long Unwinding</p>
+                                <p className="text-2xl font-black text-orange-500">{stats.counts["Long Unwinding"]}</p>
+                            </div>
+                        </div>
+
+                        {/* Sentiment Bar */}
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-end">
+                                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{stats.bullPct}% Bull</p>
+                                <div className="text-center">
+                                    <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mb-0.5">Sentiment</p>
+                                    <p className={`text-lg font-black uppercase tracking-tighter ${stats.sentiment === "Bullish" ? "text-emerald-500" : stats.sentiment === "Bearish" ? "text-rose-500" : "text-amber-500"
+                                        }`}>{stats.sentiment}</p>
+                                </div>
+                                <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest">{stats.bearPct}% Bear</p>
+                            </div>
+                            <div className="h-4 w-full bg-muted/50 rounded-full overflow-hidden flex border border-border/40">
+                                <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${stats.bullPct}%` }}></div>
+                                <div className="h-full bg-rose-500 transition-all duration-700" style={{ width: `${stats.bearPct}%` }}></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Table Container */}
+                    <div className="glass bg-card/40 rounded-3xl border border-border/50 overflow-hidden shadow-xl flex flex-col max-h-[calc(100vh-420px)]">
+                        <div className="overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="sticky top-0 bg-card z-10 border-b border-border shadow-sm">
+                                    <tr>
+                                        <th className="px-6 py-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest">Time</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest">Price Change</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest">Price</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest">OI Change</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest">OI</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-muted-foreground uppercase tracking-widest text-right">Sentiment</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/40">
+                                    {data.map((row, idx) => (
+                                        <tr key={idx} className="hover:bg-muted/30 transition-colors">
+                                            <td className="px-6 py-4 text-sm font-black text-muted-foreground">{formatTime(row.time)}</td>
+                                            <td className={`px-6 py-4 text-sm font-black ${row.price_chg >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                {row.price_chg >= 0 ? `+${row.price_chg}` : row.price_chg}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm font-black">{row.price.toLocaleString()}</td>
+                                            <td className={`px-6 py-4 text-sm font-black ${row.oi_chg >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                {row.oi_chg >= 0 ? `+${row.oi_chg.toLocaleString()}` : row.oi_chg.toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm font-black text-muted-foreground">{row.oi.toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-tighter ${getSentimentColor(row.sentiment)}`}>
+                                                    {row.sentiment}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<FutureIntraday />);
+
+        // Load Sidebar
+        const sidebarScript = document.createElement('script');
+        sidebarScript.src = 'sidebar.js';
+        sidebarScript.onload = () => {
+            const sidebarRoot = ReactDOM.createRoot(document.getElementById('sidebar-root'));
+            sidebarRoot.render(<Sidebar activePage="Future Intraday" />);
+        };
+        document.body.appendChild(sidebarScript);
+    </script>
+</body>
+
+</html>

@@ -213,3 +213,7 @@ def admin_delete_user(email: str, admin: User = Depends(check_admin)):
         
     user.delete_instance()
     return {"status": "deleted", "email": email}
+
+def get_token(token: str = Depends(oauth2_scheme)):
+    """Small helper to extract the token string from the request."""
+    return token

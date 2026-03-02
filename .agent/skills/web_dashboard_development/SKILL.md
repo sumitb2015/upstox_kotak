@@ -36,9 +36,12 @@ This skill outlines the standard architecture and best practices for building fi
     -   **Sentiment Coloring**: Use conditional colors (Green/Red) based on thresholds (e.g., PCR > 1).
     -   **Tooltips**: Customize `hoverinfo` or `hovertemplate` to show precise data.
     -   **Responsiveness**: Ensure charts resize by setting `responsive: true` in Plotly config and using `w-full` logic.
+    -   **3D Surface Rendering**: When rendering Plotly `surface` charts, ensure the `z` data is explicitly structured as an array of arrays (e.g., a 2D matrix representing values across X and Y). Pass exact matching flat arrays for `x` and `y` axes. Failure to format `z` as strictly 2D will result in a blank canvas rendering despite successful plotting of scatter points.
 
-4.  **UI/UX Standards (Premium Glassmorphism)**:
+4.  **UI/UX Standards (Premium Glassmorphism & Toggles)**:
     -   **Background**: Use deep dark backgrounds (e.g., `#030712`).
+    -   **Dark Mode Retention**: For authentication and core analytical pages (like Login), enforce Dark Mode persistently by defaulting `document.documentElement.classList.add('dark')` and hardcoding deep slate backgrounds to prevent bright flashes on system theme changes.
+    -   **Segmented Controls (Tabs)**: Avoid native `<select>` dropdowns for critical switches like Nifty vs. Bank Nifty. Implement Shadcn-style segmented tabs (`<button>` groups with conditional bg/text highlighting) for superior user experience and modern look.
     -   **Glass Cards**: Use semi-transparent surfaces `rgba(15, 23, 42, 0.8)` with heavy blur `backdrop-filter: blur(20px)` and subtle borders `rgba(255,255,255,0.07)`.
     -   **Typography**: Use `Inter` font, extremely bold weights (`font-black`/`800`) for metrics, and wide tracking `tracking-[0.15em]` for uppercase sublabels.
     -   **Color Coding**: Standardize on `#10b981` (Emerald) for positive/Put dominant, `#f87171` (Rose) for negative/Call dominant, and `#fbbf24` (Amber) for Spot prices.

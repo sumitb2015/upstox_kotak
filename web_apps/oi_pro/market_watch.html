@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Watch</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        emerald: { 400: '#34d399', 500: '#10b981', 600: '#059669' },
+                        rose: { 400: '#fb7185', 500: '#f43f5e', 600: '#e11d48' },
+                        border: 'var(--border)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --background: #f8fafc;
+            --foreground: #0f172a;
+            --card: #ffffff;
+            --card-foreground: #0f172a;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+            --border: #e2e8f0;
+            --emerald-bar: #10b981;
+            --rose-bar: #fb7185;
+        }
+
+        .dark {
+            --background: #020817;
+            --foreground: #f8fafc;
+            --card: #0f172a;
+            --card-foreground: #f8fafc;
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+            --border: #1e293b;
+            --emerald-bar: #10b981;
+            --rose-bar: #f43f5e;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .glass {
+            background: var(--card);
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body class="antialiased selection:bg-emerald-500/30">
+    <div id="sidebar-root"></div>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const SECTOR_LIST = [
+            "NIFTY IT", "NIFTY OIL AND GAS", "NIFTY ENERGY", "NIFTY PSU BANK",
+            "BANKNIFTY", "NIFTY", "MIDCPNIFTY", "NIFTY PVT BANK", "NIFTY HEALTHCARE",
+            "NIFTY PHARMA", "FINNIFTY", "NIFTY METAL", "NIFTY FMCG", "NIFTY AUTO",
+            "NIFTY REALTY", "NIFTY CONSR DURBL", "NIFTY INFRA", "NIFTY MEDIA"
+        ];
+
+        const formatLabel = (label) => {
+            return label.replace("NIFTY ", "").replace("AND ", "& ");
+        };
+
+        const fetchWithAuth = async (url) => {
+            let token = localStorage.getItem("oi_pro_jwt") || localStorage.getItem("token");
+            if (!token) return { status: "error", message: "No token" };
+
+            try {
+                const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}token=${token}`);
+                if (res.status === 401) {
+                    localStorage.removeItem("oi_pro_jwt");
+                    window.location.href = "/login";
+                    return { status: "error", message: "Unauthorized" };
+                }
+                return await res.json();
+            } catch (err) {
+                return { status: "error", message: err.message };
+            }
+        };
+
+        function ConstituentPanel({ title, data, indexData }) {
+            if (!data || Object.keys(data).length === 0) return (
+                <div className="glass rounded-xl p-4 flex-1 animate-pulse min-h-[400px]"></div>
+            );
+
+            // Sort by change percentage descending
+            const sorted = Object.entries(data)
+                .map(([symbol, info]) => ({ symbol, ...info }))
+                .sort((a, b) => b.chg - a.chg);
+
+            const advances = sorted.filter(s => s.chg >= 0);
+            const declines = sorted.filter(s => s.chg < 0).reverse(); // Reverse so most negative is at top (if desired) or keep descending negative
+
+            // We want the worst performers at the top of the decline list just like best performers at top of advance
+            declines.sort((a, b) => a.chg - b.chg);
+
+            const maxRows = Math.max(advances.length, declines.length);
+
+            // For calculating bar widths
+            const maxAdvance = Math.max(...advances.map(s => s.chg), 0.01);
+            const maxDecline = Math.max(...declines.map(s => Math.abs(s.chg)), 0.01);
+
+            const indexChg = indexData ? indexData.chg : 0;
+            const indexColor = indexChg >= 0 ? 'text-emerald-500' : 'text-rose-500';
+
+            return (
+                <div className="glass rounded-xl flex flex-col overflow-hidden border border-border shadow-sm flex-1">
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-3 border-b border-border bg-card">
+                        <div className="flex items-center gap-2">
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${indexChg >= 0 ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                                {title === 'NIFTY' ? '50' : 'B'}
+                            </div>
+                            <span className="font-bold text-sm">{title}</span>
+                            <span className={`text-xs ml-1 ${indexColor}`}>({indexChg >= 0 ? '+' : ''}{indexChg.toFixed(2)}%)</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs font-semibold">
+                            <div className="text-emerald-500 flex items-center gap-0.5">{advances.length}<span>↑</span></div>
+                            <div className="text-rose-500 flex items-center gap-0.5">{declines.length}<span>↓</span></div>
+                        </div>
+                    </div>
+
+                    {/* Content Grid */}
+                    <div className="flex w-full divide-x divide-border overflow-y-auto max-h-[600px] bg-card p-2 custom-scrollbar">
+
+                        {/* Advances Column */}
+                        <div className="flex-1 flex flex-col gap-1.5 pr-3">
+                            {Array.from({ length: maxRows }).map((_, i) => {
+                                const st = advances[i];
+                                if (!st) return <div key={`adv-empty-${i}`} className="h-6"></div>;
+                                const widthPct = (st.chg / maxAdvance) * 100;
+                                return (
+                                    <div key={st.symbol} className="flex items-center justify-between text-[11px] h-6 group">
+                                        <div className="flex items-center gap-1.5 truncate pr-2">
+                                            <div className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[8px] font-bold flex-shrink-0">
+                                                {st.symbol.charAt(0)}
+                                            </div>
+                                            <span className="font-semibold text-foreground truncate w-20">{st.symbol}</span>
+                                            <span className="text-emerald-500 font-bold">+{st.chg.toFixed(2)}%</span>
+                                        </div>
+                                        <div className="flex-1 flex justify-end h-full py-1 min-w-[50px]">
+                                            <div
+                                                className="h-full bg-emerald-500 rounded-l-sm transition-all duration-500"
+                                                style={{ width: `${Math.max(widthPct, 2)}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Declines Column */}
+                        <div className="flex-1 flex flex-col gap-1.5 pl-3">
+                            {Array.from({ length: maxRows }).map((_, i) => {
+                                const st = declines[i];
+                                if (!st) return <div key={`dec-empty-${i}`} className="h-6"></div>;
+                                const widthPct = (Math.abs(st.chg) / maxDecline) * 100;
+                                return (
+                                    <div key={st.symbol} className="flex items-center justify-between text-[11px] h-6 group">
+                                        <div className="flex-1 flex justify-start h-full py-1 min-w-[50px]">
+                                            <div
+                                                className="h-full bg-rose-500 rounded-r-sm transition-all duration-500"
+                                                style={{ width: `${Math.max(widthPct, 2)}%` }}
+                                            ></div>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 truncate pl-2 justify-end">
+                                            <span className="text-rose-500 font-bold">{st.chg.toFixed(2)}%</span>
+                                            <div className="w-4 h-4 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center text-[8px] font-bold flex-shrink-0">
+                                                {st.symbol.charAt(0)}
+                                            </div>
+                                            <span className="font-semibold text-foreground truncate w-20 text-right">{st.symbol}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        function MarketWatch() {
+            const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            const [sectors, setSectors] = useState({});
+            const [niftyData, setNiftyData] = useState({});
+            const [bankNiftyData, setBankNiftyData] = useState({});
+
+            useEffect(() => {
+                const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+                window.addEventListener('themeToggled', handleTheme);
+                return () => window.removeEventListener('themeToggled', handleTheme);
+            }, []);
+
+            const fetchData = async () => {
+                const [idxRes, nfRes, bnfRes] = await Promise.all([
+                    fetchWithAuth('/api/market-quote?index=INDICES'),
+                    fetchWithAuth('/api/market-quote?index=NIFTY'),
+                    fetchWithAuth('/api/market-quote?index=BANKNIFTY')
+                ]);
+
+                if (idxRes && idxRes.data) {
+                    const filteredSectors = {};
+                    SECTOR_LIST.forEach(sec => {
+                        if (idxRes.data[sec]) {
+                            filteredSectors[sec] = idxRes.data[sec];
+                        }
+                    });
+                    setSectors(filteredSectors);
+                }
+
+                if (nfRes && nfRes.data) setNiftyData(nfRes.data);
+                if (bnfRes && bnfRes.data) setBankNiftyData(bnfRes.data);
+            };
+
+            useEffect(() => {
+                fetchData();
+                const interval = setInterval(fetchData, 5000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // Render Sector Chart
+            useEffect(() => {
+                if (Object.keys(sectors).length === 0) return;
+
+                const sortedSectors = Object.entries(sectors)
+                    .map(([sym, data]) => ({ name: formatLabel(sym), chg: data.chg }))
+                    .sort((a, b) => b.chg - a.chg); // Highest to lowest
+
+                const xData = sortedSectors.map(s => s.name);
+                const yData = sortedSectors.map(s => s.chg);
+                const colors = yData.map(v => v >= 0 ? (isDark ? '#10b981' : '#10b981') : (isDark ? '#fb7185' : '#f87171'));
+
+                const trace = {
+                    x: xData,
+                    y: yData,
+                    type: 'bar',
+                    marker: {
+                        color: colors,
+                        line: { width: 0 }
+                    },
+                    text: yData.map(v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`),
+                    textposition: yData.map(v => v >= 0 ? 'outside' : 'outside'),
+                    textfont: {
+                        color: colors,
+                        weight: 'bold',
+                        size: 11
+                    },
+                    hovertemplate: '<b>%{x}</b>: %{y:.2f}%<extra></extra>'
+                };
+
+                const layout = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    margin: { t: 20, r: 20, b: 60, l: 40 },
+                    xaxis: {
+                        tickangle: -45,
+                        tickfont: { size: 10, color: isDark ? '#94a3b8' : '#475569', weight: 'bold' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9'
+                    },
+                    yaxis: {
+                        tickfont: { size: 10, color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: true,
+                        zerolinecolor: isDark ? '#475569' : '#cbd5e1',
+                        zerolinewidth: 1.5
+                    }
+                };
+
+                Plotly.react('sector-chart', [trace], layout, { responsive: true, displayModeBar: false });
+            }, [sectors, isDark]);
+
+            return (
+                <div className="min-h-screen pl-28 pr-4 py-8 flex flex-col gap-6">
+                    {/* Header */}
+                    <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full bg-blue-400"></div>
+                        <h1 className="text-xl font-bold uppercase tracking-wider text-foreground">SECTOR</h1>
+                    </div>
+
+                    {/* Sector Chart */}
+                    <div className="glass rounded-xl p-4 h-[350px] shadow-sm">
+                        {Object.keys(sectors).length === 0 ? (
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground animate-pulse">Loading Sectors...</div>
+                        ) : (
+                            <div id="sector-chart" className="w-full h-full"></div>
+                        )}
+                    </div>
+
+                    {/* Constituents Panels */}
+                    <div className="flex flex-col xl:flex-row gap-6">
+                        <ConstituentPanel
+                            title="NIFTY"
+                            data={niftyData}
+                            indexData={sectors["NIFTY"]}
+                        />
+                        <ConstituentPanel
+                            title="BANKNIFTY"
+                            data={bankNiftyData}
+                            indexData={sectors["BANKNIFTY"]}
+                        />
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MarketWatch />);
+    </script>
+    <script src="/sidebar.js"></script>
+</body>
+
+</html>

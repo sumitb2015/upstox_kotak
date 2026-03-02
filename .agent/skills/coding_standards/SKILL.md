@@ -138,7 +138,19 @@ if self.candles_processed < 2:
     return  # Skip first candle
 ```
 
-**Bug 4: WebSocket Data Structure Assumptions & Casing**
+**Bug 4: JSON Serialization Error (Timestamps/NaN)**
+```python
+# ❌ Problem: Passing raw Pandas Timestamps or NaNs directly to Redis/FastAPI JSON response
+df.to_dict('records') # Fails if index or columns contain raw pd.Timestamp
+redis_wrapper.push_json_list(key, payload) # TypeError: Object of type Timestamp is not JSON serializable
+
+# ✅ Solution: Convert explicitly before dict transformation
+df['timestamp'] = df['timestamp'].astype(str)
+# OR handle NaNs:
+df = df.fillna(0)
+```
+
+**Bug 5: WebSocket Data Structure Assumptions & Casing**
 ```python
 # ❌ Problem: Assuming snake_case or specific nesting in raw feeds
 ltp = data.get('market_ff', {}).get('ltpc', {}).get('ltp') # Fails: Casing is wrong

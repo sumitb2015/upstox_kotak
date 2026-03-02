@@ -13,7 +13,7 @@
         rel="stylesheet">
     <style>
         body {
-            font-family: \'Inter\', sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: var(--background);
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
@@ -164,6 +164,7 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             display: none;
             backdrop-filter: blur(8px);
+            min-width: 200px;
         }
 
         /* Pulse animation for live badge */
@@ -261,14 +262,14 @@
         }
 
         .dark {
-            --background: #020817;
+            --background: #0f1117;
             --foreground: #f8fafc;
-            --card: #0f172a;
+            --card: #161b22;
             --card-foreground: #f8fafc;
-            --popover: #020817;
+            --popover: #0f1117;
             --popover-foreground: #f8fafc;
             --primary: #f8fafc;
-            --primary-foreground: #020817;
+            --primary-foreground: #0f1117;
             --secondary: #1e293b;
             --secondary-foreground: #f8fafc;
             --muted: #1e293b;
@@ -277,8 +278,8 @@
             --accent-foreground: #f8fafc;
             --destructive: #ef4444;
             --destructive-foreground: #f8fafc;
-            --border: #334155;
-            --input: #334155;
+            --border: #30363d;
+            --input: #30363d;
             --ring: #f8fafc;
         }
 
@@ -311,7 +312,21 @@
 
         const SYMBOLS = ["NIFTY", "BANKNIFTY", "FINNIFTY"];
 
-        // ─── Formatting Helpers ──────────────────────────────────────────────────
+        // ─── Authentication Helper ────────────────────────────────────────────────
+        async function fetchWithAuth(url, options = {}) {
+            const token = localStorage.getItem('oi_pro_jwt') || localStorage.getItem('token');
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            const response = await fetch(url, { ...options, headers });
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            return response;
+        }
 
         function formatDelta(val) {
             const abs = Math.abs(val);
@@ -332,38 +347,29 @@
 
         function getCellColor(buildup, pctChange, maxAbs, isDark) {
             if (!maxAbs || maxAbs === 0 || !buildup || buildup === "Neutral") {
-                return isDark ? "rgba(30,41,59,0.5)" : "rgba(241,245,249,0.8)";
+                return isDark ? "rgba(30,41,59,0.3)" : "rgba(241,245,249,0.8)";
             }
 
-            // Normalize percentage change against the max for this column
+            // Using square root for normalization makes small changes much more visible
             const absPct = Math.abs(pctChange);
-            const norm = Math.min(1, absPct / maxAbs);
-            const alpha = Math.min(0.95, norm * 0.8 + 0.15); // Base opacity 0.15, max 0.95
+            const norm = Math.min(1, Math.sqrt(absPct / maxAbs));
 
-            // Map Buildup to explicit colors
-            // Greenish: Long Buildup, Short Covering
-            // Reddish: Short Buildup, Long Unwinding
-
+            // Vibrant palette with high contrast
             if (buildup === "Long Buildup") {
-                // Bright Green
-                const g = Math.round(150 + norm * 105);
-                return `rgba(16, ${g}, 80, ${alpha})`;
+                const alpha = 0.2 + (norm * 0.75);
+                return isDark ? `rgba(16, 185, 129, ${alpha})` : `rgba(5, 150, 105, ${alpha})`;
             } else if (buildup === "Short Covering") {
-                // Teal / Lighter Green (Differentiate from aggressive build)
-                const b = Math.round(150 + norm * 105);
-                return `rgba(20, 150, ${b}, ${alpha})`;
+                const alpha = 0.2 + (norm * 0.7);
+                return isDark ? `rgba(6, 182, 212, ${alpha})` : `rgba(8, 145, 178, ${alpha})`;
             } else if (buildup === "Short Buildup") {
-                // Bright Red
-                const r = Math.round(160 + norm * 95);
-                return `rgba(${r}, 20, 40, ${alpha})`;
+                const alpha = 0.2 + (norm * 0.75);
+                return isDark ? `rgba(244, 63, 94, ${alpha})` : `rgba(225, 29, 72, ${alpha})`;
             } else if (buildup === "Long Unwinding") {
-                // Orange / Dark Red (Differentiate from aggressive shorting)
-                const r = Math.round(180 + norm * 75);
-                const g = Math.round(50 + norm * 50);
-                return `rgba(${r}, ${g}, 20, ${alpha})`;
+                const alpha = 0.2 + (norm * 0.7);
+                return isDark ? `rgba(245, 158, 11, ${alpha})` : `rgba(217, 119, 6, ${alpha})`;
             }
 
-            return isDark ? "rgba(30,41,59,0.7)" : "rgba(226,232,240,0.8)";
+            return isDark ? "rgba(30,41,59,0.3)" : "rgba(226,232,240,0.8)";
         }
 
         // ─── Main App ───
@@ -389,13 +395,13 @@
             const [fixedTimestamps, setFixedTimestamps] = useState([]);
             const tooltipRef = useRef(null);
 
-            // Generate full day timeline (9:15 to 15:30) based on refreshInterval
+            // Generate full day timeline (9:15 to 15:30)
             useEffect(() => {
                 const timestamps = [];
                 let d = new Date();
-                d.setHours(9, 15, 0, 0); // Start at 09:15 AM
+                d.setHours(9, 15, 0, 0);
                 const endTime = new Date();
-                endTime.setHours(15, 30, 0, 0); // End at 3:30 PM
+                endTime.setHours(15, 30, 0, 0);
 
                 const intervalMs = refreshInterval || 60000;
 
@@ -408,7 +414,7 @@
                 setFixedTimestamps(timestamps);
             }, [refreshInterval]);
 
-            // Fetch expiries on symbol change
+            // Fetch expiries
             useEffect(() => {
                 fetchWithAuth(`/api/expiries?symbol=${symbol}`)
                     .then(r => r.json())
@@ -451,32 +457,21 @@
                 return () => clearInterval(timer);
             }, [fetchData, refreshInterval]);
 
-            // ─── Derived Summary ───
-
             const summary = React.useMemo(() => {
                 if (!data?.data?.length) return null;
-
                 const spotVsPrevClose = data.open_spot > 0
                     ? ((data.spot - data.open_spot) / data.open_spot * 100).toFixed(2)
                     : "0.00";
-
                 return { spotVsPrevClose };
             }, [data]);
 
-            // ─── ATM Strike ───
-
             const atmStrike = React.useMemo(() => {
                 if (!data?.data?.length || !data?.spot) return null;
-                // data.data is array of objects with .strike
                 const strikes = data.data.map(d => d.strike);
                 return strikes.reduce((prev, curr) =>
                     Math.abs(curr - data.spot) < Math.abs(prev - data.spot) ? curr : prev
                 );
             }, [data]);
-
-            // ─── Tooltip ──────────────────────────────────────────────────────
-
-            // ─── Tooltip ───
 
             function handleCellMouseEnter(e, strike, timeIdx, cellData) {
                 const tooltip = document.getElementById('cell-tooltip');
@@ -493,21 +488,22 @@
                 if (bType.includes("Short Buildup") || bType.includes("Long Unwinding")) bColor = "#f43f5e";
 
                 tooltip.innerHTML = `
-                    <div style="font-size:10px;color:#e2e8f0;margin-bottom:4px;">Strike ${strike.toLocaleString()} ${viewSide} | ${ts}</div>
-                    <div style="font-weight:700;margin-bottom:8px;color:${bColor}">${bType}</div>
+                    <div style="font-size:10px;color:var(--muted-foreground);margin-bottom:6px;font-family:'JetBrains Mono',monospace;">Strike ${strike.toLocaleString()} ${viewSide} • ${ts}</div>
+                    <div style="font-weight:900;margin-bottom:10px;color:${bColor};font-size:13px;letter-spacing:0.05em;text-transform:uppercase;">${bType}</div>
                     
-                    <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
-                        <span>OI Change:</span>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:600;">
+                        <span style="color:var(--muted-foreground);">OI Change:</span>
                         <span style="color:${sideData.oi_chg_pct >= 0 ? '#10b981' : '#f43f5e'}">${sideData.oi_chg_pct > 0 ? '+' : ''}${sideData.oi_chg_pct}%</span>
                     </div>
                     
-                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                        <span>Price Chg:</span>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-weight:600;">
+                        <span style="color:var(--muted-foreground);">Price Chg:</span>
                         <span style="color:${sideData.price_chg_pct >= 0 ? '#10b981' : '#f43f5e'}">${sideData.price_chg_pct > 0 ? '+' : ''}${sideData.price_chg_pct}%</span>
                     </div>
                     
-                    <div style="color:#e2e8f0;font-size:10px; margin-top:6px; padding-top:4px; border-top:1px solid #1e293b;">
-                        Live OI: ${formatDelta(sideData.oi)} • LTP: ₹${sideData.ltp}
+                    <div style="color:var(--muted-foreground);font-size:10px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); display:flex; justify-content:space-between;">
+                        <span>Live OI: <b style="color:var(--foreground)">${formatDelta(sideData.oi)}</b></span>
+                        <span>LTP: <b style="color:var(--foreground)">₹${sideData.ltp}</b></span>
                     </div>
                 `;
                 tooltip.style.display = 'block';
@@ -528,25 +524,19 @@
                 }
             }
 
-            // ─── Render ───
-
             const hasData = data?.data?.length > 0 && data?.timestamps?.length > 0;
 
             const BuildupPill = ({ type }) => {
                 if (!type || type === "Neutral") {
                     return <span className="trend-cell" style={{ background: "rgba(71,85,105,0.2)", color: "#64748b", border: `1px solid #64748b30` }}>FLAT</span>;
                 }
-
-                let text = type.replace(" ", "\n").toUpperCase();
-                let color, bg, border;
-
-                if (type === "Long Buildup") { text = "LONG\nBUILD"; color = "#10b981"; bg = "rgba(16,185,129,0.15)"; border = `1px solid ${color}30`; }
-                else if (type === "Short Covering") { text = "SHORT\nCOVER"; color = "#34d399"; bg = "rgba(52,211,153,0.1)"; border = `1px solid ${color}30`; }
-                else if (type === "Short Buildup") { text = "SHORT\nBUILD"; color = "#f43f5e"; bg = "rgba(239,68,68,0.15)"; border = `1px solid ${color}30`; }
-                else if (type === "Long Unwinding") { text = "LONG\nUNWIND"; color = "#fb923c"; bg = "rgba(251,146,60,0.1)"; border = `1px solid ${color}30`; }
-
+                let color, bg, text = type.replace(" ", "\n").toUpperCase();
+                if (type === "Long Buildup") { text = "LONG\nBUILD"; color = "#10b981"; bg = "rgba(16,185,129,0.15)"; }
+                else if (type === "Short Covering") { text = "SHORT\nCOVER"; color = "#34d399"; bg = "rgba(52,211,153,0.1)"; }
+                else if (type === "Short Buildup") { text = "SHORT\nBUILD"; color = "#f43f5e"; bg = "rgba(239,68,68,0.15)"; }
+                else if (type === "Long Unwinding") { text = "LONG\nUNWIND"; color = "#fb923c"; bg = "rgba(251,146,60,0.1)"; }
                 return (
-                    <span className="trend-cell block text-[8px] leading-tight" style={{ background: bg, color, border }}>
+                    <span className="trend-cell block text-[8px] leading-tight" style={{ background: bg, color, border: `1px solid ${color}30` }}>
                         {text.split('\n')[0]}<br />{text.split('\n')[1]}
                     </span>
                 );
@@ -554,23 +544,18 @@
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
-
-
                     <main className="pl-28 pr-6 py-8 w-full overflow-y-auto custom-scrollbar">
-
-                        {/* ── Header ── */}
                         <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 mb-8">
                             <div>
                                 <h1 className="text-2xl font-black text-foreground tracking-tight uppercase flex items-center gap-2">
                                     Options&nbsp;<span className="text-blue-400">Buildup</span>&nbsp;Heatmap
                                 </h1>
                                 <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-[0.2em] mt-1">
-                                    Day-Over-Day tracking · {Math.max(1, Math.floor(refreshInterval / 60000))}-min snaps · Green = Strength · Red = Weakness
+                                    Real-time conviction tracker · Vibrant Intensity Mapping
                                 </p>
                             </div>
 
                             <div className="flex flex-wrap gap-3 items-center">
-                                {/* Symbol */}
                                 <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
                                     <span className="text-[10px] text-muted-foreground font-black uppercase">Symbol</span>
                                     <select className="bg-transparent border-none text-emerald-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
@@ -578,8 +563,6 @@
                                         {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                     </select>
                                 </div>
-
-                                {/* Expiry */}
                                 <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
                                     <span className="text-[10px] text-muted-foreground font-black uppercase">Expiry</span>
                                     <select className="bg-transparent border-none text-muted-foreground text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
@@ -587,261 +570,104 @@
                                         {expiries.map(exp => <option key={exp} value={exp} className="bg-card">{formatDate(exp)}</option>)}
                                     </select>
                                 </div>
-
-                                {/* Frequency Dropdown */}
-                                <div className="glass px-3 py-1.5 rounded-xl flex items-center gap-2">
-                                    <span className="text-[10px] text-muted-foreground font-black uppercase">Refresh</span>
-                                    <select className="bg-transparent border-none text-indigo-400 text-xs font-black tracking-widest focus:ring-0 cursor-pointer"
-                                        value={refreshInterval} onChange={e => setRefreshInterval(Number(e.target.value))}>
-                                        <option value={30000} className="bg-card">30 Sec</option>
-                                        <option value={60000} className="bg-card">1 Min</option>
-                                        <option value={180000} className="bg-card">3 Min</option>
-                                        <option value={300000} className="bg-card">5 Min</option>
-                                    </select>
-                                </div>
-
-                                {/* Refresh btn */}
-                                <button onClick={fetchData}
-                                    className="glass px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-blue-400 transition-colors cursor-pointer">
-                                    ↻ Refresh
-                                </button>
-
-                                {/* UI Toggle */}
                                 <div className="glass px-1 py-1 rounded-xl flex items-center overflow-hidden">
-                                    <button
-                                        onClick={() => setViewSide("CE")}
-                                        className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'CE' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-muted-foreground hover:text-muted-foreground'}`}>
-                                        Calls
-                                    </button>
-                                    <button
-                                        onClick={() => setViewSide("PE")}
-                                        className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'PE' ? 'bg-orange-600/20 text-orange-400 border border-orange-500/30' : 'text-muted-foreground hover:text-muted-foreground'}`}>
-                                        Puts
-                                    </button>
+                                    <button onClick={() => setViewSide("CE")} className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'CE' ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'text-muted-foreground'}`}>Calls</button>
+                                    <button onClick={() => setViewSide("PE")} className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest rounded-lg transition-colors ${viewSide === 'PE' ? 'bg-orange-600/20 text-orange-400 border border-orange-500/30' : 'text-muted-foreground'}`}>Puts</button>
                                 </div>
-
-                                {/* Live badge */}
                                 <div className="glass px-4 py-1.5 rounded-xl flex items-center gap-2">
                                     <div className={`w-2 h-2 rounded-full ${loading ? 'bg-amber-500 pulse-live' : 'bg-emerald-500 pulse-live'}`}></div>
-                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                                        {loading ? 'Polling...' : (lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : `${refreshInterval / 60000}-min Auto`)}
-                                    </span>
+                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{loading ? 'Polling...' : (lastUpdate ? `Updated ${lastUpdate.toLocaleTimeString()}` : 'Live')}</span>
                                 </div>
-
-                                {/* Demo badge — shown when live cache is cold */}
-                                {data?.is_demo && (
-                                    <div className="px-3 py-1.5 rounded-xl flex items-center gap-2"
-                                        style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)' }}>
-                                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">🧪 Demo Data</span>
-                                        <span className="text-[9px] text-amber-600">Live data loads after first poll</span>
-                                    </div>
-                                )}
                             </div>
                         </header>
 
-                        {/* ── KPI Row ── */}
                         {summary && (
                             <div className="flex flex-wrap items-center gap-3 mb-5">
-                                <div className="glass px-4 py-2 rounded-xl flex items-center justify-between gap-6 overflow-hidden">
+                                <div className="glass px-4 py-2 rounded-xl flex items-center gap-6">
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">Spot vs Prev Close</span>
+                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Spot Delta</span>
                                         <span className={`text-sm font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}% <span className="text-[9px] text-muted-foreground font-semibold">{data?.spot?.toFixed(2)} (now)</span>
+                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
                                         </span>
                                     </div>
-                                    <div className="flex flex-col text-right border-l border-border pl-4">
-                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">Current ATM</span>
-                                        <span className="text-sm font-black text-amber-400">{atmStrike ? atmStrike.toLocaleString() : "---"}</span>
-                                    </div>
-                                </div>
-
-                                {/* Info Tip Box */}
-                                <div className="glass px-4 py-2 rounded-xl border-l-[3px] border-blue-500/50 flex-1 flex items-center gap-3 opacity-80 hover:opacity-100 transition-opacity max-w-2xl">
-                                    <span className="text-[16px]">💡</span>
-                                    <div className="flex flex-col">
-                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">HOW IT WORKS</span>
-                                        <span className="text-[10px] text-muted-foreground leading-tight">Tracks day-over-day conviction vs previous close OI & price. Brightness scales with relative volume intensity.</span>
+                                    <div className="border-l border-border pl-4">
+                                        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">ATM Strike</span>
+                                        <div className="text-sm font-black text-amber-400">{atmStrike?.toLocaleString() || '---'}</div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* ── Heatmap Grid ────────────────────────────────── */}
-                        <div className="glass-strong rounded-[2.5rem] border-border/40 relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent"></div>
+                        <div className="glass-strong rounded-[2rem] border-border/40 relative overflow-hidden p-6">
+                            {hasData ? (
+                                <div className="overflow-x-auto custom-scrollbar" onMouseMove={handleCellMouseMove}>
+                                    <table className="heatmap-table w-full">
+                                        <thead>
+                                            <tr>
+                                                <th className="text-left">STRIKE</th>
+                                                {fixedTimestamps.map((ts, ti) => <th key={ti} className="time-header">{ts}</th>)}
+                                                <th>VIBE</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {data.data.map((row_data, si) => {
+                                                const strike = row_data.strike;
+                                                const isAtm = strike === atmStrike;
+                                                const cellMap = {};
+                                                (data.timestamps || []).forEach((ts, idx) => {
+                                                    cellMap[ts] = { data: row_data.timeline[idx], maxCeAbs: data.max_ce_oi_chg_pct?.[idx] || 1, maxPeAbs: data.max_pe_oi_chg_pct?.[idx] || 1 };
+                                                });
+                                                const latestCell = row_data.timeline[row_data.timeline.length - 1];
+                                                const latestB = latestCell?.[viewSide.toLowerCase()]?.buildup || "Neutral";
 
-                            <div className="p-6">
-                                {/* Error State */}
-                                {error && (
-                                    <div className="flex flex-col items-center justify-center py-16 gap-3">
-                                        <div className="text-3xl">⚠️</div>
-                                        <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-500">{error}</p>
-                                        <p className="text-[10px] text-muted-foreground">The heatmap fills up as 3-minute polling cycles complete.</p>
-                                    </div>
-                                )}
-
-                                {/* Loading / No Data */}
-                                {!error && loading && !hasData && (
-                                    <div className="flex flex-col items-center justify-center py-16 gap-4 opacity-60">
-                                        <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-                                        <p className="text-xs font-black uppercase tracking-[0.3em] text-emerald-500">Initializing Engine...</p>
-                                        <p className="text-[10px] text-muted-foreground">First snapshot populates after the initial 3-min poller cycle.</p>
-                                    </div>
-                                )}
-
-                                {/* Heatmap Table */}
-                                {hasData && (
-                                    <div className="overflow-x-auto custom-scrollbar" onMouseMove={handleCellMouseMove}>
-                                        <table className="heatmap-table w-full">
-                                            <thead>
-                                                <tr>
-                                                    <th className="text-left" style={{ minWidth: '70px' }}>STRIKE</th>
-                                                    {fixedTimestamps.map((ts, ti) => (
-                                                        <th key={ti} className="time-header">{ts}</th>
-                                                    ))}
-                                                    <th style={{ minWidth: '70px', textAlign: 'center' }}>{viewSide} BUILDUP</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {data.data.map((row_data, si) => {
-                                                    const strike = row_data.strike;
-                                                    const isAtm = strike === atmStrike;
-                                                    const apiTimeline = row_data.timeline || [];
-                                                    const apiTimestamps = data.timestamps || [];
-
-                                                    // Create a lookup map for exact timestamp matches
-                                                    const cellMap = {};
-                                                    apiTimestamps.forEach((ts, idx) => {
-                                                        cellMap[ts] = {
-                                                            data: apiTimeline[idx],
-                                                            // We need to pass along the index from the API array to get the correct max_pct
-                                                            maxCeAbs: data.max_ce_oi_chg_pct ? data.max_ce_oi_chg_pct[idx] : 1,
-                                                            maxPeAbs: data.max_pe_oi_chg_pct ? data.max_pe_oi_chg_pct[idx] : 1,
-                                                        };
-                                                    });
-
-                                                    // Get the latest buildup status for the summary column (from available data)
-                                                    const latestCell = apiTimeline[apiTimeline.length - 1];
-                                                    let latestBuildup = "Neutral";
-                                                    if (latestCell && latestCell[viewSide.toLowerCase()]) {
-                                                        latestBuildup = latestCell[viewSide.toLowerCase()].buildup;
-                                                    }
-
-                                                    return (
-                                                        <tr key={si} className={isAtm ? "atm-row" : ""}>
-                                                            {/* Strike label */}
-                                                            <td className={`strike-label ${isAtm ? 'atm' : ''}`}>
-                                                                {isAtm ? '▶ ' : ''}{strike.toLocaleString()}
-                                                            </td>
-
-                                                            {/* Change cells mapped to fixed timeline */}
-                                                            {fixedTimestamps.map((ts, ti) => {
-                                                                const matchedObj = cellMap[ts];
-                                                                const cellObj = matchedObj ? matchedObj.data : null;
-
-                                                                let bgColor = "rgba(15,23,42,0.4)"; // Faded blank background for missing/future data
-                                                                const border = isAtm ? '1px solid rgba(251,191,36,0.25)' : 'none';
-
-                                                                if (matchedObj && cellObj && cellObj[viewSide.toLowerCase()]) {
-                                                                    const sideData = cellObj[viewSide.toLowerCase()];
-                                                                    const maxAbs = viewSide === 'CE' ? matchedObj.maxCeAbs : matchedObj.maxPeAbs;
-                                                                    bgColor = getCellColor(sideData.buildup, sideData.oi_chg_pct, maxAbs, isDark);
-                                                                }
-
-                                                                return (
-                                                                    <td key={ti} style={{ padding: '1px' }}>
-                                                                        <div
-                                                                            className="heatmap-cell"
-                                                                            style={{ background: bgColor, border }}
-                                                                            onMouseEnter={e => {
-                                                                                // Only show tooltip if we actually have data for this exact timestamp
-                                                                                if (cellObj) handleCellMouseEnter(e, strike, apiTimestamps.indexOf(ts), cellObj);
-                                                                            }}
-                                                                            onMouseLeave={handleCellMouseLeave}
-                                                                        />
-                                                                    </td>
-                                                                );
-                                                            })}
-
-                                                            {/* Buildup Summary */}
-                                                            <td style={{ padding: '2px 6px', textAlign: 'center' }}>
-                                                                <BuildupPill type={latestBuildup} />
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
+                                                return (
+                                                    <tr key={si} className={isAtm ? "atm-row" : ""}>
+                                                        <td className={`strike-label ${isAtm ? 'atm' : ''}`}>{isAtm ? '▶ ' : ''}{strike.toLocaleString()}</td>
+                                                        {fixedTimestamps.map((ts, ti) => {
+                                                            const m = cellMap[ts];
+                                                            const cell = m?.data;
+                                                            let bg = "rgba(15,23,42,0.4)";
+                                                            if (cell?.[viewSide.toLowerCase()]) {
+                                                                const s = cell[viewSide.toLowerCase()];
+                                                                bg = getCellColor(s.buildup, s.oi_chg_pct, viewSide === 'CE' ? m.maxCeAbs : m.maxPeAbs, isDark);
+                                                            }
+                                                            return <td key={ti}><div className="heatmap-cell" style={{ background: bg }} onMouseEnter={e => cell && handleCellMouseEnter(e, strike, data.timestamps.indexOf(ts), cell)} onMouseLeave={handleCellMouseLeave} /></td>;
+                                                        })}
+                                                        <td><BuildupPill type={latestB} /></td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-20 opacity-60">
+                                    <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4"></div>
+                                    <p className="text-xs font-black tracking-widest uppercase">Streaming Core Hub...</p>
+                                </div>
+                            )}
                         </div>
 
-                        {/* ── Legend ── */}
                         {hasData && (
-                            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
-                                <div className="glass p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <div className="w-8 h-5 rounded" style={{ background: 'rgba(16, 185, 129, 0.7)' }}></div>
-                                        <span className="text-xs font-black text-emerald-400 uppercase tracking-widest">Bright Green</span>
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground">Long Buildup: Price Rising + OI Rising. Buyers are initiating long positions aggressively.</p>
+                            <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="glass p-5 rounded-2xl border-l-4 border-emerald-500">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 block mb-1">Long Buildup</span>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">Price Up + OI Up. Strong bullish participation.</p>
                                 </div>
-                                <div className="glass p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <div className="w-8 h-5 rounded" style={{ background: 'rgba(239, 68, 68, 0.7)' }}></div>
-                                        <span className="text-xs font-black text-rose-400 uppercase tracking-widest">Bright Red</span>
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground">Short Buildup: Price Falling + OI Rising. Sellers are initiating short positions aggressively.</p>
+                                <div className="glass p-5 rounded-2xl border-l-4 border-rose-500">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-rose-400 block mb-1">Short Buildup</span>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">Price Down + OI Up. Aggressive selling pressure.</p>
                                 </div>
-                                <div className="glass p-5 rounded-2xl">
-                                    <div className="flex flex-col gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-4 h-4 rounded" style={{ background: 'rgba(52, 211, 153, 0.5)' }}></div>
-                                            <span className="text-[10px] font-black text-teal-400 uppercase tracking-widest">Teal = Short Cover</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-4 h-4 rounded" style={{ background: 'rgba(251, 146, 60, 0.5)' }}></div>
-                                            <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Orange = Long Unwind</span>
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground mt-2">Differentiating aggressive new trades from closing trades.</p>
+                                <div className="glass p-5 rounded-2xl border-l-4 border-cyan-500">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400 block mb-1">Short Cover</span>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">Price Up + OI Down. Sellers exiting positions.</p>
                                 </div>
-                                <div className="glass p-5 rounded-2xl">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="text-amber-400 font-black text-sm">▶</span>
-                                        <span className="text-xs font-black text-amber-400 uppercase tracking-widest">Intensity Map</span>
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground">Colors scale with % OI Change relative to the max% on the board for that specific block of time.</p>
+                                <div className="glass p-5 rounded-2xl border-l-4 border-amber-500">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 block mb-1">Long Unwind</span>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">Price Down + OI Down. Longs squaring off.</p>
                                 </div>
                             </div>
                         )}
-
-                        {/* ── Live Interpretation Footer ── */}
-                        {summary && hasData && (
-                            <div className="glass-strong rounded-2xl p-5 mb-8"
-                                style={{ border: data?.is_demo ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(59,130,246,0.1)' }}>
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-3"
-                                    style={{ color: data?.is_demo ? '#f59e0b' : '#60a5fa' }}>
-                                    {data?.is_demo ? '🧪 Demo Interpretation (Synthetic Data)' : `⚡ Live Interpretation: ${viewSide} Perspective`}
-                                </p>
-                                <div className="flex flex-wrap gap-6 text-xs">
-                                    <div>
-                                        <span className="text-muted-foreground font-bold uppercase tracking-widest">Spot vs Prev Close: </span>
-                                        <span className={`font-black ${parseFloat(summary.spotVsPrevClose) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                            {parseFloat(summary.spotVsPrevClose) >= 0 ? '▲' : '▼'} {Math.abs(summary.spotVsPrevClose)}%
-                                            &nbsp;({data.spot?.toFixed(2)})
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="text-muted-foreground font-bold uppercase tracking-widest">Snapshots: </span>
-                                        <span className="font-black text-indigo-400">{data.timestamps.length}</span>
-                                        <span className="text-slate-600 ml-1">× {data.data.length} strikes</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                     </main>
                 </div>
             );

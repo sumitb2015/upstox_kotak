@@ -41,12 +41,12 @@ To maintain observability, all strategies MUST use the following tag prefixes in
 | **Margin Analysis** | Pre-trade funds validation & safety | `[.agent/skills/margin_analysis/SKILL.md](file:///c:/algo/upstox/.agent/skills/margin_analysis/SKILL.md)` |
 | **Branch-Based Development** | Prevents direct commits to main, ensures clean history | `[.agent/skills/branch_development/SKILL.md](file:///c:/upstox_kotak/upstox_kotak/.agent/skills/branch_development/SKILL.md)` |
 | **Greeks Tracking** | Persistent storage & Historical Strike-wise Greeks | `[.agent/skills/greeks_tracking/SKILL.md](file:///c:/algo/upstox/.agent/skills/greeks_tracking/SKILL.md)` |
+| **Web Dashboard** | React, FastAPI, Plotly 3D, Shadcn UI standards | `[.agent/skills/web_dashboard_development/SKILL.md](file:///c:/algo/upstox/.agent/skills/web_dashboard_development/SKILL.md)` |
 
 ## 🛠️ API Rules
 - **Expiry Selection**: Use `get_expiry_for_strategy` ONLY with `expiry_type` literals: `"current_week"`, `"next_week"`, or `"monthly"`. **"weekly" is NOT supported.**
 - **Instrument Keys**: All instrument utilities (e.g., `get_expiry_for_strategy`, `get_option_instrument_key`, `get_strike_token`) take **short symbols**: `"NIFTY"`, `"BANKNIFTY"`, `"FINNIFTY"`. Do NOT pass full keys like `NSE_INDEX|...` to these functions.
--
--
+- **JSON Serialization (Redis/FastAPI)**: ALWAYS convert Pandas `Timestamp` fields to strings before returning JSON payloads or pushing to Redis to prevent serialization crashes.
 ## 💰 Margin & Order Safety
 - **Pre-Trade Validation**: All strategies MUST check for sufficient funds BEFORE placing any "Sell" order or entering a new "Buy" position.
 - **Use `margin_helper`**: Utilize `kotak_api.lib.margin_helper` for standardized checks.

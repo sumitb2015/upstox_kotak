@@ -71,6 +71,11 @@
             svg: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>'
         },
         {
+            href: "/market-watch",
+            title: "Market Watch",
+            svg: '<circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path>'
+        },
+        {
             href: "/stock-dashboard",
             title: "Stock Dashboard",
             svg: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
@@ -79,6 +84,21 @@
             href: "/indices-dashboard",
             title: "Indices Dashboard",
             svg: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
+        },
+        {
+            href: "/future-intraday",
+            title: "Future Intraday",
+            svg: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
+        },
+        {
+            href: "/future-price-oi",
+            title: "Future Price vs OI",
+            svg: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>'
+        },
+        {
+            href: "/surface-3d",
+            title: "3D Surface Analysis",
+            svg: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line>'
         },
         {
             href: "/pop",
@@ -99,6 +119,11 @@
             href: "/option-chain",
             title: "Option Chain",
             svg: '<line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>'
+        },
+        {
+            href: "/oi-buildup",
+            title: "OI Trend Analyzer",
+            svg: '<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>'
         },
         {
             href: "/cumulative",
@@ -186,11 +211,11 @@
             if (isDark) {
                 document.documentElement.classList.remove('dark');
                 localStorage.setItem('oi-pro-theme', 'light');
-            window.dispatchEvent(new Event('themeToggled'));
+                window.dispatchEvent(new Event('themeToggled'));
             } else {
                 document.documentElement.classList.add('dark');
                 localStorage.setItem('oi-pro-theme', 'dark');
-            window.dispatchEvent(new Event('themeToggled'));
+                window.dispatchEvent(new Event('themeToggled'));
             }
             renderSidebar(); // Re-render to update icon
         };

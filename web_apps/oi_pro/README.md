@@ -22,15 +22,13 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ### 4. Greeks Exposure Analysis (`/greeks`)
 - **Functionality**: Provides a per-strike breakdown of all major Greeks.
-- **Key Features**: Real-time Delta, Gamma, Vega, Theta, and GEX for every strike in the chain. Visualizes Net Delta and Net Gamma across the option chain.
-
 ### 5. OI Change Heatmap (`/heatmap`)
 - **Functionality**: A time-series grid showing the intensity of OI change and price buildup across strikes.
 - **Key Features**: Color-coded visualization of Long Buildup, Short Buildup, Short Covering, and Long Unwinding. Tracks strike-wise shifts every minute.
 
-### 6. Max Pain & IV Smile (`/max-pain`)
-- **Functionality**: Uses the Max Pain theory to identify the strike where option buyers lose the most (and sellers gain the most).
-- **Key Features**: Displays the Max Pain strike, Volatility Smile, analytics KPI grid (Highest CE/PE OI strikes, Best Premium to Sell, PCR, Average PoP), and Top 10 Opportunities table for options sellers. Full-width layout.
+### 6. Max Pain & Volatility Smile (`/max-pain`)
+- **Functionality**: Uses the Max Pain theory to identify optimal strike prices and visualizes implied volatility dynamics.
+- **Key Features**: Displays the Max Pain strike and a **Unified Volatility Smile (OTM IV Curve)** with rolling smoothing, analytics KPI grid, and Top 10 Opportunities table for options sellers.
 
 ### 7. Multi-Option Chart (`/multi`)
 - **Functionality**: A custom strategy builder for multi-leg positions (Spreads, Iron Condors, etc.).
@@ -64,24 +62,36 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 - **Functionality**: Isolated deep-dive into a single strike.
 - **Key Features**: Historical and real-time intraday tracking of CE vs. PE OI, Price, and Buildup for a specific strike price. Includes dynamic-colored bars (buildup vs unwinding), Net OI / Net Change secondary lines, ATM amber annotations, zero-band shading, and a 6-card KPI strip (Max CE/PE OI, Max CE/PE OI Change, PCR, Sentiment).
 
-### 15. Options Buildup (`/`)
-- **Functionality**: Visualizes strike-level OI buildup patterns with sentiment classification.
-- **Key Features**: Three enhanced charts — Sentiment Scatter (√-scaled bubbles, quadrant zones, top-3 labels), Total OI Bar (dynamic opacity, Net OI line), OI Change Bar (dynamic coloring, Net Change line). ATM reference lines across all charts. Buildup Summary Strip showing CE/PE counts by type and dominant signal.
+### 15. OI Trend Analyzer (`/oi-buildup`)
+- **Functionality**: Professional-grade high-density "Tape" visualization of strike-level OI buildup patterns.
+- **Key Features**: Barcode-style high-density grid for PE (Top) and CE (Bottom) buildup visualization, slanting strike labels, and flicker-free 1-minute background updates.
 
 ### 16. Strike Greeks History (`/strike-greeks`)
 - **Functionality**: Persistent historical time-series of option Greeks for a specific strike.
 - **Key Features**: 5 charts — Delta, Gamma, Vega, Theta, and Implied Volatility. 8-card KPI strip with latest values and intraday change. Color-coded CE (solid) / PE (dashed) spline traces. Live pulse badge and informative empty-state.
 
-### 17. User Login (`/login`)
+### 17. Market Watch (`/market-watch`) [NEW]
+- **Functionality**: Sector performance and constituent contribution tracking.
+- **Key Features**: Plotly bar chart displaying the daily percentage changes of various indices (NIFTY IT, BANKNIFTY, etc.) and visual constituent boards for NIFTY and BANKNIFTY stocks with right-to-left and left-to-right bar progressions.
+
+### 18. Future Intraday Buildup (`/future-intraday`) [NEW]
+- **Functionality**: Detailed intraday tracking of Open Interest buildup for the current month's future contract.
+- **Key Features**: Allows toggling between 3, 5, and 15-minute intervals. Calculates real-time sentiment (Long Buildup, Short Buildup, etc.) based on Price and OI changes. Includes a sentiment progress bar and a detailed color-coded table. Automatically refreshes every minute.
+
+### 19. Future Price vs OI (`/future-price-oi`) [NEW]
+- **Functionality**: High-performance streaming chart correlating Future Price with Open Interest.
+- **Key Features**: Live dual-axis Plotly line chart rendering Future Price (left axis) vs Open Interest (right axis). Initializes using historical 1-minute data and seamlessly streams tick-by-tick updates via WebSockets for real-time visualization.
+
+### 20. User Login (`/login`)
 - **Functionality**: Secure gateway to the analytics platform using JWT-based authentication.
 - **Key Features**: Persistent sessions via local storage, automatic redirection for unauthenticated users.
 - **Default Credentials**: `admin@oipro.com` / `OIPro@123` (Administrator)
 
-### 18. User Management (`/users`)
+### 21. User Management (`/users`)
 - **Functionality**: Administrator dashboard for managing platform accounts.
 - **Key Features**: View all users, add new accounts with specific roles, and delete users. Access is strictly restricted to 'admin' role accounts.
 
-### 19. Broker Management (`/brokers`)
+### 22. Broker Management (`/brokers`)
 - **Functionality**: Centralized interface for managing broker API credentials and generating daily access tokens.
 - **Key Features**: Add, edit, and delete broker credentials (masked API Keys/Secrets). Features an interactive popup-based OAuth token generation flow for Upstox without leaving the dashboard.
 
@@ -154,3 +164,4 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - **Full-System Semantic Theming**: Introduced a robust design system using CSS variables across 30+ pages, enabling seamless switching between Light and Dark modes while maintaining premium aesthetics.
 - **Weekend/Off-Market High-Low Fix**: Enhanced the Upstox WebSocket parsing logic to correctly extract daily OHLC data from the `ohlc_day` nested structure, ensuring high/low prices are populated on all dashboards even during weekends and non-trading hours.
 - **Authenticated UI Integrity**: The login gateway is now forced to Dark Mode permanently to ensure a consistent, secure-feeling point of entry, independent of the dashboard's theme settings.
+- **Exposure Change Heatmap Overhaul**: Fixed a backend caching bug that prevented correct Open Interest baseline lookups for precise percentage scaling. Delivered a massive UI/UX overhaul implementing vibrant non-linear neon scaling (Green/Red/Cyan/Amber), glassmorphism effects, a new `#0f1117` terminal dark mode, and fully dynamic tooltips accommodating both Light & Dark modes natively.
