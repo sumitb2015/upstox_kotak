@@ -128,7 +128,11 @@
                             const sortedData = result.data.sort((a, b) => new Date(a.time) - new Date(b.time));
 
                             sortedData.forEach(d => {
-                                times.push(new Date(d.time));
+                                const dt = new Date(d.time);
+                                // Filter data outside market hours (end at 15:30)
+                                if (dt.getHours() > 15 || (dt.getHours() === 15 && dt.getMinutes() > 30)) return;
+
+                                times.push(dt);
                                 prices.push(d.price);
                                 ois.push(d.oi);
                             });
@@ -171,6 +175,9 @@
                         if (data.type === "future-price-oi") {
                             const time = new Date(data.time);
 
+                            // Filter data outside market hours (end at 15:30)
+                            if (time.getHours() > 15 || (time.getHours() === 15 && time.getMinutes() > 30)) return;
+
                             // Update KPIs
                             setCurrentFuture(data.price);
                             setCurrentSpot(data.spot || 0);
@@ -211,10 +218,13 @@
                                     }, [0, 1]);
                                 }
 
-                                // Maintain 15-min padding
-                                const endRange = new Date(time.getTime() + 15 * 60 * 1000);
+                                // Keep market scope (09:15 to 15:30 fixed)
+                                const marketOpen = new Date(times[0]);
+                                marketOpen.setHours(9, 15, 0, 0);
+                                const marketClose = new Date(times[0]);
+                                marketClose.setHours(15, 30, 0, 0);
                                 Plotly.relayout('plotly-chart', {
-                                    'xaxis.range': [times[0], endRange]
+                                    'xaxis.range': [marketOpen, marketClose]
                                 });
 
                                 setLastUpdated(time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
@@ -271,9 +281,11 @@
                     hovertemplate: `<b>OI:</b> %{y:,.0f}<extra></extra>`
                 };
 
-                // Calculate X-axis range for padding (15 mins on the right)
-                const lastTime = times[times.length - 1];
-                const endRange = new Date(lastTime.getTime() + 15 * 60 * 1000);
+                // Enforce Market Hours (09:15 to 15:30)
+                const marketOpen = new Date(times[0]);
+                marketOpen.setHours(9, 15, 0, 0);
+                const marketClose = new Date(times[0]);
+                marketClose.setHours(15, 30, 0, 0);
 
                 const layout = {
                     title: false,
@@ -291,7 +303,7 @@
                     font: { color: textColor, family: 'Inter, sans-serif' },
                     xaxis: {
                         type: 'date',
-                        range: [times[0], endRange],
+                        range: [marketOpen, marketClose],
                         tickformat: '%I:%M %p',
                         showgrid: true,
                         gridcolor: gridColor,

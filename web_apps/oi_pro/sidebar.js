@@ -86,6 +86,11 @@
             svg: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
         },
         {
+            href: "/fii-dii",
+            title: "FII / DII Analytics",
+            svg: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path>'
+        },
+        {
             href: "/future-intraday",
             title: "Future Intraday",
             svg: '<line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line>'
@@ -102,7 +107,7 @@
         },
         {
             href: "/pop",
-            title: "Premium vs PoP Analysis",
+            title: "Seller's Edge",
             svg: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline>'
         },
         {

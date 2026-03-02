@@ -10,7 +10,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -138,7 +142,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -218,7 +222,13 @@
                     const res = await fetchWithAuth(`/api/straddle-data?symbol=${symbol}&expiry=${expiry}${strikeParam}`);
                     const result = await res.json();
                     if (result.status === "success") {
-                        setData(result.data);
+                        // Filter out data past 15:30
+                        const filteredData = (result.data || []).filter(d => {
+                            if (!d.timestamp) return false;
+                            const dt = new Date(d.timestamp);
+                            return dt.getHours() < 15 || (dt.getHours() === 15 && dt.getMinutes() <= 30);
+                        });
+                        setData(filteredData);
                         setKpis(result.metadata.kpis);
                         setMetadata(result.metadata);
                         setAllStrikes(result.metadata.all_strikes || []);
@@ -295,6 +305,9 @@
                 // If chart not initialized or data empty, skip
                 if (!data || data.length === 0) return;
 
+                const time = new Date(timestamp);
+                if (time.getHours() > 15 || (time.getHours() === 15 && time.getMinutes() > 30)) return;
+
                 setData(prevData => {
                     const newData = [...prevData];
                     const lastPoint = newData[newData.length - 1];
@@ -326,6 +339,13 @@
             const renderChart = () => {
                 const times = data.map(d => d.timestamp);
                 const premiums = data.map(d => d.combined_premium);
+
+                // Enforce Market Hours (09:15 to 15:30)
+                const firstTime = times.length > 0 ? new Date(times[0]) : new Date();
+                const marketOpen = new Date(firstTime);
+                marketOpen.setHours(9, 15, 0, 0);
+                const marketClose = new Date(firstTime);
+                marketClose.setHours(15, 30, 0, 0);
                 const vwap = data.map(d => d.vwap);
                 const ceLeg = data.map(d => d.ce_price || null);
                 const peLeg = data.map(d => d.pe_price || null);
@@ -392,6 +412,9 @@
                     margin: { t: 20, b: 70, l: 70, r: 80 },
                     font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     xaxis: {
+                        type: 'date',
+                        range: [marketOpen, marketClose],
+                        tickformat: '%I:%M %p',
                         gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
                         tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 }
                     },
@@ -426,7 +449,7 @@
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
-                    
+
 
                     <main className="pl-28 pr-4 py-8 w-full">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 pr-28">

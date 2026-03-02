@@ -91,7 +91,11 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 - **Functionality**: Administrator dashboard for managing platform accounts.
 - **Key Features**: View all users, add new accounts with specific roles, and delete users. Access is strictly restricted to 'admin' role accounts.
 
-### 22. Broker Management (`/brokers`)
+### 22. FII / DII Analytics (`/fii-dii`) [NEW]
+- **Functionality**: Visualizes institutional flow (FII and DII) together with Nifty performance.
+- **Key Features**: Multi-pane Plotly chart showing Nifty Spot (Line/Area), FII Net (Bar), and DII Net (Bar) on a unified timeline. Includes an interactive side panel for "Historical Logs" and optimized monthly X-axis labeling for long-term trend analysis. Fully standardized with the global design system.
+
+### 23. Broker Management (`/brokers`)
 - **Functionality**: Centralized interface for managing broker API credentials and generating daily access tokens.
 - **Key Features**: Add, edit, and delete broker credentials (masked API Keys/Secrets). Features an interactive popup-based OAuth token generation flow for Upstox without leaving the dashboard.
 
@@ -109,6 +113,7 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - `GET /api/pcr-data`: PCR and sentiment classification per strike.
 - `GET /api/max-pain-data`: Max Pain strike and IV data for the volatility smile.
 - `GET /api/cumulative-oi`: Aggregated OI metrics for a range of strikes.
+- `GET /api/fii-dii`: Returns historical FII and DII net flow data along with Nifty close values from a CSV source.
 
 ### Specialized Analytics
 - `GET /api/pop-data`: Premium and PoP data points for scatter charts.

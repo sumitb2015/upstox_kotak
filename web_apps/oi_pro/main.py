@@ -545,7 +545,7 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
                       symbol: str = Query(..., description="Symbol like NIFTY"), 
                       expiry: str = Query(..., description="Expiry Date")):
     """
-    Get data for Premium vs PoP Scatter Plot.
+    Get data for Seller's Probability Edge Scatter Plot (Premium vs Risk).
     """
     logger.info(f"[CORE] [PoP API] Request received for {symbol} expiry {expiry}")
     try:
@@ -1630,6 +1630,40 @@ async def get_indices_dashboard(request: Request):
     except Exception as e:
         return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
 
+@app.get("/fii-dii", response_class=HTMLResponse)
+async def get_fii_dii_page(request: Request):
+    """Serves the Unified HTML for the FII/DII Analytics Dashboard"""
+    try:
+        html_path = Path(__file__).parent / "fii_dii.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+
+@app.get("/api/fii-dii")
+async def get_fii_dii_data(current_user: User = Depends(get_current_user)):
+    """Reads FII/DII data from CSV and returns as JSON."""
+    csv_path = Path("/home/sumit/upstox_kotak/fii_dii_data.csv")
+    if not csv_path.exists():
+        return {"data": []}
+    
+    try:
+        import pandas as pd
+        df = pd.read_csv(csv_path)
+        # Ensure numeric columns are actually numeric
+        for col in ["FII Net Cr.", "DII Net Cr.", "Nifty"]:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Replace NaN with 0 for JSON safety
+        df = df.fillna(0)
+        
+        # Sort by date descending for the table, but the chart might need ascending
+        # We'll return everything and let frontend handle sorting/flipping
+        return {"data": df.to_dict(orient="records")}
+    except Exception as e:
+        logger.error(f"[CORE] Error reading FII/DII CSV: {e}")
+        raise HTTPException(status_code=500, detail="Error reading data source")
+
 @app.get("/market-watch", response_class=HTMLResponse)
 async def get_market_watch(request: Request):
     """Serves the Unified HTML for the Market Watch Dashboard"""
@@ -1850,6 +1884,9 @@ async def serve_dashboard():
 
 @app.get("/pop", response_class=HTMLResponse)
 async def serve_pop_page():
+    """
+    Serves the Seller's Probability Edge analytics page.
+    """
     html_path = os.path.join(os.path.dirname(__file__), "pop.html")
     if not os.path.exists(html_path):
         raise HTTPException(status_code=404, detail="pop.html not found")

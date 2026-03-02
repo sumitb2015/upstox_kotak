@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FII / DII Analytics - OI Pro</title>
+    <!-- Tailwind CSS (v3 standalone) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        'card-foreground': 'var(--card-foreground)',
+                        popover: 'var(--popover)',
+                        'popover-foreground': 'var(--popover-foreground)',
+                        primary: 'var(--primary)',
+                        'primary-foreground': 'var(--primary-foreground)',
+                        secondary: 'var(--secondary)',
+                        'secondary-foreground': 'var(--secondary-foreground)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                        accent: 'var(--accent)',
+                        'accent-foreground': 'var(--accent-foreground)',
+                        destructive: 'var(--destructive)',
+                        'destructive-foreground': 'var(--destructive-foreground)',
+                        border: 'var(--border)',
+                        input: 'var(--input)',
+                        ring: 'var(--ring)',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #09090b;
+            --card: #ffffff;
+            --card-foreground: #09090b;
+            --popover: #ffffff;
+            --popover-foreground: #09090b;
+            --primary: #18181b;
+            --primary-foreground: #fafafa;
+            --secondary: #f4f4f5;
+            --secondary-foreground: #18181b;
+            --muted: #f4f4f5;
+            --muted-foreground: #52525b;
+            --accent: #f4f4f5;
+            --accent-foreground: #18181b;
+            --destructive: #ef4444;
+            --destructive-foreground: #fafafa;
+            --border: #e4e4e7;
+            --input: #e4e4e7;
+            --ring: #18181b;
+        }
+
+        .dark {
+            --background: #09090b;
+            --foreground: #fafafa;
+            --card: #09090b;
+            --card-foreground: #fafafa;
+            --popover: #09090b;
+            --popover-foreground: #fafafa;
+            --primary: #fafafa;
+            --primary-foreground: #18181b;
+            --secondary: #27272a;
+            --secondary-foreground: #fafafa;
+            --muted: #27272a;
+            --muted-foreground: #a1a1aa;
+            --accent: #27272a;
+            --accent-foreground: #fafafa;
+            --destructive: #7f1d1d;
+            --destructive-foreground: #fafafa;
+            --border: #27272a;
+            --input: #27272a;
+            --ring: #d4d4d8;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            min-height: 100vh;
+            margin: 0;
+            transition: background-color 0.2s ease, color 0.2s ease;
+            overflow: hidden;
+        }
+
+        .main-content {
+            margin-left: 5.5rem;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                margin-left: 0;
+            }
+        }
+
+        .shadcn-card {
+            background-color: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body class="antialiased selection:bg-secondary selection:text-foreground">
+
+    <!-- Sidebar Integration -->
+    <div id="sidebar-root"></div>
+    <script src="/sidebar.js"></script>
+
+    <div id="root" class="main-content"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        const FiiDiiDashboard = () => {
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [isDarkMode, setIsDarkMode] = useState(document.documentElement.classList.contains('dark'));
+            const chartRef = useRef(null);
+
+            // Sync with global theme toggle
+            useEffect(() => {
+                const observer = new MutationObserver(() => {
+                    const isDark = document.documentElement.classList.contains('dark');
+                    if (isDark !== isDarkMode) {
+                        setIsDarkMode(isDark);
+                    }
+                });
+                observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+                return () => observer.disconnect();
+            }, [isDarkMode]);
+
+            const fetchData = async () => {
+                try {
+                    const response = await fetch('/api/fii-dii', {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('oi_pro_jwt')}`
+                        }
+                    });
+                    const result = await response.json();
+                    if (result.data) {
+                        setData(result.data);
+                    }
+                } catch (e) {
+                    console.error("Error fetching FII/DII data:", e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchData();
+            }, []);
+
+            useEffect(() => {
+                if (data.length > 0 && chartRef.current) {
+                    renderChart();
+                }
+            }, [data, isDarkMode]);
+
+            const renderChart = () => {
+                const chartData = [...data].reverse();
+
+                // X-AXIS CUSTOM LOGIC
+                const tickvals = [];
+                const ticktext = [];
+                let lastMonth = -1;
+
+                chartData.forEach((d) => {
+                    const dateObj = new Date(d.Date);
+                    const month = dateObj.getMonth();
+                    const year = dateObj.getFullYear();
+
+                    if (month !== lastMonth) {
+                        tickvals.push(d.Date);
+                        if (month === 0) { // Jan -> show Year
+                            ticktext.push(`<b>${year}</b>`);
+                        } else {
+                            ticktext.push(dateObj.toLocaleString('default', { month: 'short' }));
+                        }
+                        lastMonth = month;
+                    }
+                });
+
+                const dates = chartData.map(d => d.Date);
+                const nifty = chartData.map(d => d.Nifty);
+                const fiiNet = chartData.map(d => d['FII Net Cr.']);
+                const diiNet = chartData.map(d => d['DII Net Cr.']);
+
+                const lastIdx = chartData.length - 1;
+                const latestPrice = nifty[lastIdx];
+                const latestFii = fiiNet[lastIdx];
+                const latestDii = diiNet[lastIdx];
+
+                const minPrice = Math.min(...nifty);
+                const maxPrice = Math.max(...nifty);
+                const y1Range = [minPrice * 0.995, maxPrice * 1.005];
+
+                const colors = {
+                    bg: isDarkMode ? '#09090b' : '#FFFFFF',
+                    grid: isDarkMode ? 'rgba(39, 39, 42, 0.4)' : 'rgba(228, 228, 231, 0.6)',
+                    text: isDarkMode ? '#a1a1aa' : '#52525b',
+                    zero: isDarkMode ? '#27272a' : '#C0C0C0',
+                    line: '#2563eb', // primary blue
+                    up: '#10b981', // emerald-500
+                    down: '#ef4444' // rose-500
+                };
+
+                const traceNifty = {
+                    x: dates, y: nifty, type: 'scatter', mode: 'lines',
+                    fill: 'tozeroy',
+                    fillcolor: isDarkMode ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.1)',
+                    line: { color: colors.line, width: 2, shape: 'spline' },
+                    name: 'NIFTY 50', hoverinfo: 'y', yaxis: 'y1'
+                };
+
+                const traceFii = {
+                    x: dates, y: fiiNet, type: 'bar', name: 'FII Net',
+                    marker: { color: fiiNet.map(v => v >= 0 ? colors.up : colors.down) },
+                    yaxis: 'y2'
+                };
+
+                const traceDii = {
+                    x: dates, y: diiNet, type: 'bar', name: 'DII Net',
+                    marker: { color: diiNet.map(v => v >= 0 ? colors.up : colors.down) },
+                    yaxis: 'y3'
+                };
+
+                const layout = {
+                    grid: { rows: 3, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
+                    paper_bgcolor: colors.bg,
+                    plot_bgcolor: colors.bg,
+                    showlegend: false,
+                    margin: { t: 40, b: 30, l: 0, r: 80 },
+                    autosize: true,
+                    height: 650,
+                    xaxis: {
+                        anchor: 'y3', gridcolor: colors.grid,
+                        tickfont: { color: colors.text, size: 10 },
+                        showgrid: true,
+                        tickvals: tickvals,
+                        ticktext: ticktext,
+                        layer: 'below traces',
+                        showline: true, linecolor: colors.grid
+                    },
+                    xaxis2: { visible: false, anchor: 'y2', matches: 'x' },
+                    xaxis3: { visible: false, anchor: 'y1', matches: 'x' },
+                    yaxis: {
+                        domain: [0.68, 1], gridcolor: colors.grid,
+                        tickfont: { color: colors.text, size: 10 },
+                        side: 'right', range: y1Range, fixedrange: false,
+                        tickformat: ',.2f', showline: false
+                    },
+                    yaxis2: {
+                        domain: [0.34, 0.66], gridcolor: colors.grid,
+                        tickfont: { color: colors.text, size: 10 },
+                        side: 'right', tickformat: ',.0f',
+                        zeroline: true, zerolinecolor: colors.zero,
+                        zerolinedash: 'dash', showline: false
+                    },
+                    yaxis3: {
+                        domain: [0, 0.32], gridcolor: colors.grid,
+                        tickfont: { color: colors.text, size: 10 },
+                        side: 'right', tickformat: ',.0f',
+                        zeroline: true, zerolinecolor: colors.zero,
+                        zerolinedash: 'dash', showline: false
+                    },
+                    annotations: [
+                        {
+                            text: '<b>NIFTY 50</b>', x: 0.01, y: 0.95, xref: 'paper', yref: 'y domain',
+                            showarrow: false, font: { size: 13, color: colors.text },
+                            xanchor: 'left', yanchor: 'top'
+                        },
+                        {
+                            text: '<b>FII NET</b>', x: 0.01, y: 0.95, xref: 'paper', yref: 'y2 domain',
+                            showarrow: false, font: { size: 13, color: colors.text },
+                            xanchor: 'left', yanchor: 'top'
+                        },
+                        {
+                            text: '<b>DII NET</b>', x: 0.01, y: 0.95, xref: 'paper', yref: 'y3 domain',
+                            showarrow: false, font: { size: 13, color: colors.text },
+                            xanchor: 'left', yanchor: 'top'
+                        },
+                        { x: 1, xref: 'paper', y: latestPrice, yref: 'y1', text: latestPrice.toFixed(2), showarrow: false, xanchor: 'left', font: { color: '#ffffff', size: 10 }, bgcolor: colors.line, borderpad: 4 },
+                        { x: 1, xref: 'paper', y: latestFii, yref: 'y2', text: latestFii.toFixed(0), showarrow: false, xanchor: 'left', font: { color: '#ffffff', size: 10 }, bgcolor: latestFii >= 0 ? colors.up : colors.down, borderpad: 4 },
+                        { x: 1, xref: 'paper', y: latestDii, yref: 'y3', text: latestDii.toFixed(0), showarrow: false, xanchor: 'left', font: { color: '#ffffff', size: 10 }, bgcolor: latestDii >= 0 ? colors.up : colors.down, borderpad: 4 }
+                    ],
+                    shapes: [
+                        { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y1', y0: latestPrice, y1: latestPrice, line: { color: colors.up, width: 1, dash: 'dash' } }
+                    ],
+                    hovermode: 'x unified',
+                    hoverlabel: {
+                        bgcolor: isDarkMode ? '#18181b' : '#ffffff',
+                        font: { color: isDarkMode ? '#ffffff' : '#000000' }
+                    }
+                };
+
+                const config = { responsive: true, displayModeBar: false };
+                Plotly.react(chartRef.current, [traceNifty, traceFii, traceDii], layout, config);
+            };
+
+            if (loading) {
+                return (
+                    <div className="flex flex-col items-center justify-center h-full w-full">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        <span className="text-muted-foreground text-sm font-medium mt-4">Loading Analytics...</span>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col h-screen overflow-hidden">
+                    <header className="p-6 pb-2">
+                        <div className="space-y-1">
+                            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                                FII / DII Analytics
+                            </h1>
+                            <p className="text-sm text-muted-foreground">Institutional Flow & Market Correlation</p>
+                        </div>
+                    </header>
+
+                    <div className="flex flex-1 overflow-hidden p-6 gap-6">
+                        {/* Secondary Side Panel: Historical Logs */}
+                        <div className="w-[300px] flex flex-col shrink-0 shadcn-card overflow-hidden">
+                            <div className="p-4 border-b border-border bg-muted/30">
+                                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Historical Logs</h3>
+                            </div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                <table className="w-full text-left border-collapse">
+                                    <tbody>
+                                        {data.map((row, idx) => {
+                                            const isLatest = idx === 0;
+                                            return (
+                                                <tr key={idx} className={`border-b border-border transition-colors hover:bg-muted/50 cursor-pointer ${isLatest ? 'bg-primary/5 border-l-4 border-l-primary' : ''}`}>
+                                                    <td className="px-4 py-3">
+                                                        <div className="text-[11px] font-bold tracking-tight text-foreground">{row.Date}</div>
+                                                        <div className="text-[10px] text-muted-foreground mt-0.5">Nifty: {row.Nifty.toLocaleString('en-IN')}</div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <div className={`text-[11px] font-bold ${row['FII Net Cr.'] >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                            <span className="text-muted-foreground font-medium opacity-60">FII: </span>
+                                                            {row['FII Net Cr.'].toLocaleString('en-IN')}
+                                                        </div>
+                                                        <div className={`text-[10px] font-medium ${row['DII Net Cr.'] >= 0 ? 'text-emerald-500' : 'text-rose-500'} mt-0.5`}>
+                                                            <span className="text-muted-foreground opacity-60">DII: </span>
+                                                            {row['DII Net Cr.'].toLocaleString('en-IN')}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Main Chart Area */}
+                        <div className="flex-1 min-w-0 shadcn-card overflow-hidden relative">
+                            <div ref={chartRef} className="w-full h-full"></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<FiiDiiDashboard />);
+    </script>
+</body>
+
+</html>

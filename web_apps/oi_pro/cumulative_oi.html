@@ -170,7 +170,13 @@
                     const res = await fetchWithAuth(`/api/cumulative-oi?symbol=${symbol}&expiry=${expiry}&strike_range=${strikeRange}`);
                     const result = await res.json();
                     if (result.status === "success") {
-                        setData(result.data);
+                        // Filter out data past 15:30
+                        const filteredData = (result.data || []).filter(d => {
+                            if (!d.timestamp) return false;
+                            const dt = new Date(d.timestamp);
+                            return dt.getHours() < 15 || (dt.getHours() === 15 && dt.getMinutes() <= 30);
+                        });
+                        setData(filteredData);
                         setKpis(result.metadata.kpis);
                         setMetadata(result.metadata);
                         setStrikesUsed(result.metadata.strikes_used || []);
@@ -193,6 +199,14 @@
                 if (!data || data.length === 0) return;
 
                 const times = data.map(d => d.timestamp);
+
+                // Enforce Market Hours (09:15 to 15:30)
+                const firstTime = times.length > 0 ? new Date(times[0]) : new Date();
+                const marketOpen = new Date(firstTime);
+                marketOpen.setHours(9, 15, 0, 0);
+                const marketClose = new Date(firstTime);
+                marketClose.setHours(15, 30, 0, 0);
+
                 const netChg = data.map(d => d.net_chg);
                 const ltp = data.map(d => d.ltp);
                 const ceChg = data.map(d => d.ce_chg);
@@ -229,7 +243,7 @@
                     legend: { font: { color: isDark ? '#94a3b8' : '#475569' }, orientation: 'h', y: -0.2 },
                     margin: { t: 20, b: 60, l: 60, r: 60 },
                     font: { family: 'Inter', color: isDark ? '#94a3b8' : '#1e293b' },
-                    xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                    xaxis: { type: 'date', range: [marketOpen, marketClose], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
                     hovermode: 'x unified',
                     hoverlabel: { bgcolor: isDark ? '#111827' : '#ffffff', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } }
                 };

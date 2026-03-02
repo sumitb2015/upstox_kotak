@@ -10,7 +10,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        body { font-family: \'Inter\', sans-serif; background-color: var(--background); color: var(--foreground); transition: background-color 0.2s ease, color 0.2s ease;
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--background);
+            color: var(--foreground);
+            transition: background-color 0.2s ease, color 0.2s ease;
             margin: 0;
             overflow-x: hidden;
         }
@@ -135,7 +139,7 @@
             color: var(--foreground);
             transition: background-color 0.2s ease, color 0.2s ease;
         }
-        
+
         .glass {
             background: var(--card);
             border: 1px solid var(--border);
@@ -243,11 +247,21 @@
                     const priceResult = await priceRes.json();
 
                     if (oiResult.status === "success") {
-                        setOiData(oiResult.data || []);
+                        const filteredOi = (oiResult.data || []).filter(d => {
+                            if (!d.timestamp) return false;
+                            const dt = new Date(d.timestamp);
+                            return dt.getHours() < 15 || (dt.getHours() === 15 && dt.getMinutes() <= 30);
+                        });
+                        setOiData(filteredOi);
                         setOiMetadata(oiResult.metadata || {});
                     }
                     if (priceResult.status === "success") {
-                        setPriceData(priceResult.data || []);
+                        const filteredPrice = (priceResult.data || []).filter(d => {
+                            if (!d.timestamp) return false;
+                            const dt = new Date(d.timestamp);
+                            return dt.getHours() < 15 || (dt.getHours() === 15 && dt.getMinutes() <= 30);
+                        });
+                        setPriceData(filteredPrice);
                         setPriceMetadata(priceResult.metadata || {});
                     }
 
@@ -273,6 +287,14 @@
 
             // 4. Render Charts
             useEffect(() => {
+                // Enforce Market Hours (09:15 to 15:30)
+                const times = priceData.length > 0 ? priceData.map(d => d.timestamp) : (oiData.length > 0 ? oiData.map(d => d.timestamp) : []);
+                const firstTime = times.length > 0 ? new Date(times[0]) : new Date();
+                const marketOpen = new Date(firstTime);
+                marketOpen.setHours(9, 15, 0, 0);
+                const marketClose = new Date(firstTime);
+                marketClose.setHours(15, 30, 0, 0);
+
                 // Price Chart
                 if (priceData.length > 0 && priceMetadata.columns) {
                     const traces = [];
@@ -302,7 +324,7 @@
                         plot_bgcolor: 'rgba(0,0,0,0)',
                         font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
                         margin: { t: 20, r: 30, l: 80, b: 40 },
-                        xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, showticklabels: false },
+                        xaxis: { type: 'date', range: [marketOpen, marketClose], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, showticklabels: false },
                         yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Premium (₹)', font: { size: 12 } } },
                         hovermode: 'x unified',
                         showlegend: true,
@@ -339,7 +361,7 @@
                         plot_bgcolor: 'rgba(0,0,0,0)',
                         font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
                         margin: { t: 20, r: 30, l: 80, b: 60 },
-                        xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Time', font: { size: 11 } } },
+                        xaxis: { type: 'date', range: [marketOpen, marketClose], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Time', font: { size: 11 } } },
                         yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Open Interest', font: { size: 12 } }, tickformat: ',.0f' },
                         hovermode: 'x unified',
                         showlegend: false
@@ -353,7 +375,7 @@
 
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
-                    
+
 
                     <main className="flex-1 pl-28 p-8 max-w-[1600px] mx-auto w-full">
                         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
