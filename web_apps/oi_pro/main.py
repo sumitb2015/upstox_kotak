@@ -507,9 +507,44 @@ strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
 
-# app = FastAPI(...) is at line 373
+# ─── Middleware Block (must be registered BEFORE routes) ─────────────────────
+#
+# Fix #10: Security Headers Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
 
-# We will move the merged startup_event down to line 1479 area for consistency
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Injects standard HTTP security headers on every response."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Fix #3: CORS — env-configurable origin whitelist.
+# Set CORS_ORIGINS to a comma-separated list of allowed origins in .env
+# Default: localhost only (safe for development)
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:8001,http://127.0.0.1:8001")
+ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+if "*" in ALLOWED_ORIGINS:
+    import logging as _clog
+    _clog.getLogger("OIPRO").critical(
+        "[SECURITY] CORS_ORIGINS contains '*' — this is unsafe in production! "
+        "Set explicit allowed origins in your .env file."
+    )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 @app.middleware("http")
 async def db_session_middleware(request: Request, call_next):
@@ -1748,14 +1783,8 @@ async def get_market_quote(
 # Duplicate consolidated (see line 647)
 pass
 
-# CORS Configuration for React Frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Adjust in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# (CORS middleware moved to the top of the file — after app = FastAPI())
+# See "Middleware Block" section above for the definitive CORS config.
 
 async def get_access_token(user: User = None):
     """
