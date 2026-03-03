@@ -425,6 +425,16 @@
         const isDark = document.documentElement.classList.contains('dark');
 
         // Build nav HTML
+        // Derive user display info from JWT payload
+        const userEmail = (payload && payload.sub) ? payload.sub : 'Unknown';
+        const emailPrefix = userEmail.split('@')[0];
+        const userInitials = emailPrefix.slice(0, 2).toUpperCase();
+        const userDisplayName = userEmail.length > 22 ? userEmail.slice(0, 20) + '…' : userEmail;
+        // Deterministic color derived from email string (stable across sessions)
+        const AVATAR_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#14b8a6'];
+        const colorIdx = emailPrefix.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+        const userAvatarColor = AVATAR_COLORS[colorIdx];
+
         const navItemsHtml = NAV_ITEMS.map(function (item) {
             const isActive = item.href === "/"
                 ? currentPath === "/"
@@ -454,6 +464,17 @@
                 </div>
 
                 <div class="mt-auto px-3 border-t border-border pt-4 flex flex-col gap-2">
+                    <!-- User Identity Card -->
+                    <div class="flex items-center gap-2.5 px-2 py-2 rounded-lg bg-muted/40 border border-border/50 mb-1 min-w-0 overflow-hidden" title="${payload && payload.sub ? payload.sub : 'Unknown'}">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white" style="background:${userAvatarColor}">
+                            ${userInitials}
+                        </div>
+                        <div class="nav-text flex flex-col min-w-0 flex-1">
+                            <span class="text-xs font-medium text-foreground truncate leading-tight">${userDisplayName}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded mt-0.5 inline-flex w-fit font-semibold ${isAdmin ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">${isAdmin ? 'Admin' : 'User'}</span>
+                        </div>
+                    </div>
+
                     <!-- Theme Toggle -->
                     <button id="theme-toggle" class="nav-item relative w-full group focus:outline-none">
                         <div class="w-5 h-5 flex items-center justify-center shrink-0">
