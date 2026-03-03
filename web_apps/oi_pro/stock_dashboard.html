@@ -306,7 +306,7 @@
 
                 const fetchQuotes = async () => {
                     try {
-                        const token = localStorage.getItem('token');
+                        const token = localStorage.getItem('oi_pro_jwt') || localStorage.getItem('token');
                         const url = `/api/market-quote?index=${activeIndex}`;
                         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
