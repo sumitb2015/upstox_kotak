@@ -11,35 +11,6 @@
         return; // Stop execution
     }
 
-    // Broker Token Gate: Redirect to /brokers if user has no active broker token.
-    // Skipped on /login and /brokers pages themselves.
-    // Admins are exempt (they manage the system and may not need a personal broker).
-    const GATE_EXEMPT_PATHS = ['/login', '/brokers', '/pricing', '/privacy', '/terms', '/contact'];
-    const isGateExempt = GATE_EXEMPT_PATHS.some(p => window.location.pathname === p || window.location.pathname.startsWith(p + '/'));
-    if (!isGateExempt) {
-        const _gateJwt = localStorage.getItem('oi_pro_jwt');
-        if (_gateJwt) {
-            // Decode role without waiting (synchronous JWT decode)
-            let _gateRole = null;
-            try {
-                const _p = JSON.parse(atob(_gateJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-                _gateRole = _p.role;
-            } catch (e) { }
-            // Admins bypass the broker gate
-            if (_gateRole !== 'admin') {
-                fetch('/api/broker/status', {
-                    headers: { 'Authorization': 'Bearer ' + _gateJwt }
-                }).then(r => {
-                    if (!r.ok) return null; // Fail open on 404/500 — e.g. server not yet restarted
-                    return r.json();
-                }).then(data => {
-                    if (data && !data.has_token) {
-                        window.location.href = '/brokers?no_broker=1';
-                    }
-                }).catch(() => { }); // Fail open on network errors
-            }
-        }
-    }
 
     function getJWTPayload() {
         const token = localStorage.getItem('oi_pro_jwt');
@@ -58,6 +29,21 @@
 
     const payload = getJWTPayload();
     const isAdmin = payload && payload.role === 'admin';
+
+    // --- Broker Token Gate ---
+    // Redirect non-admin users to /brokers if they have no active broker token.
+    // Exempt on login/brokers and public pages. Admins always bypass.
+    (function brokerGate() {
+        const GATE_EXEMPT = ['/login', '/brokers', '/pricing', '/privacy', '/terms', '/contact'];
+        const exempt = GATE_EXEMPT.some(p => window.location.pathname === p || window.location.pathname.startsWith(p + '/'));
+        if (exempt || isAdmin) return; // Admins and exempt pages skip the gate
+        const jwt = localStorage.getItem('oi_pro_jwt');
+        if (!jwt) return;
+        fetch('/api/broker/status', { headers: { 'Authorization': 'Bearer ' + jwt } })
+            .then(r => { if (!r.ok) return null; return r.json(); })
+            .then(data => { if (data && !data.has_token) window.location.href = '/brokers?no_broker=1'; })
+            .catch(() => { }); // Fail open on network error
+    })();
 
     // --- Global Auth Helpers ---
     window.fetchWithAuth = async (url, options = {}) => {
