@@ -303,13 +303,14 @@
 
                 const atmLabel = spotPrice > 0 ? [{
                     ...(isVertical
-                        ? { x: spotPrice, yref: 'paper', y: 1, xanchor: 'left' }
-                        : { y: spotPrice, xref: 'paper', x: 1, yanchor: 'bottom', xanchor: 'right' }),
-                    text: `ATM ${spotPrice.toLocaleString('en-IN')}`,
+                        ? { x: spotPrice, yref: 'paper', y: 1.02, xanchor: 'center', yanchor: 'bottom' }
+                        : { y: spotPrice, xref: 'paper', x: 1, yanchor: 'middle', xanchor: 'right' }),
+                    text: `▼ ${spotPrice.toLocaleString('en-IN')}`,
                     showarrow: false,
-                    font: { color: '#fbbf24', size: 9, family: 'Inter' },
-                    bgcolor: 'rgba(251,191,36,0.1)', bordercolor: 'rgba(251,191,36,0.3)',
-                    borderwidth: 1, borderpad: 3
+                    font: { color: '#fbbf24', size: 9, family: 'Inter', weight: 700 },
+                    bgcolor: 'rgba(0,0,0,0)',
+                    bordercolor: 'rgba(0,0,0,0)',
+                    borderwidth: 0, borderpad: 2
                 }] : [];
 
                 // ── Chart 1: Total OI ──
@@ -503,8 +504,8 @@
                 Plotly.react('chart-straddle-div', [traceCE_LTP, tracePE_LTP, traceStraddle], layoutStraddle, { responsive: true, displayModeBar: false });
 
                 // ── Chart 4: OI Build vs Unwind Scatter ──
-                // X = OI Change (buildup/unwind), Y = Premium change (%)
-                // 4 quadrants: Long Buildup / Short Covering / Long Unwind / Short Buildup
+                // X = OI Change, Y = Premium change (%)
+                // Quadrants: Long Buildup / Short Covering / Long Unwind / Short Buildup
 
                 const scatterCE = fd
                     .filter(d => (d.ce_ltp || 0) > 0 && (d.ce_close || 0) > 0)
@@ -512,8 +513,6 @@
                         strike: d.strike,
                         oiChg: d.ce_oi_chg || 0,
                         priceChgPct: ((d.ce_ltp - d.ce_close) / d.ce_close) * 100,
-                        label: `${d.strike} CE`,
-                        type: 'CE',
                     }));
 
                 const scatterPE = fd
@@ -522,72 +521,103 @@
                         strike: d.strike,
                         oiChg: d.pe_oi_chg || 0,
                         priceChgPct: ((d.pe_ltp - d.pe_close) / d.pe_close) * 100,
-                        label: `${d.strike} PE`,
-                        type: 'PE',
                     }));
 
-                // Color per quadrant: CE
-                const ceDotColors = scatterCE.map(p => {
-                    if (p.oiChg >= 0 && p.priceChgPct <= 0) return 'rgba(239,68,68,0.80)';   // Short Buildup (Bearish CE writers)
-                    if (p.oiChg >= 0 && p.priceChgPct > 0) return 'rgba(251,146,60,0.80)';  // Long Buildup (Bullish CE buyers)
-                    if (p.oiChg < 0 && p.priceChgPct > 0) return 'rgba(96,165,250,0.80)';  // Short Covering (CE buyers exit)
-                    return 'rgba(148,163,184,0.60)';                                           // Long Unwind
-                });
+                // Vibrant quadrant colors
+                const getCEColor = p => {
+                    if (p.oiChg >= 0 && p.priceChgPct <= 0) return { fill: 'rgba(239,68,68,0.90)', line: '#fca5a5' };  // Short Buildup
+                    if (p.oiChg >= 0 && p.priceChgPct > 0) return { fill: 'rgba(251,146,60,0.90)', line: '#fdba74' };  // Long Buildup
+                    if (p.oiChg < 0 && p.priceChgPct > 0) return { fill: 'rgba(56,189,248,0.90)', line: '#7dd3fc' };  // Short Cover
+                    return { fill: 'rgba(100,116,139,0.80)', line: '#94a3b8' };  // Long Unwind
+                };
+                const getPEColor = p => {
+                    if (p.oiChg >= 0 && p.priceChgPct >= 0) return { fill: 'rgba(16,185,129,0.90)', line: '#6ee7b7' };  // Short Buildup (bullish)
+                    if (p.oiChg >= 0 && p.priceChgPct < 0) return { fill: 'rgba(167,139,250,0.90)', line: '#c4b5fd' };  // Long Buildup (bearish)
+                    if (p.oiChg < 0 && p.priceChgPct < 0) return { fill: 'rgba(56,189,248,0.90)', line: '#7dd3fc' };  // Short Cover
+                    return { fill: 'rgba(100,116,139,0.80)', line: '#94a3b8' };  // Long Unwind
+                };
 
-                const peDotColors = scatterPE.map(p => {
-                    if (p.oiChg >= 0 && p.priceChgPct >= 0) return 'rgba(16,185,129,0.80)';  // Short Buildup (Bullish PE writers)
-                    if (p.oiChg >= 0 && p.priceChgPct < 0) return 'rgba(167,139,250,0.80)'; // Long Buildup (Bearish PE buyers)
-                    if (p.oiChg < 0 && p.priceChgPct < 0) return 'rgba(96,165,250,0.80)';  // Short Covering
-                    return 'rgba(148,163,184,0.60)';                                           // Long Unwind
-                });
+                const ceCols = scatterCE.map(getCEColor);
+                const peCols = scatterPE.map(getPEColor);
 
                 const traceCEScatter = {
                     x: scatterCE.map(p => p.oiChg),
                     y: scatterCE.map(p => p.priceChgPct),
-                    mode: 'markers+text',
+                    mode: 'markers',
                     type: 'scatter',
-                    name: 'CE',
-                    text: scatterCE.map(p => String(p.strike)),
-                    textposition: 'top center',
-                    textfont: { size: 8, color: isDark ? '#94a3b8' : '#64748b' },
-                    marker: { size: 9, color: ceDotColors, symbol: 'circle', line: { width: 0.5, color: 'rgba(255,255,255,0.3)' } },
-                    hovertemplate: '<b>%{text} CE</b><br>OI Δ: %{x:+,.0f}<br>Price Δ: %{y:+.2f}%<extra></extra>',
+                    name: 'CE Strikes',
+                    marker: {
+                        size: 14,
+                        color: ceCols.map(c => c.fill),
+                        symbol: 'circle',
+                        line: { width: 1.5, color: ceCols.map(c => c.line) }
+                    },
+                    text: scatterCE.map(p => `<b>${p.strike} CE</b>`),
+                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.2f}%</b><extra></extra>',
                 };
 
                 const tracePEScatter = {
                     x: scatterPE.map(p => p.oiChg),
                     y: scatterPE.map(p => p.priceChgPct),
-                    mode: 'markers+text',
+                    mode: 'markers',
                     type: 'scatter',
-                    name: 'PE',
-                    text: scatterPE.map(p => String(p.strike)),
-                    textposition: 'top center',
-                    textfont: { size: 8, color: isDark ? '#94a3b8' : '#64748b' },
-                    marker: { size: 9, color: peDotColors, symbol: 'diamond', line: { width: 0.5, color: 'rgba(255,255,255,0.3)' } },
-                    hovertemplate: '<b>%{text} PE</b><br>OI Δ: %{x:+,.0f}<br>Price Δ: %{y:+.2f}%<extra></extra>',
+                    name: 'PE Strikes',
+                    marker: {
+                        size: 14,
+                        color: peCols.map(c => c.fill),
+                        symbol: 'diamond',
+                        line: { width: 1.5, color: peCols.map(c => c.line) }
+                    },
+                    text: scatterPE.map(p => `<b>${p.strike} PE</b>`),
+                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.2f}%</b><extra></extra>',
                 };
 
-                // Zero lines divide 4 quadrants
+                // Quadrant background fills
+                const quadrantFills = [
+                    { type: 'rect', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 1, yref: 'paper', fillcolor: isDark ? 'rgba(239,68,68,0.03)' : 'rgba(239,68,68,0.03)', line: { width: 0 } },  // TR (Short Buildup - bearish CE) — top-right from zero
+                    { type: 'rect', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 1, yref: 'paper', fillcolor: 'rgba(0,0,0,0)', line: { width: 0 } }, // placeholder
+                ];
+
                 const quadrantShapes = [
-                    { type: 'line', x0: 0, x1: 0, yref: 'paper', y0: 0, y1: 1, line: { color: isDark ? '#334155' : '#cbd5e1', width: 1, dash: 'dot' } },
-                    { type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 0, y1: 0, line: { color: isDark ? '#334155' : '#cbd5e1', width: 1, dash: 'dot' } },
+                    // Vertical zero line
+                    {
+                        type: 'line', x0: 0, x1: 0, yref: 'paper', y0: 0, y1: 1,
+                        line: { color: isDark ? '#475569' : '#94a3b8', width: 1, dash: 'dash' }
+                    },
+                    // Horizontal zero line
+                    {
+                        type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 0, y1: 0,
+                        line: { color: isDark ? '#475569' : '#94a3b8', width: 1, dash: 'dash' }
+                    },
                 ];
 
                 const quadrantAnnotations = [
-                    { xref: 'paper', yref: 'paper', x: 0.02, y: 0.98, text: 'Long Buildup ↗', showarrow: false, font: { size: 8, color: 'rgba(251,146,60,0.7)', family: 'Inter' }, xanchor: 'left' },
-                    { xref: 'paper', yref: 'paper', x: 0.98, y: 0.98, text: 'Short Cover ↗', showarrow: false, font: { size: 8, color: 'rgba(96,165,250,0.7)', family: 'Inter' }, xanchor: 'right' },
-                    { xref: 'paper', yref: 'paper', x: 0.02, y: 0.02, text: 'Short Buildup ↙', showarrow: false, font: { size: 8, color: 'rgba(239,68,68,0.7)', family: 'Inter' }, xanchor: 'left' },
-                    { xref: 'paper', yref: 'paper', x: 0.98, y: 0.02, text: 'Long Unwind ↙', showarrow: false, font: { size: 8, color: 'rgba(148,163,184,0.7)', family: 'Inter' }, xanchor: 'right' },
+                    { xref: 'paper', yref: 'paper', x: 0.01, y: 0.99, text: '▲ OI + ▲ Price', showarrow: false, font: { size: 9, color: 'rgba(251,146,60,0.9)', family: 'Inter', weight: 700 }, xanchor: 'left', yanchor: 'top', bgcolor: 'rgba(0,0,0,0)' },
+                    { xref: 'paper', yref: 'paper', x: 0.99, y: 0.99, text: '▼ OI + ▲ Price', showarrow: false, font: { size: 9, color: 'rgba(56,189,248,0.9)', family: 'Inter', weight: 700 }, xanchor: 'right', yanchor: 'top', bgcolor: 'rgba(0,0,0,0)' },
+                    { xref: 'paper', yref: 'paper', x: 0.01, y: 0.01, text: '▲ OI + ▼ Price', showarrow: false, font: { size: 9, color: 'rgba(239,68,68,0.9)', family: 'Inter', weight: 700 }, xanchor: 'left', yanchor: 'bottom', bgcolor: 'rgba(0,0,0,0)' },
+                    { xref: 'paper', yref: 'paper', x: 0.99, y: 0.01, text: '▼ OI + ▼ Price', showarrow: false, font: { size: 9, color: 'rgba(100,116,139,0.9)', family: 'Inter', weight: 700 }, xanchor: 'right', yanchor: 'bottom', bgcolor: 'rgba(0,0,0,0)' },
                 ];
 
                 const layoutScatter = {
                     ...BASE,
-                    xaxis: { title: { text: 'OI Change (Contracts)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1a2640' : '#f1f5f9', zeroline: true, zerolinecolor: isDark ? '#475569' : '#cbd5e1', tickformat: '.3s' },
-                    yaxis: { title: { text: 'Price Change (%)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1a2640' : '#f1f5f9', zeroline: true, zerolinecolor: isDark ? '#475569' : '#cbd5e1', ticksuffix: '%' },
+                    xaxis: {
+                        title: { text: 'OI Change (Contracts)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        tickfont: { color: isDark ? '#64748b' : '#94a3b8' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: false, tickformat: '.3s',
+                        showline: true, linecolor: isDark ? '#334155' : '#e2e8f0'
+                    },
+                    yaxis: {
+                        title: { text: 'Price Change (%)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        tickfont: { color: isDark ? '#64748b' : '#94a3b8' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: false, ticksuffix: '%',
+                        showline: true, linecolor: isDark ? '#334155' : '#e2e8f0'
+                    },
                     shapes: quadrantShapes,
                     annotations: quadrantAnnotations,
                     hovermode: 'closest',
-                    legend: { ...BASE.legend },
+                    legend: { ...BASE.legend, traceorder: 'normal' },
                 };
 
                 Plotly.react('chart-scatter-div', [traceCEScatter, tracePEScatter], layoutScatter, { responsive: true, displayModeBar: false });
