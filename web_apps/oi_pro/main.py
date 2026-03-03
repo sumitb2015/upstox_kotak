@@ -1537,7 +1537,6 @@ async def unified_background_poller():
     
     cycle_count = 0
     is_baseline_fetched = False
-    is_streamer_started = False
     is_master_prefetched = False
     
     while True:
@@ -1562,11 +1561,11 @@ async def unified_background_poller():
             if not is_baseline_fetched:
                 await fetch_baseline_oi()
                 is_baseline_fetched = True
-                
-            if not is_streamer_started:
-                await startup_event_ws()
-                is_streamer_started = True
-                
+
+            # Note: Streamers are no longer started globally here.
+            # Each user gets a dedicated UpstoxStreamer via StreamerRegistry
+            # when they first connect to any /ws/* endpoint.
+
             if not is_master_prefetched:
                 asyncio.create_task(prefetch_option_master())
                 is_master_prefetched = True
