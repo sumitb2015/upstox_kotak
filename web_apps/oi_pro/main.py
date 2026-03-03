@@ -1036,6 +1036,62 @@ manager = ConnectionManager()
 streamer: Optional[UpstoxStreamer] = None
 loop = None # Global event loop reference
 
+# --- WebSocket Authentication Helper ---
+
+async def authenticate_websocket(websocket: WebSocket, token: str = None) -> Optional[object]:
+    """
+    Fix #4: Centralized WebSocket authentication.
+    Validates the JWT from an initial auth message sent over the WS connection.
+    Falls back to URL query param (deprecated — tokens in URLs appear in server logs).
+    Closes with code 1008 (Policy Violation) if auth fails.
+
+    Usage:
+      1. Client connects to ws://host/ws/straddle
+      2. Client immediately sends: {"action": "auth", "token": "<jwt>"}
+      3. Server validates and stores current_user on the connection
+    """
+    from web_apps.oi_pro.auth import verify_jwt, get_user as _get_user
+
+    try:
+        if token:
+            # Legacy: token in URL query param (deprecated — kept for backward compat)
+            logger.warning(
+                "[CORE] [WS] Received token via URL query param (deprecated). "
+                "Send {action: 'auth', token: '...'} as first WS message instead."
+            )
+            email = verify_jwt(token)
+            user = _get_user(email)
+            if not user or not user.is_active:
+                await websocket.close(code=1008)
+                return None
+            return user
+
+        # Secure path: wait up to 5s for an auth message
+        try:
+            auth_raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            auth_msg = json.loads(auth_raw)
+        except (asyncio.TimeoutError, json.JSONDecodeError):
+            logger.warning("[CORE] [WS] Auth timeout or invalid JSON — closing connection")
+            await websocket.close(code=1008)
+            return None
+
+        if auth_msg.get("action") != "auth" or not auth_msg.get("token"):
+            logger.warning("[CORE] [WS] First message must be {action:'auth', token:'...'}")
+            await websocket.close(code=1008)
+            return None
+
+        email = verify_jwt(auth_msg["token"])
+        user = _get_user(email)
+        if not user or not user.is_active:
+            await websocket.close(code=1008)
+            return None
+        return user
+
+    except Exception as e:
+        logger.warning(f"[CORE] [WS] Auth failed: {e}")
+        await websocket.close(code=1008)
+        return None
+
 # --- WebSocket Endpoints ---
 
 @app.websocket("/ws/straddle")
@@ -1043,20 +1099,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
     """
     Consolidated WebSocket endpoint for real-time Straddle updates.
     Client sends JSON subscribe request.
+    Fix #4: Auth via initial {action:'auth', token:'...'} message, not URL param.
     """
-    # Manual token check for WS
-    current_user = None
-    try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            current_user = get_user(email)
-    except:
-         await websocket.close(code=1008) # Policy Violation
-         return
-
     await manager.connect(websocket)
-    logger.info("[CORE] [WS] New Straddle WS Connection")
+    current_user = await authenticate_websocket(websocket, token)
+    if current_user is None:
+        return  # authenticate_websocket already closed the socket
+    logger.info(f"[CORE] [WS] New Straddle WS Connection (user: {current_user.email})")
     try:
         while True:
             # Flexible: accept text or json
@@ -1077,20 +1126,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
 async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(None)):
     """
     WebSocket endpoint for cumulative option prices.
-    Authenticates via token query parameter and broadcasts live price updates.
+    Fix #4: Auth via initial {action:'auth', token:'...'} message, not URL param.
     """
-    # Manual token check
-    current_user = None
-    try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            current_user = get_user(email)
-    except:
-         await websocket.close(code=1008)
-         return
     await manager.connect(websocket)
-    logger.info("[CORE] [WS] [CumulativePrices] New connection")
+    current_user = await authenticate_websocket(websocket, token)
+    if current_user is None:
+        return  # authenticate_websocket already closed the socket
+    logger.info(f"[CORE] [WS] [CumulativePrices] New connection (user: {current_user.email})")
 
     ce_keys = []
     pe_keys = []
@@ -1594,23 +1636,12 @@ async def shutdown_event():
 async def websocket_market_watch(websocket: WebSocket, token: str = Query(None)):
     """
     WebSocket endpoint for the dashboard market watch (LTP updates).
-    Authenticates via token and subscribes the user to real-time index updates.
-    """
-    # Manual token check
-    current_user = None
-    try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            current_user = get_user(email)
-    except:
-         await websocket.close(code=1008)
-         return
-    """
-    WebSocket endpoint for Dashboard Indices (NIFTY, BANKNIFTY, etc.)
-    Broadcasts in format: { type: "market_update", prices: { SYMBOL: { ltp: ..., chg: ... } } }
+    Fix #4: Auth via initial {action:'auth', token:'...'} message, not URL param.
     """
     await manager.connect_market_watch(websocket)
+    current_user = await authenticate_websocket(websocket, token)
+    if current_user is None:
+        return  # authenticate_websocket already closed the socket
     try:
         # Send latest data immediately if available
         if streamer:
@@ -1719,17 +1750,14 @@ async def get_future_intraday(request: Request):
 
 @app.get("/api/market-quote")
 async def get_market_quote(
-    token: str = Query(None),
+    current_user: User = Depends(get_current_user),
     index: str = Query("NIFTY", description="Index to fetch quotes for: NIFTY, BANKNIFTY, or INDICES")
 ):
-    """REST endpoint for Index constituents real-time updates and daily changes"""
+    """REST endpoint for Index constituents real-time updates and daily changes.
+    Fix #5: Requires JWT authentication via Authorization: Bearer header.
+    """
     try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            get_user(email)
-            
-        upstox_token = await get_access_token()
+        upstox_token = await get_access_token(current_user)
         if not upstox_token:
             return {"status": "error", "message": "No active broker connection"}
             
