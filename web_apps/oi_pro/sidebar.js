@@ -29,11 +29,14 @@
             if (_gateRole !== 'admin') {
                 fetch('/api/broker/status', {
                     headers: { 'Authorization': 'Bearer ' + _gateJwt }
-                }).then(r => r.json()).then(data => {
-                    if (!data.has_token) {
+                }).then(r => {
+                    if (!r.ok) return null; // Fail open on 404/500 — e.g. server not yet restarted
+                    return r.json();
+                }).then(data => {
+                    if (data && !data.has_token) {
                         window.location.href = '/brokers?no_broker=1';
                     }
-                }).catch(() => { }); // Fail open — don't lock out on network errors
+                }).catch(() => { }); // Fail open on network errors
             }
         }
     }
