@@ -769,6 +769,21 @@ async def update_strategy_config(strategy_id: str, new_config: Dict, admin: User
 
 # --- Broker Management API ---
 
+@app.get("/api/broker/status")
+def broker_status(current_user: User = Depends(get_current_user)):
+    """
+    Lightweight endpoint for sidebar.js to check if the user has
+    a valid broker token. Returns {has_token: bool}.
+    Used as the access control gate — dashboard pages are only
+    accessible when has_token=True.
+    """
+    has_token = BrokerCredential.select().where(
+        BrokerCredential.user == current_user,
+        BrokerCredential.access_token.is_null(False),
+        BrokerCredential.access_token != ""
+    ).exists()
+    return {"has_token": has_token}
+
 @app.get("/api/brokers")
 def list_brokers(current_user: User = Depends(get_current_user)):
     """Returns the list of brokers for the current user."""
