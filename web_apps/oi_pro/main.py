@@ -518,10 +518,11 @@ strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
 
-# Fix #8: Rate Limiter instance (slowapi)
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Fix #8: Use the shared limiter from auth.py (single instance for auth routes)
+from web_apps.oi_pro.auth import auth_limiter
+if auth_limiter:
+    app.state.limiter = auth_limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ─── Middleware Block (must be registered BEFORE routes) ─────────────────────
 #
