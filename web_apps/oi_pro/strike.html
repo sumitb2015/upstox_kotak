@@ -507,12 +507,15 @@
                 // X = OI Change, Y = Premium change (%)
                 // Quadrants: Long Buildup / Short Covering / Long Unwind / Short Buildup
 
+                const fmtPct = v => { const r = Math.round(v); return (r >= 0 ? '+' : '') + r + '%'; };
+                const fmtOI = v => { const r = Math.round(v); return (r >= 0 ? '+' : '') + r.toLocaleString('en-IN'); };
+
                 const scatterCE = fd
                     .filter(d => (d.ce_ltp || 0) > 0 && (d.ce_close || 0) > 0)
                     .map(d => ({
                         strike: d.strike,
                         oiChg: d.ce_oi_chg || 0,
-                        priceChgPct: ((d.ce_ltp - d.ce_close) / d.ce_close) * 100,
+                        priceChgPct: Math.min(Math.max(((d.ce_ltp - d.ce_close) / d.ce_close) * 100, -500), 500),
                     }));
 
                 const scatterPE = fd
@@ -520,7 +523,7 @@
                     .map(d => ({
                         strike: d.strike,
                         oiChg: d.pe_oi_chg || 0,
-                        priceChgPct: ((d.pe_ltp - d.pe_close) / d.pe_close) * 100,
+                        priceChgPct: Math.min(Math.max(((d.pe_ltp - d.pe_close) / d.pe_close) * 100, -500), 500),
                     }));
 
                 // Vibrant quadrant colors
@@ -543,6 +546,7 @@
                 const traceCEScatter = {
                     x: scatterCE.map(p => p.oiChg),
                     y: scatterCE.map(p => p.priceChgPct),
+                    customdata: scatterCE.map(p => [fmtOI(p.oiChg), fmtPct(p.priceChgPct)]),
                     mode: 'markers',
                     type: 'scatter',
                     name: 'CE Strikes',
@@ -553,12 +557,13 @@
                         line: { width: 1.5, color: ceCols.map(c => c.line) }
                     },
                     text: scatterCE.map(p => `<b>${p.strike} CE</b>`),
-                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.0f}%</b><extra></extra>',
+                    hovertemplate: '%{text}<br>OI \u0394: <b>%{customdata[0]}</b><br>Price \u0394: <b>%{customdata[1]}</b><extra></extra>',
                 };
 
                 const tracePEScatter = {
                     x: scatterPE.map(p => p.oiChg),
                     y: scatterPE.map(p => p.priceChgPct),
+                    customdata: scatterPE.map(p => [fmtOI(p.oiChg), fmtPct(p.priceChgPct)]),
                     mode: 'markers',
                     type: 'scatter',
                     name: 'PE Strikes',
@@ -569,7 +574,7 @@
                         line: { width: 1.5, color: peCols.map(c => c.line) }
                     },
                     text: scatterPE.map(p => `<b>${p.strike} PE</b>`),
-                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.0f}%</b><extra></extra>',
+                    hovertemplate: '%{text}<br>OI \u0394: <b>%{customdata[0]}</b><br>Price \u0394: <b>%{customdata[1]}</b><extra></extra>',
                 };
 
                 // Quadrant background fills
