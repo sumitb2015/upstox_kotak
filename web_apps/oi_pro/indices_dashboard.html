@@ -284,11 +284,17 @@
                 const fetchQuotes = async () => {
                     try {
                         const token = localStorage.getItem('token');
-                        let url = `/api/market-quote?index=INDICES`;
-                        if (token) url += `&token=${token}`;
+                        const url = `/api/market-quote?index=INDICES`;
+                        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-                        const response = await fetch(url);
+                        const response = await fetch(url, { headers });
                         const result = await response.json();
+
+                        if (response.status === 401) {
+                            console.error("Unauthorized — token may be expired. Please log in again.");
+                            setIsConnected(false);
+                            return;
+                        }
 
                         if (result.status === 'success' && result.type === 'stock_data') {
                             setStocks(prev => {
