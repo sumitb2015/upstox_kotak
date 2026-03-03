@@ -709,7 +709,7 @@
                                         </h2>
                                         {marketPrices[symbol] && (
                                             <span className={`text-sm font-bold ${marketPrices[symbol].chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {marketPrices[symbol].chg > 0 ? '+' : ''}{marketPrices[symbol].chg.toFixed(2)}%
+                                                {marketPrices[symbol].chg > 0 ? '+' : ''}{marketPrices[symbol].chg.toFixed(0)}%
                                             </span>
                                         )}
                                     </div>

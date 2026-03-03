@@ -152,7 +152,7 @@
                                 {title === 'NIFTY' ? '50' : 'B'}
                             </div>
                             <span className="font-bold text-sm">{title}</span>
-                            <span className={`text-xs ml-1 ${indexColor}`}>({indexChg >= 0 ? '+' : ''}{indexChg.toFixed(2)}%)</span>
+                            <span className={`text-xs ml-1 ${indexColor}`}>({indexChg >= 0 ? '+' : ''}{indexChg.toFixed(0)}%)</span>
                         </div>
                         <div className="flex items-center gap-3 text-xs font-semibold">
                             <div className="text-emerald-500 flex items-center gap-0.5">{advances.length}<span>↑</span></div>
@@ -176,7 +176,7 @@
                                                 {st.symbol.charAt(0)}
                                             </div>
                                             <span className="font-semibold text-foreground truncate w-20">{st.symbol}</span>
-                                            <span className="text-emerald-500 font-bold">+{st.chg.toFixed(2)}%</span>
+                                            <span className="text-emerald-500 font-bold">+{st.chg.toFixed(0)}%</span>
                                         </div>
                                         <div className="flex-1 flex justify-end h-full py-1 min-w-[50px]">
                                             <div
@@ -204,7 +204,7 @@
                                             ></div>
                                         </div>
                                         <div className="flex items-center gap-1.5 truncate pl-2 justify-end">
-                                            <span className="text-rose-500 font-bold">{st.chg.toFixed(2)}%</span>
+                                            <span className="text-rose-500 font-bold">{st.chg.toFixed(0)}%</span>
                                             <div className="w-4 h-4 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center text-[8px] font-bold flex-shrink-0">
                                                 {st.symbol.charAt(0)}
                                             </div>
@@ -278,14 +278,14 @@
                         color: colors,
                         line: { width: 0 }
                     },
-                    text: yData.map(v => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`),
+                    text: yData.map(v => `${v > 0 ? '+' : ''}${v.toFixed(0)}%`),
                     textposition: yData.map(v => v >= 0 ? 'outside' : 'outside'),
                     textfont: {
                         color: colors,
                         weight: 'bold',
                         size: 11
                     },
-                    hovertemplate: '<b>%{x}</b>: %{y:.2f}%<extra></extra>'
+                    hovertemplate: '<b>%{x}</b>: %{y:.0f}%<extra></extra>'
                 };
 
                 const layout = {

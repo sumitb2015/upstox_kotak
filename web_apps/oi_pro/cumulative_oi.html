@@ -514,7 +514,7 @@
                                                     {formatLargeNumber(row.direction_chg)}
                                                 </td>
                                                 <td className={`px-6 py-3 text-xs font-black text-right tabular-nums ${row.direction_chg_pct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                    {row.direction_chg_pct.toFixed(2)}%
+                                                    {row.direction_chg_pct.toFixed(0)}%
                                                 </td>
                                                 <td className={`px-6 py-3 text-xs font-black text-right tabular-nums ${row.pcr >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                                     {row.pcr.toFixed(2)}

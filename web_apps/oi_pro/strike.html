@@ -553,7 +553,7 @@
                         line: { width: 1.5, color: ceCols.map(c => c.line) }
                     },
                     text: scatterCE.map(p => `<b>${p.strike} CE</b>`),
-                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.2f}%</b><extra></extra>',
+                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.0f}%</b><extra></extra>',
                 };
 
                 const tracePEScatter = {
@@ -569,7 +569,7 @@
                         line: { width: 1.5, color: peCols.map(c => c.line) }
                     },
                     text: scatterPE.map(p => `<b>${p.strike} PE</b>`),
-                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.2f}%</b><extra></extra>',
+                    hovertemplate: '%{text}<br>OI Δ: <b>%{x:+,.0f}</b><br>Price Δ: <b>%{y:+.0f}%</b><extra></extra>',
                 };
 
                 // Quadrant background fills
