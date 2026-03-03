@@ -1101,6 +1101,9 @@ class StreamerRegistry:
             if user_id not in self._streamers:
                 logger.info(f"[UPSTOX] [Registry] Creating new streamer for user_id={user_id}")
                 s = UpstoxStreamer(token)
+                # Reset any previous auth-failure state so this clean token gets a fresh start
+                s._terminating = False
+                s._reconnect_count = 0
                 s.connect_market_data(
                     instrument_keys=list(SYMBOL_MAP.values()),
                     mode="ltpc",
@@ -1108,9 +1111,25 @@ class StreamerRegistry:
                 )
                 self._streamers[user_id] = s
                 self._refcounts[user_id] = 0
+            else:
+                # Existing streamer (e.g. user opened a second tab).
+                # If it stopped due to auth failure, reset and try reconnecting with the fresh token.
+                s = self._streamers[user_id]
+                if getattr(s, '_terminating', False):
+                    logger.info(f"[UPSTOX] [Registry] Reconnecting dead streamer with fresh token for user_id={user_id}")
+                    s._terminating = False
+                    s._reconnect_count = 0
+                    s.access_token = token
+                    s.configuration.access_token = token
+                    s.connect_market_data(
+                        instrument_keys=list(SYMBOL_MAP.values()),
+                        mode="ltpc",
+                        on_message=lambda data: asyncio.run_coroutine_threadsafe(manager.broadcast(data), loop) if loop else None
+                    )
             self._refcounts[user_id] += 1
             logger.info(f"[UPSTOX] [Registry] user_id={user_id} sessions={self._refcounts[user_id]}")
             return self._streamers[user_id]
+
 
     async def release(self, user_id: int):
         """Decrement session count. Disconnect and remove streamer when last session closes."""
