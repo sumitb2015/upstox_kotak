@@ -1,11 +1,20 @@
 import os
 from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
 import jwt
 from peewee import SqliteDatabase, Model, CharField, BooleanField, DateTimeField, ForeignKeyField
+
+# ── Load .env from project root (2 levels up from this file) ──
+try:
+    from dotenv import load_dotenv
+    _env_file = Path(__file__).parent.parent.parent / ".env"
+    load_dotenv(dotenv_path=_env_file, override=False)  # override=False: real env vars take priority
+except ImportError:
+    pass  # python-dotenv not installed — fall back to manual env vars
 
 # ── Configuration ──
 _raw_secret = os.getenv("OIPRO_SECRET_KEY")
