@@ -61,6 +61,12 @@ from lib.api.historical import get_intraday_data_v3
 from lib.core.authentication import get_access_token as auth_get_token
 from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepare_snapshot, get_total_exposure, calculate_flip_point
 from lib.utils.greeks_storage import greeks_storage
+# Fix #6: Fernet encryption helper for broker credentials at rest
+from lib.utils.crypto_helper import encrypt_value, decrypt_value
+# Fix #8: Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import pandas as pd
 from datetime import datetime
 
@@ -242,7 +248,10 @@ def tail_file(filename, lines=100):
 
 # --- Strategy Management ---
 
-STRATEGIES_BASE_PATH = Path("c:/upstox_kotak/upstox_kotak/strategies")
+# Fix #7: Use portable relative paths, not Windows-hardcoded 'c:\\...' strings.
+# Override at deploy time by setting the STRATEGIES_BASE_PATH env variable.
+_default_strategies_path = Path(__file__).parent.parent.parent / "strategies"
+STRATEGIES_BASE_PATH = Path(os.getenv("STRATEGIES_BASE_PATH", str(_default_strategies_path)))
 
 STRATEGIES_INFO = {
     "aggressive_renko_dip": {
@@ -384,7 +393,9 @@ class StrategyManager:
             
         # Set PYTHONPATH to project root so imports work
         env = os.environ.copy()
-        env["PYTHONPATH"] = "c:/upstox_kotak/upstox_kotak"
+        # Fix #7: Use portable path relative to this file, not Windows-hardcoded path
+        project_root = str(Path(__file__).parent.parent.parent.resolve())
+        env["PYTHONPATH"] = os.environ.get("PYTHONPATH", project_root)
         
         try:
             # Create/Open log file (overwrite for fresh logs on new run)
@@ -506,6 +517,11 @@ class StrategyManager:
 strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
+
+# Fix #8: Rate Limiter instance (slowapi)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ─── Middleware Block (must be registered BEFORE routes) ─────────────────────
 #
@@ -785,9 +801,9 @@ def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)
             
             # Update secrets only if they are not the masked placeholders
             if api_key and not api_key.startswith("***"):
-                broker.api_key = api_key
+                broker.api_key = encrypt_value(api_key)  # Fix #6
             if api_secret and not api_secret.startswith("***"):
-                broker.api_secret = api_secret
+                broker.api_secret = encrypt_value(api_secret)  # Fix #6
                 
             broker.save()
             return {"status": "success", "message": "Broker updated successfully", "id": broker.id}
@@ -802,8 +818,8 @@ def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)
             user=current_user,
             broker_name=broker_name,
             name_tag=name_tag,
-            api_key=api_key,
-            api_secret=api_secret,
+            api_key=encrypt_value(api_key),        # Fix #6
+            api_secret=encrypt_value(api_secret),  # Fix #6
             redirect_uri=redirect_uri
         )
         return {"status": "success", "message": "Broker saved successfully", "id": broker.id}
@@ -829,12 +845,25 @@ def generate_broker_token(broker_id: int, current_user: User = Depends(get_curre
         # Construct Upstox Auth URL
         # redirect_uri must match what's in Upstox Developer Portal
         # We use state to pass broker_id for the callback to identify the entry
+        # Fix #6: Decrypt credentials before use in OAuth URL
+        decrypted_key = decrypt_value(broker.api_key)
+        # Fix #9: Sign the state parameter with HMAC to prevent IDOR enumeration
+        import hmac as _hmac
+        import hashlib as _hashlib
+        from web_apps.oi_pro.auth import SECRET_KEY as _JWT_SECRET
+        state_payload = str(broker.id)
+        state_sig = _hmac.new(
+            _JWT_SECRET.encode("utf-8"),
+            state_payload.encode("utf-8"),
+            _hashlib.sha256
+        ).hexdigest()
+        signed_state = f"{state_sig}:{state_payload}"
         auth_url = (
             f"https://api-v2.upstox.com/login/authorization/dialog"
             f"?response_type=code"
-            f"&client_id={broker.api_key}"
+            f"&client_id={decrypted_key}"
             f"&redirect_uri={requests.utils.quote(broker.redirect_uri or 'http://127.0.0.1:8001/api/brokers/callback/upstox')}"
-            f"&state={broker.id}"
+            f"&state={signed_state}"
         )
         
         return {"status": "success", "auth_url": auth_url}
@@ -846,9 +875,25 @@ def upstox_callback(request: Request, code: str, state: str):
     """
     OAuth Callback for Upstox.
     Exchanges authorization code for access token.
-    Supports both direct navigation (redirect) and popup fetch API (JSON response).
+    Fix #9: Validates HMAC-signed state to prevent IDOR broker enumeration.
     """
-    broker_id = state
+    # --- Fix #9: Verify HMAC-signed state before looking up broker ---
+    import hmac as _hmac
+    import hashlib as _hashlib
+    from web_apps.oi_pro.auth import SECRET_KEY as _JWT_SECRET
+
+    try:
+        sig, broker_id = state.split(":", 1)
+        expected_sig = _hmac.new(
+            _JWT_SECRET.encode("utf-8"),
+            broker_id.encode("utf-8"),
+            _hashlib.sha256
+        ).hexdigest()
+        if not _hmac.compare_digest(sig, expected_sig):
+            raise ValueError("Invalid state signature")
+    except (ValueError, AttributeError):
+        return HTMLResponse(content="<h2>Invalid OAuth state. Possible CSRF attack.</h2>", status_code=400)
+
     try:
         broker = BrokerCredential.get_by_id(broker_id)
         
@@ -876,8 +921,8 @@ def upstox_callback(request: Request, code: str, state: str):
                 return {"status": "error", "message": "Auth failed", "details": jsr}
             return HTMLResponse(content=f"<h2>Auth Failed</h2><pre>{json.dumps(jsr, indent=2)}</pre>", status_code=400)
             
-        # Update Broker entry
-        broker.access_token = access_token
+        # Update Broker entry — Fix #6: encrypt access token before storing
+        broker.access_token = encrypt_value(access_token)
         broker.last_token_at = datetime.utcnow()
         broker.status = "Active"
         broker.save()

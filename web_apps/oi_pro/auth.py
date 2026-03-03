@@ -178,9 +178,35 @@ def check_admin(current_user: User = Depends(get_current_user)):
 
 # ── Routes ──
 from fastapi.concurrency import run_in_threadpool
+from fastapi import Request as _Request
+
+# Fix #8: Rate limiting on login (5 attempts per minute per IP)
+# The limiter instance is owned by main.py (app.state.limiter).
+# We access it lazily here to avoid circular imports.
+def _get_limiter():
+    try:
+        from slowapi import Limiter
+        from slowapi.util import get_remote_address
+        # We use a shared module-level limiter for the auth router
+        from slowapi import Limiter
+        _lim = getattr(_get_limiter, '_cached', None)
+        if _lim is None:
+            _lim = Limiter(key_func=get_remote_address)
+            _get_limiter._cached = _lim
+        return _lim
+    except ImportError:
+        return None
 
 @router.post("/api/login")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(request: _Request, form_data: OAuth2PasswordRequestForm = Depends()):
+    # Fix #8: Enforce rate limit — 5 attempts per minute per IP
+    _lim = _get_limiter()
+    if _lim:
+        try:
+            await _lim._check_request_limit(request, login_for_access_token, False, "5/minute", None, None)
+        except Exception:
+            from fastapi import HTTPException as _HTTPEx
+            raise _HTTPEx(status_code=429, detail="Too many login attempts. Please wait 1 minute before trying again.")
     # Run DB query and password hashing in a threadpool to avoid blocking WebSocket loop
     def _verify():
         u = get_user(form_data.username)
