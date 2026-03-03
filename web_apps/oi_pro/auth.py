@@ -8,7 +8,20 @@ import jwt
 from peewee import SqliteDatabase, Model, CharField, BooleanField, DateTimeField, ForeignKeyField
 
 # ── Configuration ──
-SECRET_KEY = os.getenv("OIPRO_SECRET_KEY", "oipro-dev-secret-key-change-in-prod")
+_raw_secret = os.getenv("OIPRO_SECRET_KEY")
+_insecure_defaults = {"oipro-dev-secret-key-change-in-prod", "", None}
+if _raw_secret in _insecure_defaults:
+    raise RuntimeError(
+        "\n"
+        "════════════════════════════════════════════════════════════\n"
+        " STARTUP ABORTED — OIPRO_SECRET_KEY is not set!\n"
+        "────────────────────────────────────────────────────────────\n"
+        " Set a strong, random secret before starting the server:\n"
+        "   export OIPRO_SECRET_KEY=$(python -c \"import secrets; print(secrets.token_hex(32))\")\n"
+        " Or add it to your .env file.\n"
+        "════════════════════════════════════════════════════════════\n"
+    )
+SECRET_KEY = _raw_secret
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
@@ -52,13 +65,27 @@ class BrokerCredential(BaseModel):
     created_at = DateTimeField(default=datetime.utcnow)
 
 def init_db():
-    """Initializes the SQLite database and creates necessary tables and default admin."""
+    """Initializes the SQLite database and creates necessary tables."""
     db.connect()
     db.create_tables([User, BrokerCredential], safe=True)
-    
-    # Create default admin if no users exist
+
+    # ── First-run hint ──────────────────────────────────────────
+    # Default admin credentials have been REMOVED for security.
+    # If no users exist, create the first admin manually via CLI:
+    #
+    #   from web_apps.oi_pro.auth import create_user
+    #   create_user("your@email.com", "YourStrongPassword", role="admin")
+    #
+    # Or use the /api/users POST endpoint once you have admin access.
+    # ────────────────────────────────────────────────────────────
     if User.select().count() == 0:
-        create_user("admin@oipro.com", "OIPro@123", role="admin")
+        import logging as _log
+        _log.getLogger("OIPRO").warning(
+            "[AUTH] No users found in database. "
+            "Create an admin user via CLI: "
+            "from web_apps.oi_pro.auth import create_user; "
+            "create_user('admin@yourdomain.com', 'StrongPassword', role='admin')"
+        )
     db.close()
 
 # ── Auth Utilities ──
