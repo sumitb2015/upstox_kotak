@@ -193,8 +193,10 @@
             const [strikesByExpiry, setStrikesByExpiry] = useState({});
             const [legs, setLegs] = useState([]);
             const [livePrices, setLivePrices] = useState({}); // legId -> ltp
+            const [liveOIs, setLiveOIs] = useState({});       // legId -> oi
             const [flashIds, setFlashIds] = useState({});    // legId -> true for flash animation
             const [chartData, setChartData] = useState([]);
+            const [oiChartData, setOIChartData] = useState({}); // legId -> [{timestamp, oi}]
             const [netPremium, setNetPremium] = useState(null);
             const [loading, setLoading] = useState(false);
             const [wsConnected, setWsConnected] = useState(false);
@@ -204,9 +206,11 @@
             const [lastUpdated, setLastUpdated] = useState(null);
 
             const chartRef = useRef(null);
+            const oiChartRef = useRef(null);
             const wsRef = useRef(null);
             const legsRef = useRef(legs);   // always-current legs in WS handler
             const livePricesRef = useRef({});     // mutable: legId -> ltp (avoids stale state in WS)
+            const liveOIRef = useRef({});          // mutable: legId -> oi (avoids stale state in WS)
             const requiredKeysRef = useRef(new Set()); // set of legIds that must have ticks before chart updates
 
             useEffect(() => { legsRef.current = legs; }, [legs]);
@@ -342,8 +346,9 @@
                 ws.onopen = () => {
                     setWsConnected(true);
                     const keysToSub = activeLegs.map(l => l.instrumentKey.replace(':', '|'));
-                    console.log("📡 [WS] Subscribing to:", keysToSub);
-                    ws.send(JSON.stringify({ action: "subscribe", keys: keysToSub }));
+                    console.log("📡 [WS] Subscribing to (full mode):", keysToSub);
+                    // Use 'full' mode to receive OI, Greeks, OHLC alongside LTP in every tick
+                    ws.send(JSON.stringify({ action: "subscribe", keys: keysToSub, mode: "full" }));
                 };
 
                 ws.onmessage = (event) => {
@@ -365,6 +370,9 @@
                             return;
                         }
 
+                        // OI comes in 'full' mode ticks
+                        const oi = msg.oi ?? msg.open_interest ?? null;
+
                         const currentLegs = legsRef.current;
                         const matchingLegs = currentLegs.filter(l => l.instrumentKey && l.instrumentKey.replace(':', '|') === instrKey);
                         if (matchingLegs.length === 0) {
@@ -372,10 +380,13 @@
                             return;
                         }
 
-                        console.log(`⚡ [WS] Tick: ${instrKey} = ${ltp} (legs: ${matchingLegs.map(l => l.id).join(',')})`);
+                        console.log(`⚡ [WS] Tick: ${instrKey} = ${ltp} OI=${oi} (legs: ${matchingLegs.map(l => l.id).join(',')})`);
 
-                        // ---- Update mutable ref immediately (no stale state) ----
-                        matchingLegs.forEach(l => { livePricesRef.current[l.id] = ltp; });
+                        // ---- Update mutable refs immediately (no stale state) ----
+                        matchingLegs.forEach(l => {
+                            livePricesRef.current[l.id] = ltp;
+                            if (oi != null) liveOIRef.current[l.id] = oi;
+                        });
 
                         // ---- Update React state for display ----
                         setLivePrices(prev => {
@@ -383,6 +394,13 @@
                             matchingLegs.forEach(l => { updated[l.id] = ltp; });
                             return updated;
                         });
+                        if (oi != null) {
+                            setLiveOIs(prev => {
+                                const updated = { ...prev };
+                                matchingLegs.forEach(l => { updated[l.id] = oi; });
+                                return updated;
+                            });
+                        }
 
                         // Flash effect
                         setFlashIds(prev => {
@@ -405,7 +423,6 @@
                         if (h > 15 || (h === 15 && m > 30)) return;
 
                         // ---- Compute net premium from ALL legs (use 0 for legs not yet ticked) ----
-                        // We no longer require ALL legs to have ticked — one received tick is enough to draw.
                         let net = 0;
                         currentLegs.forEach(leg => {
                             if (!leg.instrumentKey) return;
@@ -415,12 +432,10 @@
                         });
                         setNetPremium(net);
 
-                        // Append to chart (Aggregation: update current minute point to reduce noise)
+                        // Append to premium chart (1-min aggregation)
                         setChartData(prev => {
                             const buf = [...prev];
                             const last = buf[buf.length - 1];
-
-                            // Compare minute buckets (YYYY-MM-DDTHH:MM)
                             if (last && now.slice(0, 16) === last.timestamp.slice(0, 16)) {
                                 buf[buf.length - 1] = { ...last, premium: net };
                             } else {
@@ -429,6 +444,23 @@
                             }
                             return buf;
                         });
+
+                        // Append to OI chart if OI data available
+                        if (oi != null) {
+                            matchingLegs.forEach(leg => {
+                                setOIChartData(prev => {
+                                    const buf = [...(prev[leg.id] || [])];
+                                    const last = buf[buf.length - 1];
+                                    if (last && now.slice(0, 16) === last.timestamp.slice(0, 16)) {
+                                        buf[buf.length - 1] = { ...last, oi };
+                                    } else {
+                                        buf.push({ timestamp: now, oi });
+                                        if (buf.length > 2000) buf.shift();
+                                    }
+                                    return { ...prev, [leg.id]: buf };
+                                });
+                            });
+                        }
 
                         setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
                     } catch (e) { console.error('[WS] onmessage error:', e); }
@@ -447,7 +479,9 @@
                     setLoading(true);
                     setError(null);
                     setChartData([]);
+                    setOIChartData({});
                     setLivePrices({});
+                    setLiveOIs({});
                     setNetPremium(null);
                 }
 
@@ -477,7 +511,6 @@
                     if (result.status === "success" && result.data?.length > 0) {
                         const filteredData = result.data.filter(d => {
                             if (!d.timestamp) return false;
-                            // Extract IST hour/min directly from 'YYYY-MM-DDTHH:MM:SS+05:30'
                             const h = parseInt(d.timestamp.substring(11, 13), 10);
                             const m = parseInt(d.timestamp.substring(14, 16), 10);
                             return h < 15 || (h === 15 && m <= 30);
@@ -485,6 +518,23 @@
                         setChartData(filteredData);
                         const last = filteredData[filteredData.length - 1];
                         if (last) setNetPremium(last.premium);
+
+                        // Parse per-leg OI from the historical data
+                        // Backend returns columns like: oi_NSE_FO|45522 per leg
+                        if (!isAutoRefresh && result.legs?.length) {
+                            const oiByLegId = {};
+                            result.legs.forEach((legMeta, idx) => {
+                                const resolvedLeg = withKeys.find(wk => wk.instrumentKey === legMeta.instrument_key);
+                                if (!resolvedLeg) return;
+                                const oiKey = `oi_${legMeta.instrument_key}`;
+                                const series = filteredData
+                                    .filter(d => d[oiKey] != null && d[oiKey] > 0)
+                                    .map(d => ({ timestamp: d.timestamp, oi: d[oiKey] }));
+                                if (series.length > 0) oiByLegId[resolvedLeg.id] = series;
+                            });
+                            setOIChartData(oiByLegId);
+                        }
+
                         setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
                     }
 
@@ -498,7 +548,9 @@
                         });
 
                         livePricesRef.current = initialPrices;
-                        setLivePrices(initialPrices); // Populate immediately
+                        liveOIRef.current = {};
+                        setLivePrices(initialPrices);
+                        setLiveOIs({});
                         requiredKeysRef.current = new Set(withKeys.filter(l => l.instrumentKey).map(l => l.id));
 
                         // CRITICAL: Update legsRef.current immediately to avoid race condition with WebSocket onmessage
@@ -531,43 +583,160 @@
                 return () => clearInterval(intervalId);
             }, [refreshInterval]);
 
-            // ---------- Render chart ----------
+            // Professional color palette for per-leg OI traces
+            const LEG_COLORS = [
+                '#34d399', // emerald
+                '#f87171', // rose
+                '#818cf8', // indigo
+                '#fbbf24', // amber
+                '#38bdf8', // sky
+                '#c084fc', // purple
+                '#fb923c', // orange
+                '#a3e635', // lime
+            ];
+
+            // ---------- Render premium chart ----------
             useEffect(() => {
                 if (!chartRef.current) return;
                 if (chartData.length === 0) { Plotly.purge(chartRef.current); return; }
 
-                // Enforce Market Hours (09:15 to 15:30)
                 const firstTime = new Date(chartData[0].timestamp);
                 const marketOpen = new Date(firstTime);
                 marketOpen.setHours(9, 15, 0, 0);
                 const marketClose = new Date(firstTime);
                 marketClose.setHours(15, 30, 0, 0);
 
-                const trace = {
+                const gridColor = isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)';
+                const axisColor = isDark ? '#475569' : '#94a3b8';
+
+                const premiumTrace = {
                     x: chartData.map(d => d.timestamp),
                     y: chartData.map(d => d.premium),
                     name: 'Net Premium',
-                    type: 'scatter', mode: 'lines',
-                    line: { color: '#fbbf24', width: 2 }
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#fbbf24', width: 2.5, shape: 'spline', smoothing: 0.3 },
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(251,191,36,0.07)',
+                    hovertemplate: '₹%{y:.2f}<extra>Net Premium</extra>'
                 };
-                const vwap = {
+                const vwapTrace = {
                     x: chartData.map(d => d.timestamp),
                     y: chartData.map(d => d.vwap),
                     name: 'VWAP',
-                    type: 'scatter', mode: 'lines',
-                    line: { color: '#818cf8', width: 1.5, dash: 'dot' }
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#818cf8', width: 1.5, dash: 'dot', shape: 'spline', smoothing: 0.3 },
+                    hovertemplate: '₹%{y:.2f}<extra>VWAP</extra>'
                 };
-                Plotly.react(chartRef.current, [trace, vwap], {
+
+                Plotly.react(chartRef.current, [premiumTrace, vwapTrace], {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    margin: { t: 20, r: 20, l: 50, b: 40 },
-                    font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
-                    xaxis: { type: 'date', range: [marketOpen, marketClose], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9' },
-                    yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', autorange: true },
-                    legend: { x: 0, y: 1, font: { size: 11 } },
-                    hovermode: 'x unified'
+                    margin: { t: 8, r: 16, l: 56, b: 36 },
+                    font: { family: 'Inter', size: 11, color: axisColor },
+                    xaxis: {
+                        type: 'date',
+                        range: [marketOpen, marketClose],
+                        tickformat: '%I:%M %p',
+                        gridcolor: gridColor,
+                        linecolor: 'transparent',
+                        zeroline: false,
+                        showgrid: true
+                    },
+                    yaxis: {
+                        gridcolor: gridColor,
+                        linecolor: 'transparent',
+                        zeroline: true,
+                        zerolinecolor: isDark ? '#334155' : '#cbd5e1',
+                        zerolinewidth: 1,
+                        autorange: true,
+                        tickprefix: '₹'
+                    },
+                    legend: {
+                        x: 0.01, y: 0.99,
+                        bgcolor: 'rgba(0,0,0,0)',
+                        font: { size: 10.5 },
+                        orientation: 'h'
+                    },
+                    hovermode: 'x unified',
+                    hoverlabel: {
+                        bgcolor: isDark ? '#1e293b' : '#f8fafc',
+                        bordercolor: isDark ? '#334155' : '#e2e8f0',
+                        font: { family: 'Inter', size: 12 }
+                    }
                 }, { responsive: true, displayModeBar: false });
-            }, [chartData, isFullscreen]);
+            }, [chartData, isFullscreen, isDark]);
+
+            // ---------- Render OI chart ----------
+            useEffect(() => {
+                if (!oiChartRef.current) return;
+                const hasOIData = Object.keys(oiChartData).length > 0;
+                if (!hasOIData) { Plotly.purge(oiChartRef.current); return; }
+
+                const gridColor = isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)';
+                const axisColor = isDark ? '#475569' : '#94a3b8';
+
+                // Use the first available series to get market bounds
+                const firstSeries = Object.values(oiChartData)[0] || [];
+                const firstTime = firstSeries.length ? new Date(firstSeries[0].timestamp) : new Date();
+                const marketOpen = new Date(firstTime);
+                marketOpen.setHours(9, 15, 0, 0);
+                const marketClose = new Date(firstTime);
+                marketClose.setHours(15, 30, 0, 0);
+
+                const traces = Object.entries(oiChartData).map(([legId, series], idx) => {
+                    const leg = legs.find(l => String(l.id) === String(legId));
+                    const label = leg ? `${leg.action.toUpperCase()} ${leg.strike}${leg.type}` : `Leg ${idx + 1}`;
+                    const color = LEG_COLORS[idx % LEG_COLORS.length];
+                    return {
+                        x: series.map(d => d.timestamp),
+                        y: series.map(d => d.oi),
+                        name: label,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color, width: 2, shape: 'hv' }, // step chart for OI
+                        fill: 'tozeroy',
+                        fillcolor: color.replace(')', ', 0.06)').replace('rgb', 'rgba'),
+                        hovertemplate: `%{y:,.0f} OI<extra>${label}</extra>`
+                    };
+                });
+
+                Plotly.react(oiChartRef.current, traces, {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    margin: { t: 4, r: 16, l: 72, b: 36 },
+                    font: { family: 'Inter', size: 11, color: axisColor },
+                    xaxis: {
+                        type: 'date',
+                        range: [marketOpen, marketClose],
+                        tickformat: '%I:%M %p',
+                        gridcolor: gridColor,
+                        linecolor: 'transparent',
+                        zeroline: false,
+                        showgrid: true
+                    },
+                    yaxis: {
+                        gridcolor: gridColor,
+                        linecolor: 'transparent',
+                        zeroline: false,
+                        autorange: true,
+                        tickformat: ',.0s' // e.g. 1.2M instead of 1200000
+                    },
+                    legend: {
+                        x: 0.01, y: 0.99,
+                        bgcolor: 'rgba(0,0,0,0)',
+                        font: { size: 10.5 },
+                        orientation: 'h'
+                    },
+                    hovermode: 'x unified',
+                    hoverlabel: {
+                        bgcolor: isDark ? '#1e293b' : '#f8fafc',
+                        bordercolor: isDark ? '#334155' : '#e2e8f0',
+                        font: { family: 'Inter', size: 12 }
+                    }
+                }, { responsive: true, displayModeBar: false });
+            }, [oiChartData, isFullscreen, isDark, legs]);
 
             const hasAllStrikes = legs.length > 0 && legs.every(l => l.strike);
 
@@ -678,6 +847,19 @@
                                                         {ltp != null ? ltp.toFixed(2) : '---'}
                                                     </div>
                                                 </div>
+                                                {/* Live OI Badge */}
+                                                {liveOIs[leg.id] != null && (
+                                                    <div className="flex items-center justify-between mt-1.5 px-0.5">
+                                                        <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">Open Interest</span>
+                                                        <span className="text-[10px] font-black font-mono text-sky-400">{
+                                                            liveOIs[leg.id] >= 1e6
+                                                                ? (liveOIs[leg.id] / 1e6).toFixed(2) + 'M'
+                                                                : liveOIs[leg.id] >= 1e3
+                                                                    ? (liveOIs[leg.id] / 1e3).toFixed(1) + 'K'
+                                                                    : liveOIs[leg.id].toLocaleString()
+                                                        }</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -691,9 +873,10 @@
                             </button>
                         </div>
 
-                        {/* ===== Right Panel - Chart ===== */}
-                        <div className={`flex-1 glass p-5 rounded-[2rem] border-border/80 shadow-2xl flex flex-col ${isFullscreen ? 'fixed inset-0 z-[100] bg-background m-0 rounded-none' : 'relative'}`}>
-                            <div className="flex justify-between items-center mb-3">
+                        {/* ===== Right Panel - Charts ===== */}
+                        <div className={`flex-1 glass p-5 rounded-[2rem] border-border/80 shadow-2xl flex flex-col gap-0 ${isFullscreen ? 'fixed inset-0 z-[100] bg-background m-0 rounded-none' : 'relative'}`}>
+                            {/* --- Header --- */}
+                            <div className="flex justify-between items-center mb-3 flex-shrink-0">
                                 <div>
                                     <h2 className="text-xl font-black text-foreground tracking-tight">Net Strategy Premium</h2>
                                     {netPremium !== null && (
@@ -719,7 +902,30 @@
                                 </div>
                             )}
 
-                            <div ref={chartRef} className="flex-1 w-full min-h-[350px]"></div>
+                            {/* === Premium Chart === */}
+                            <div ref={chartRef} className="w-full" style={{ flex: '0 0 55%', minHeight: '0' }}></div>
+
+                            {/* === Divider + OI Chart Section === */}
+                            {Object.keys(oiChartData).length > 0 && (
+                                <>
+                                    <div className="flex items-center gap-2 my-1 flex-shrink-0">
+                                        <div className="flex-1 h-px" style={{ background: isDark ? 'rgba(51,65,85,0.6)' : 'rgba(226,232,240,0.8)' }}></div>
+                                        <span className="text-[9px] uppercase font-bold tracking-widest" style={{ color: isDark ? '#475569' : '#94a3b8' }}>
+                                            ◆ Open Interest
+                                        </span>
+                                        <div className="flex-1 h-px" style={{ background: isDark ? 'rgba(51,65,85,0.6)' : 'rgba(226,232,240,0.8)' }}></div>
+                                    </div>
+                                    <div ref={oiChartRef} className="w-full" style={{ flex: '0 0 38%', minHeight: '0' }}></div>
+                                </>
+                            )}
+
+                            {/* OI loading hint when no OI data yet (waiting for full-mode ticks or historical) */}
+                            {chartData.length > 0 && Object.keys(oiChartData).length === 0 && (
+                                <div className="flex-shrink-0 flex items-center justify-center gap-2 text-slate-600 text-[10px] py-2">
+                                    <span className="inline-block w-1.5 h-1.5 bg-sky-500 rounded-full animate-pulse"></span>
+                                    Awaiting OI data (available in full market mode)&hellip;
+                                </div>
+                            )}
                         </div>
                     </main>
                 </div>

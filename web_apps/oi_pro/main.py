@@ -1008,10 +1008,13 @@ class ConnectionManager:
         await websocket.accept()
         self.market_watch_sockets.append(websocket)
 
-    async def subscribe(self, websocket: WebSocket, instrument_keys: List[str], user_streamer=None):
-        """Subscribe a websocket to specific instrument keys"""
+    async def subscribe(self, websocket: WebSocket, instrument_keys: List[str], user_streamer=None, mode: str = "ltpc"):
+        """
+        Subscribe a websocket to specific instrument keys.
+        mode: 'ltpc' for price-only ticks, 'full' to include OI, Greeks, OHLC in every tick.
+        """
         normalized_keys = [k.replace(':', '|') for k in instrument_keys]
-        logger.info(f"[UPSTOX] [WS] Subscribing socket to: {normalized_keys}")
+        logger.info(f"[UPSTOX] [WS] Subscribing socket to: {normalized_keys} (mode={mode})")
         for key in normalized_keys:
             if key not in self.subscriptions:
                 self.subscriptions[key] = []
@@ -1037,8 +1040,8 @@ class ConnectionManager:
 
             if user_streamer.market_streamer:
                 try:
-                    user_streamer.subscribe_market_data(normalized_keys)
-                    logger.info(f"[UPSTOX] [WS] Successfully subscribed to: {normalized_keys}")
+                    user_streamer.subscribe_market_data(normalized_keys, mode=mode)
+                    logger.info(f"[UPSTOX] [WS] Successfully subscribed (mode={mode}) to: {normalized_keys}")
                 except HTTPException as he:
                     raise he
                 except Exception as e:
@@ -1293,7 +1296,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
                 msg = json.loads(data)
                 if msg.get("action") == "subscribe" and msg.get("keys"):
                     keys = [k.replace(':', '|') for k in msg.get("keys", [])]
-                    await manager.subscribe(websocket, keys, user_streamer=user_streamer)
+                    mode = msg.get("mode", "ltpc")  # 'full' provides OI, Greeks, OHLC per tick
+                    await manager.subscribe(websocket, keys, user_streamer=user_streamer, mode=mode)
             except json.JSONDecodeError:
                 logger.warning(f"[CORE] [WS] Invalid JSON received: {data}")
     except WebSocketDisconnect:
@@ -3451,20 +3455,23 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
     tasks = [fetch_candle(leg) for leg in legs]
     results = await asyncio.gather(*tasks)
 
-    # 2. Process Data  credit-first premium sum (SELL=+1, BUY=-1)
+    # 2. Process Data — credit-first premium sum (SELL=+1, BUY=-1) + per-leg OI
     price_dfs = []
     vol_dfs = []
+    oi_dfs = []   # per-leg OI timeseries
     for res in results:
         data = res['data']
         leg = res['leg']
         if data:
-            df = pd.DataFrame(data)[['timestamp', 'close', 'volume']]
+            raw_cols = [c for c in ['timestamp', 'close', 'volume', 'oi'] if c in pd.DataFrame(data).columns]
+            df = pd.DataFrame(data)[raw_cols]
             # Convert to IST naive timestamps (strip +05:30 offset)
             df['timestamp'] = pd.to_datetime(df['timestamp'], utc=False)
             if df['timestamp'].dt.tz is not None:
                 df['timestamp'] = df['timestamp'].dt.tz_convert('Asia/Kolkata').dt.tz_localize(None)
             col = f'price_{leg.instrument_key}'
             vcol = f'vol_{leg.instrument_key}'
+            oicol = f'oi_{leg.instrument_key}'
             # Apply direction and lot multiplier (Credit-first: SELL=+1, BUY=-1)
             mult = 1 if leg.direction == "SELL" else -1
             df[col] = df['close'] * mult * leg.lot
@@ -3472,6 +3479,10 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
             df.set_index('timestamp', inplace=True)
             price_dfs.append(df[[col]])
             vol_dfs.append(df[[vcol]])
+            # Track OI per-leg (not direction-adjusted — raw OI)
+            if 'oi' in df.columns:
+                df[oicol] = df['oi']
+                oi_dfs.append(df[[oicol]])
 
     if not price_dfs:
         return {"status": "error", "message": "No data found for any legs", "data": []}
@@ -3479,6 +3490,7 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
     # 3. Align and Sum
     price_combined = pd.concat(price_dfs, axis=1, join='outer').sort_index()
     vol_combined = pd.concat(vol_dfs, axis=1, join='outer').sort_index()
+    oi_combined = pd.concat(oi_dfs, axis=1, join='outer').sort_index() if oi_dfs else pd.DataFrame(index=price_combined.index)
 
     # Filter: Today's date + Market hours (09:15 - 15:30) in IST (tz-naive)
     today = datetime.now().strftime('%Y-%m-%d')
@@ -3486,13 +3498,19 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
     price_combined = price_combined.between_time('09:15', '15:30')
     vol_combined = vol_combined[vol_combined.index.strftime('%Y-%m-%d') == today]
     vol_combined = vol_combined.between_time('09:15', '15:30')
+    if not oi_combined.empty:
+        oi_combined = oi_combined[oi_combined.index.strftime('%Y-%m-%d') == today]
+        oi_combined = oi_combined.between_time('09:15', '15:30')
 
     if price_combined.empty:
         return {"status": "success", "data": []}
 
-    # Forward fill prices, fill volume NaN with 0
+    # Forward fill prices/OI, fill volume NaN with 0
     price_combined = price_combined.ffill().fillna(0)
     vol_combined = vol_combined.fillna(0)
+    if not oi_combined.empty:
+        oi_combined = oi_combined.ffill().fillna(0)
+        oi_combined = oi_combined.reindex(price_combined.index).ffill().fillna(0)
 
     # Combined Premium = sum of all signed leg prices
     combined_df = pd.DataFrame(index=price_combined.index)
@@ -3508,14 +3526,26 @@ async def get_multi_strike_history(legs: List[LegRequest], current_user: User = 
         lambda r: r['cum_pv'] / r['cum_vol'] if r['cum_vol'] > 0 else r['premium'], axis=1
     )
 
+    # Attach per-leg OI columns
+    if not oi_combined.empty:
+        for oicol in oi_combined.columns:
+            combined_df[oicol] = oi_combined[oicol].values
+
     # Format timestamps as IST strings
     combined_df.reset_index(inplace=True)
     combined_df['timestamp'] = combined_df['timestamp'].dt.strftime('%Y-%m-%dT%H:%M:%S+05:30')
 
-    chart_data = combined_df[['timestamp', 'premium', 'vwap']].to_dict(orient='records')
+    chart_data = combined_df.to_dict(orient='records')
+
+    # Build leg metadata for frontend (instrument_key, label, direction per leg)
+    legs_meta = [
+        {"instrument_key": leg.instrument_key, "direction": leg.direction, "lot": leg.lot}
+        for leg in legs
+    ]
 
     return {
         "status": "success",
+        "legs": legs_meta,
         "data": chart_data
     }
 
