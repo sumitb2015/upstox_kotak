@@ -58,6 +58,13 @@
             scrollbar-width: thin;
             scrollbar-color: #1e293b transparent;
         }
+
+        /* Targeted fix for Plotly bold white hover line */
+        .js-plotly-plot .hoverlayer line {
+            stroke: rgba(148, 163, 184, 0.2) !important;
+            stroke-width: 1px !important;
+            stroke-dasharray: 4, 4 !important;
+        }
     </style>
 
     <script>
@@ -431,7 +438,8 @@
                         autorange: true
                     },
                     hovermode: 'x unified',
-                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' },
+                    hoverdistance: 1,
+                    hoverlabel: { bgcolor: '#111827', font: { color: 'white', family: 'Inter' }, bordercolor: '#374151' },
                     // Open price reference line
                     shapes: openPrice > 0 ? [{
                         type: 'line', x0: 0, x1: 1, xref: 'paper', y0: openPrice, y1: openPrice,

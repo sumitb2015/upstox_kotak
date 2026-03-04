@@ -49,6 +49,9 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
     <style>
         /* Light Mode Defaults (Root Variables) */
         :root {
@@ -113,13 +116,47 @@
             --ring: #d4d4d8;
         }
 
+        /* --- Custom UI Extensions --- */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d4d4d8;
+            border-radius: 10px;
+        }
+
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #3f3f46;
+        }
+
+        .shadcn-card {
+            background-color: var(--card);
+            color: var(--card-foreground);
+            border-radius: 0.75rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            transition: all 0.2s ease;
+        }
+
+        .shadcn-card:hover {
+            border-color: #6366f1;
+            /* Indigo hover border */
+            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.1);
+        }
+
         body {
             background-color: var(--background);
             color: var(--foreground);
+            font-family: 'Inter', sans-serif;
             min-height: 100vh;
             margin: 0;
             font-feature-settings: "rlig" 1, "calt" 1;
-            transition: background-color 0.2s ease, color 0.2s ease;
+            transition: all 0.2s;
         }
 
         .main-content {
@@ -211,7 +248,7 @@
             const indexName = activeIndex === 'BANKNIFTY' ? 'Bank Nifty' : 'Nifty 50';
 
             return (
-                <div className="shadcn-card p-5 mb-6 max-w-xl">
+                <div className="shadcn-card px-5 pt-5 pb-3 mb-1 max-w-xl">
                     <div className="flex items-center justify-between mb-5">
                         <div className="space-y-1">
                             <h2 className="text-sm border-l-2 border-zinc-700 pl-2 font-medium leading-none text-foreground tracking-tight">Market Breadth</h2>
@@ -287,6 +324,242 @@
             );
         };
 
+        // ── Analytics Tab: Long Buildup, Short Buildup, Short Covering, Long Unwinding ──
+        const analyticsConfig = [
+            { key: 'Long Buildup', label: 'Long Buildup', emoji: '🟢', colorClass: 'text-emerald-500', badgeClass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' },
+            { key: 'Short Buildup', label: 'Short Buildup', emoji: '🔴', colorClass: 'text-rose-500', badgeClass: 'bg-rose-500/10 text-rose-500 border-rose-500/20' },
+            { key: 'Short Covering', label: 'Short Covering', emoji: '🟡', colorClass: 'text-amber-500', badgeClass: 'bg-amber-500/10 text-amber-500 border-amber-500/20' },
+            { key: 'Long Unwinding', label: 'Long Unwinding', emoji: '🟠', colorClass: 'text-orange-500', badgeClass: 'bg-orange-500/10 text-orange-500 border-orange-500/20' },
+        ];
+
+        const AnalyticsCard = ({ cfg, stocks }) => (
+            <div className="shadcn-card p-4 flex flex-col gap-3">
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-base">{cfg.emoji}</span>
+                    <h3 className={`text-sm font-bold tracking-tight ${cfg.colorClass}`}>{cfg.label}</h3>
+                    <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full border font-semibold bg-secondary text-muted-foreground border-border">{stocks.length} stocks</span>
+                </div>
+
+                <div className="flex items-center gap-2 px-2 pb-1 border-b border-border/50 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    <span className="w-4">#</span>
+                    <span className="flex-1">Symbol</span>
+                    <span className="w-16 text-right">LTP</span>
+                    <span className="w-12 text-right">Chg%</span>
+                    <span className="w-16 text-right">OI Chg%</span>
+                </div>
+
+                {stocks.length === 0 ? (
+                    <div className="text-xs text-muted-foreground py-8 text-center bg-muted/5 rounded-md border border-dashed border-border mt-2">
+                        No stocks in this category
+                    </div>
+                ) : (
+                    <div className="overflow-y-auto custom-scrollbar divide-y divide-border/50" style={{ maxHeight: '420px' }}>
+                        {stocks.map((s, i) => (
+                            <div key={s.symbol} className="flex items-center gap-2 px-2 py-2 hover:bg-muted/30 transition-colors group">
+                                <span className="text-[10px] font-medium text-muted-foreground w-4 flex-shrink-0">{i + 1}</span>
+                                <span className="text-[11px] font-bold text-foreground flex-1 truncate whitespace-nowrap" title={s.symbol}>
+                                    {s.symbol}
+                                </span>
+                                <span className="text-[10px] font-semibold text-foreground w-16 text-right flex-shrink-0">
+                                    {s.ltp?.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
+                                </span>
+                                <span className={`text-[10px] font-bold w-12 text-right flex-shrink-0 ${s.chg >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {s.chg >= 0 ? '+' : ''}{s.chg_pct?.toFixed(1)}%
+                                </span>
+                                <span className={`text-[10px] font-bold w-16 text-right flex-shrink-0 px-1.5 py-0.5 rounded ${s.oi_chg_pct >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                                    {s.oi_chg_pct >= 0 ? '+' : ''}{s.oi_chg_pct?.toFixed(1)}%
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+
+        const AnalyticsTab = ({ activeIndex }) => {
+            const [analyticsData, setAnalyticsData] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [lastUpdated, setLastUpdated] = useState(null);
+
+            const fetchAnalytics = async () => {
+                try {
+                    const token = localStorage.getItem('oi_pro_jwt') || localStorage.getItem('token');
+                    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                    const res = await fetch(`/api/stock-analytics?index=${activeIndex}`, { headers });
+                    if (res.status === 401) return;
+                    const result = await res.json();
+                    if (result.status === 'success') {
+                        setAnalyticsData(result.data);
+                        setLastUpdated(new Date());
+                    }
+                } catch (e) {
+                    console.error('[Analytics] Fetch error', e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                setLoading(true);
+                setAnalyticsData(null);
+                fetchAnalytics();
+                const interval = setInterval(fetchAnalytics, 60000); // refresh every minute
+                return () => clearInterval(interval);
+            }, [activeIndex]);
+
+            if (loading && !analyticsData) return (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
+                    {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="shadcn-card p-4 h-[450px] animate-pulse flex flex-col gap-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="w-6 h-6 rounded-full bg-muted"></div>
+                                <div className="w-24 h-4 rounded bg-muted"></div>
+                                <div className="ml-auto w-12 h-4 rounded bg-muted"></div>
+                            </div>
+                            <div className="space-y-3">
+                                {[1, 2, 3, 4, 5, 6].map(j => (
+                                    <div key={j} className="flex gap-2">
+                                        <div className="w-4 h-3 rounded bg-muted"></div>
+                                        <div className="flex-1 h-3 rounded bg-muted"></div>
+                                        <div className="w-12 h-3 rounded bg-muted"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+
+            return (
+                <div className="mt-0">
+                    <div className="flex items-center gap-2 mb-1 px-1">
+                        <div className="ml-auto flex items-center gap-2">
+                            {lastUpdated && <span className="text-[10px] font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded border border-border/50">Refreshed {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                            <button onClick={() => { setLoading(true); fetchAnalytics(); }} className="text-[10px] font-bold px-3 py-1 rounded bg-background border border-border text-foreground hover:bg-muted hover:border-indigo-500/50 transition-all active:scale-95 shadow-sm flex items-center gap-1.5">
+                                <svg className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                        {analyticsConfig.map(cfg => (
+                            <AnalyticsCard key={cfg.key} cfg={cfg} stocks={analyticsData?.[cfg.key] || []} />
+                        ))}
+                    </div>
+
+                    <div className="mt-6 shadcn-card overflow-hidden border-indigo-500/10">
+                        <div className="bg-indigo-500/5 px-4 py-2 border-b border-indigo-500/10">
+                            <h4 className="text-[10px] font-bold uppercase tracking-[0.1em] text-indigo-500/80">Market Sentiment Guide</h4>
+                        </div>
+                        <div className="p-4 bg-card">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {analyticsConfig.map(cfg => (
+                                    <div key={cfg.key} className="flex gap-3 items-start group">
+                                        <div className={`mt-1 p-2 rounded-lg ${cfg.badgeClass} flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                                            <span className="text-sm">{cfg.emoji}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className={`text-[12px] font-bold ${cfg.colorClass}`}>{cfg.label}</span>
+                                            <span className="text-[10px] leading-relaxed text-muted-foreground mt-0.5">
+                                                {cfg.key === 'Long Buildup' && 'Bullish: New long positions being institutionalized as prices rise with volume/OI.'}
+                                                {cfg.key === 'Short Buildup' && 'Bearish: Aggressive selling seen as prices drop while OI increases.'}
+                                                {cfg.key === 'Short Covering' && 'Bullish Reversal: Recent shorts are exiting to lock profits, pushing prices up.'}
+                                                {cfg.key === 'Long Unwinding' && 'Bearish Consolidation: Longs are exiting positions, leading to a gentle price decline.'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const BreadthChart = ({ history }) => {
+            const chartRef = useRef(null);
+
+            useEffect(() => {
+                if (!chartRef.current || history.length === 0) return;
+
+                const times = history.map(d => new Date(d.time));
+                const advances = history.map(d => d.advances);
+                const declines = history.map(d => d.declines);
+
+                const traceAdv = {
+                    x: times,
+                    y: advances,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Advances',
+                    line: { color: '#10b981', width: 2, shape: 'spline' },
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(16, 185, 129, 0.1)'
+                };
+
+                const traceDec = {
+                    x: times,
+                    y: declines,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Declines',
+                    line: { color: '#f43f5e', width: 2, shape: 'spline' },
+                    fill: 'tozeroy',
+                    fillcolor: 'rgba(244, 63, 94, 0.1)'
+                };
+
+                const isDark = document.documentElement.classList.contains('dark');
+                const textColor = isDark ? '#a1a1aa' : '#52525b';
+                const gridColor = isDark ? '#27272a' : '#e4e4e7';
+                const paperBg = 'transparent';
+                const plotBg = 'transparent';
+
+                // Calculate today's 9:15 AM and 3:30 PM
+                const now = new Date();
+                const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 15, 0).getTime();
+                const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 30, 0).getTime();
+
+                const layout = {
+                    title: { text: '', font: { color: textColor } },
+                    paper_bgcolor: paperBg,
+                    plot_bgcolor: plotBg,
+                    font: { family: 'Inter, sans-serif', color: textColor },
+                    margin: { l: 40, r: 20, t: 20, b: 40 },
+                    xaxis: {
+                        showgrid: false,
+                        type: 'date',
+                        tickformat: '%H:%M',
+                        range: [startOfDay, endOfDay]
+                    },
+                    yaxis: {
+                        showgrid: true,
+                        gridcolor: gridColor,
+                        zeroline: false
+                    },
+                    legend: { orientation: 'h', y: 1.1, x: 0.5, xanchor: 'center' },
+                    hovermode: 'x unified'
+                };
+
+                const config = { responsive: true, displayModeBar: false };
+
+                Plotly.react(chartRef.current, [traceAdv, traceDec], layout, config);
+            }, [history]);
+
+            return (
+                <div className="shadcn-card p-4 mt-6">
+                    <div ref={chartRef} style={{ width: '100%', height: '400px' }}></div>
+                    {history.length < 2 && (
+                        <div className="text-center text-sm text-muted-foreground mt-2 pb-4">
+                            Waiting for more data points to draw the chart (requires at least 1 minute).
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const Dashboard = () => {
             const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
             useEffect(() => {
@@ -297,6 +570,11 @@
             const [stocks, setStocks] = useState({});
             const [isConnected, setIsConnected] = useState(false);
             const [activeIndex, setActiveIndex] = useState('NIFTY');
+            const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'chart'
+            const [history, setHistory] = useState({ NIFTY: [], BANKNIFTY: [] });
+
+            // Reference to keep track of the last time we pushed to history
+            const lastPushTimeRef = useRef({ NIFTY: 0, BANKNIFTY: 0 });
 
             useEffect(() => {
                 // Clear out the stale stocks array immediately when switching tabs
@@ -332,13 +610,19 @@
                     }
                 };
 
-                // Initial fetch
-                fetchQuotes();
+                // Fetch on unmount/mount is handled, but polling interval
+                let isMounted = true;
+                const poll = async () => {
+                    if (isMounted) await fetchQuotes();
+                };
 
-                // Poll every 10 seconds
-                const interval = setInterval(fetchQuotes, 10000);
+                poll();
+                const interval = setInterval(poll, 10000);
 
-                return () => clearInterval(interval);
+                return () => {
+                    isMounted = false;
+                    clearInterval(interval);
+                }
             }, [activeIndex]);
 
             // Calculate breadths
@@ -355,6 +639,35 @@
                     sortedStocks: entries.sort((a, b) => b[1].chg - a[1].chg)
                 };
             }, [stocks]);
+
+            // Append to history every ~1 min if we have valid data
+            useEffect(() => {
+                const now = Date.now();
+                const dateObj = new Date(now);
+                const hours = dateObj.getHours();
+                const mins = dateObj.getMinutes();
+
+                // Check if current time is between 9:15 AM and 3:30 PM
+                const isMarketOpen = (hours > 9 || (hours === 9 && mins >= 15)) &&
+                    (hours < 15 || (hours === 15 && mins <= 30));
+
+                const total = advances + declines;
+
+                if (total > 0 && isConnected && isMarketOpen) {
+                    const timeSinceLastPushed = now - lastPushTimeRef.current[activeIndex];
+
+                    if (timeSinceLastPushed >= 60000) { // 1 minute
+                        setHistory(prev => {
+                            const newIndexHistory = [...prev[activeIndex], { time: now, advances, declines }];
+                            // Keep last 400 data points (~1 trading day)
+                            if (newIndexHistory.length > 400) newIndexHistory.shift();
+
+                            return { ...prev, [activeIndex]: newIndexHistory };
+                        });
+                        lastPushTimeRef.current[activeIndex] = now;
+                    }
+                }
+            }, [advances, declines, activeIndex, isConnected]);
 
             return (
                 <div className="pb-12 max-w-[1400px]">
@@ -392,19 +705,47 @@
                         </div>
                     </header>
 
+                    {/* View Switcher Tabs */}
+                    <div className="mb-6 flex gap-2 border-b border-border">
+                        <button
+                            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === 'dashboard' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'}`}
+                            onClick={() => setActiveTab('dashboard')}
+                        >
+                            Dashboard
+                        </button>
+                        <button
+                            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === 'chart' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'}`}
+                            onClick={() => setActiveTab('chart')}
+                        >
+                            Breadth Chart
+                        </button>
+                        <button
+                            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === 'analytics' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'}`}
+                            onClick={() => setActiveTab('analytics')}
+                        >
+                            Analytics
+                        </button>
+                    </div>
+
                     <AdvanceDeclineCard advances={advances} declines={declines} activeIndex={activeIndex} />
 
-                    {sortedStocks.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 shadcn-card border border-dashed border-border">
-                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-zinc-500 mb-4"></div>
-                            <span className="text-muted-foreground text-sm font-medium tracking-wide">Fetching Quotes...</span>
-                        </div>
+                    {activeTab === 'dashboard' ? (
+                        sortedStocks.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 shadcn-card border border-dashed border-border">
+                                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-zinc-500 mb-4"></div>
+                                <span className="text-muted-foreground text-sm font-medium tracking-wide">Fetching Quotes...</span>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3">
+                                {sortedStocks.map(([symbol, data]) => (
+                                    <StockCard key={symbol} symbol={symbol} data={data} />
+                                ))}
+                            </div>
+                        )
+                    ) : activeTab === 'chart' ? (
+                        <BreadthChart history={history[activeIndex]} />
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3">
-                            {sortedStocks.map(([symbol, data]) => (
-                                <StockCard key={symbol} symbol={symbol} data={data} />
-                            ))}
-                        </div>
+                        <AnalyticsTab activeIndex={activeIndex} />
                     )}
                 </div>
             );

@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>News Pulse — Indian Financial News Aggregator</title>
+    <meta name="description"
+        content="Real-time Indian financial and market news from all major sources in one place." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #030712;
+            --bg2: #0b1120;
+            --card: rgba(15, 23, 42, 0.75);
+            --border: rgba(255, 255, 255, 0.07);
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --accent: #6366f1;
+            /* indigo */
+            --green: #10b981;
+            --red: #f87171;
+            --amber: #fbbf24;
+            --et: #3b82f6;
+            /* Economic Times - blue */
+            --ndtv: #f97316;
+            /* NDTV - orange */
+            --hindu: #22c55e;
+            /* Hindu - green */
+            --fin: #a855f7;
+            /* Finshots - purple */
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Header ─────────────────────────────────────────────── */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(24px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 1.5rem;
+        }
+
+        .header-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            height: 62px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-shrink: 0;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            box-shadow: 0 0 16px rgba(99, 102, 241, 0.4);
+        }
+
+        .logo-text {
+            font-size: 1.15rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .logo-text span {
+            color: var(--accent);
+        }
+
+        #searchBar {
+            flex: 1;
+            max-width: 420px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.45rem 1rem;
+            color: var(--text);
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        #searchBar:focus {
+            border-color: var(--accent);
+        }
+
+        #searchBar::placeholder {
+            color: var(--muted);
+        }
+
+        .header-meta {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .badge {
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #a5b4fc;
+            border-radius: 999px;
+            padding: 0.2rem 0.65rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .last-updated {
+            color: var(--muted);
+            font-size: 0.72rem;
+        }
+
+        #refreshBtn {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 0.35rem 0.85rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        #refreshBtn:hover {
+            opacity: 0.85;
+        }
+
+        #refreshBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ── Trending Bar ─────────────────────────────────────────── */
+        .trending-bar {
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            padding: 0.6rem 1.5rem;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .trending-bar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .trending-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+        }
+
+        .trending-label {
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-right: 0.25rem;
+        }
+
+        .tag {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            border-radius: 999px;
+            padding: 0.2rem 0.65rem;
+            font-size: 0.72rem;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .tag:hover,
+        .tag.active {
+            background: rgba(99, 102, 241, 0.3);
+            color: #fff;
+        }
+
+        /* ── Source Filters ──────────────────────────────────────── */
+        .filter-bar {
+            padding: 0.75rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .filter-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-label {
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .filter-chip {
+            border-radius: 999px;
+            padding: 0.25rem 0.8rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.18s;
+        }
+
+        .filter-chip[data-source="all"] {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.4);
+            color: #a5b4fc;
+        }
+
+        .filter-chip[data-source="Economic Times"] {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+        }
+
+        .filter-chip[data-source="NDTV Business"] {
+            background: rgba(249, 115, 22, 0.1);
+            border-color: rgba(249, 115, 22, 0.3);
+            color: #fdba74;
+        }
+
+        .filter-chip[data-source="The Hindu Business"] {
+            background: rgba(34, 197, 94, 0.1);
+            border-color: rgba(34, 197, 94, 0.3);
+            color: #86efac;
+        }
+
+        .filter-chip[data-source="Finshots"] {
+            background: rgba(168, 85, 247, 0.1);
+            border-color: rgba(168, 85, 247, 0.3);
+            color: #d8b4fe;
+        }
+
+        .filter-chip.active,
+        .filter-chip:hover {
+            filter: brightness(1.35);
+            transform: scale(1.04);
+        }
+
+        /* ── Main Layout ─────────────────────────────────────────── */
+        .main-wrap {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+
+        /* ── Stats Row ─────────────────────────────────────────── */
+        .stats-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 0.9rem 1.2rem;
+            backdrop-filter: blur(12px);
+            flex: 1 1 160px;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+            margin-bottom: 0.4rem;
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        /* ── News Grid ─────────────────────────────────────────────── */
+        #newsGrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 1rem;
+        }
+
+        .news-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1.1rem 1.1rem 0.9rem;
+            backdrop-filter: blur(14px);
+            transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+            animation: fadeUp 0.35s ease both;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .news-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(99, 102, 241, 0.25);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .card-top {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .source-badge {
+            border-radius: 999px;
+            padding: 0.15rem 0.55rem;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            flex-shrink: 0;
+        }
+
+        .src-et {
+            background: rgba(59, 130, 246, 0.15);
+            color: #93c5fd;
+        }
+
+        .src-ndtv {
+            background: rgba(249, 115, 22, 0.15);
+            color: #fdba74;
+        }
+
+        .src-hindu {
+            background: rgba(34, 197, 94, 0.15);
+            color: #86efac;
+        }
+
+        .src-fin {
+            background: rgba(168, 85, 247, 0.15);
+            color: #d8b4fe;
+        }
+
+        .src-other {
+            background: rgba(100, 116, 139, 0.15);
+            color: #94a3b8;
+        }
+
+        .nested-badge {
+            background: rgba(251, 191, 36, 0.12);
+            color: var(--amber);
+            border-radius: 999px;
+            padding: 0.12rem 0.5rem;
+            font-size: 0.6rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .card-time {
+            margin-left: auto;
+            color: var(--muted);
+            font-size: 0.7rem;
+            flex-shrink: 0;
+        }
+
+        .card-title a {
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.88rem;
+            font-weight: 600;
+            line-height: 1.45;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            transition: color 0.15s;
+        }
+
+        .card-title a:hover {
+            color: #a5b4fc;
+        }
+
+        /* ── Load More ──────────────────────────────────────────── */
+        #loadMoreWrap {
+            text-align: center;
+            margin-top: 2rem;
+        }
+
+        #loadMoreBtn {
+            background: rgba(99, 102, 241, 0.12);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #a5b4fc;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            padding: 0.65rem 2rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        #loadMoreBtn:hover {
+            background: rgba(99, 102, 241, 0.25);
+        }
+
+        /* ── Spinner ─────────────────────────────────────────────── */
+        #spinner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem;
+            gap: 0.75rem;
+            color: var(--muted);
+            font-size: 0.875rem;
+        }
+
+        .spin {
+            width: 22px;
+            height: 22px;
+            border: 2px solid rgba(99, 102, 241, 0.2);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── Empty / Error ───────────────────────────────────────── */
+        #emptyState {
+            text-align: center;
+            padding: 4rem 1rem;
+            color: var(--muted);
+            display: none;
+        }
+
+        #emptyState .em-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        /* ── Footer ─────────────────────────────────────────────── */
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--muted);
+            font-size: 0.75rem;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem;
+        }
+
+        /* ── Scrollbar ───────────────────────────────────────────── */
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 99px;
+        }
+
+        /* ── Responsive ──────────────────────────────────────────── */
+        @media (max-width: 700px) {
+            .header-meta .last-updated {
+                display: none;
+            }
+
+            #newsGrid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ── HEADER ──────────────────────────────────────────────────── -->
+    <header>
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon">📰</div>
+                <div class="logo-text">News<span>Pulse</span></div>
+            </div>
+            <input type="text" id="searchBar" placeholder="Search news…" />
+            <div class="header-meta">
+                <div class="badge" id="totalBadge">— articles</div>
+                <div class="last-updated" id="lastUpdated">Loading…</div>
+                <button id="refreshBtn" onclick="refreshData()">🔄 Refresh</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- ── TRENDING TAGS ─────────────────────────────────────────────── -->
+    <div class="trending-bar" id="trendingBar" style="display:none">
+        <div class="trending-inner">
+            <span class="trending-label">🔥 Trending</span>
+            <span id="trendingTags"></span>
+        </div>
+    </div>
+
+    <!-- ── SOURCE FILTERS ─────────────────────────────────────────────── -->
+    <div class="filter-bar">
+        <div class="filter-inner">
+            <span class="filter-label">Source</span>
+            <button class="filter-chip active" data-source="all" onclick="setFilter('all')">All</button>
+            <button class="filter-chip" data-source="Economic Times" onclick="setFilter('Economic Times')">Economic
+                Times</button>
+            <button class="filter-chip" data-source="NDTV Business" onclick="setFilter('NDTV Business')">NDTV
+                Business</button>
+            <button class="filter-chip" data-source="The Hindu Business" onclick="setFilter('The Hindu Business')">The
+                Hindu</button>
+            <button class="filter-chip" data-source="Finshots" onclick="setFilter('Finshots')">Finshots</button>
+        </div>
+    </div>
+
+    <!-- ── MAIN CONTENT ─────────────────────────────────────────────── -->
+    <div class="main-wrap">
+
+        <!-- Stats -->
+        <div class="stats-row" id="statsRow" style="display:none">
+            <div class="stat-card">
+                <div class="stat-label">Total Articles</div>
+                <div class="stat-value" id="statTotal" style="color:#a5b4fc">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Economic Times</div>
+                <div class="stat-value" id="statET" style="color:#93c5fd">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">NDTV Business</div>
+                <div class="stat-value" id="statNDTV" style="color:#fdba74">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">The Hindu</div>
+                <div class="stat-value" id="statHindu" style="color:#86efac">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Others</div>
+                <div class="stat-value" id="statOther" style="color:#d8b4fe">—</div>
+            </div>
+        </div>
+
+        <!-- Spinner -->
+        <div id="spinner">
+            <div class="spin"></div> Loading news…
+        </div>
+
+        <!-- Grid -->
+        <div id="newsGrid"></div>
+
+        <!-- Empty -->
+        <div id="emptyState">
+            <div class="em-icon">🔍</div>
+            <p>No articles found matching your search.</p>
+        </div>
+
+        <!-- Load More -->
+        <div id="loadMoreWrap" style="display:none">
+            <button id="loadMoreBtn" onclick="loadMore()">Load More Articles ↓</button>
+        </div>
+    </div>
+
+    <footer>
+        📰 <strong>NewsPulse</strong> — Aggregated from Economic Times, NDTV Business, The Hindu Business &amp;
+        more.<br />
+        Data sourced from <a href="https://pulse.zerodha.com" target="_blank"
+            style="color:#a5b4fc;text-decoration:none;">Pulse by Zerodha</a> · Auto-refreshes every 10 minutes.
+    </footer>
+
+    <script>
+        // ── State ─────────────────────────────────────────────────────
+        let allArticles = [];
+        let filtered = [];
+        let currentFilter = 'all';
+        let currentSearch = '';
+        let currentTag = '';
+        let displayCount = 50;
+        const PAGE_SIZE = 50;
+
+        // ── Source → CSS class ────────────────────────────────────────
+        const srcClass = (src) => {
+            if (!src) return 'src-other';
+            const s = src.toLowerCase();
+            if (s.includes('economic times')) return 'src-et';
+            if (s.includes('ndtv')) return 'src-ndtv';
+            if (s.includes('hindu')) return 'src-hindu';
+            if (s.includes('finshots')) return 'src-fin';
+            return 'src-other';
+        };
+
+        // ── Fetch & Render ────────────────────────────────────────────
+        async function fetchNews() {
+            try {
+                const res = await fetch('/api/news');
+                const data = await res.json();
+                allArticles = data.articles || [];
+                const now = new Date(data.last_updated);
+                document.getElementById('lastUpdated').textContent =
+                    `Updated ${now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+                updateStats(allArticles);
+                buildTrending(allArticles);
+                applyFilters();
+            } catch (e) {
+                console.error('Fetch error', e);
+            } finally {
+                document.getElementById('spinner').style.display = 'none';
+            }
+        }
+
+        function updateStats(articles) {
+            const et = articles.filter(a => (a.source || '').includes('Economic Times')).length;
+            const ndtv = articles.filter(a => (a.source || '').includes('NDTV')).length;
+            const hindu = articles.filter(a => (a.source || '').includes('Hindu')).length;
+            const other = articles.length - et - ndtv - hindu;
+            document.getElementById('statTotal').textContent = articles.length;
+            document.getElementById('statET').textContent = et;
+            document.getElementById('statNDTV').textContent = ndtv;
+            document.getElementById('statHindu').textContent = hindu;
+            document.getElementById('statOther').textContent = other;
+            document.getElementById('statsRow').style.display = '';
+            document.getElementById('totalBadge').textContent = `${articles.length} articles`;
+        }
+
+        function buildTrending(articles) {
+            const stopWords = new Set(['the', 'and', 'in', 'of', 'as', 'a', 'to', 'for',
+                'on', 'is', 'are', 'with', 'at', 'by', 'from', 'that', 'this', 'it', 'was',
+                'has', 'have', 'had', 'been', 'be', 'an', 'or', 'but', 'not', 'will', 'its',
+                'after', 'over', 'amid', 'says', 'update', 'news', 'live', 'today', 'check',
+                'all', 'up', 'he', 'she', 'they', 'we', 'how', 'what', 'why', 'per', 'हिंदी']);
+            const freq = {};
+            articles.forEach(a => {
+                if (!a.title) return;
+                a.title.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).forEach(w => {
+                    if (w.length > 3 && !stopWords.has(w)) freq[w] = (freq[w] || 0) + 1;
+                });
+            });
+            const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 28);
+            const container = document.getElementById('trendingTags');
+            container.innerHTML = top.map(([word]) =>
+                `<button class="tag" onclick="setTag('${word}')">${word}</button>`
+            ).join('');
+            document.getElementById('trendingBar').style.display = '';
+        }
+
+        function setTag(word) {
+            const active = document.querySelector('.tag.active');
+            if (active) active.classList.remove('active');
+            if (currentTag === word) {
+                currentTag = '';
+            } else {
+                currentTag = word;
+                document.querySelectorAll('.tag').forEach(t => {
+                    if (t.textContent === word) t.classList.add('active');
+                });
+            }
+            displayCount = PAGE_SIZE;
+            applyFilters();
+        }
+
+        function setFilter(src) {
+            currentFilter = src;
+            displayCount = PAGE_SIZE;
+            document.querySelectorAll('.filter-chip').forEach(c => {
+                c.classList.toggle('active', c.dataset.source === src);
+            });
+            applyFilters();
+        }
+
+        function applyFilters() {
+            let res = allArticles;
+            if (currentFilter !== 'all') res = res.filter(a => (a.source || '') === currentFilter);
+            if (currentSearch) {
+                const q = currentSearch.toLowerCase();
+                res = res.filter(a => (a.title || '').toLowerCase().includes(q));
+            }
+            if (currentTag) {
+                const t = currentTag.toLowerCase();
+                res = res.filter(a => (a.title || '').toLowerCase().includes(t));
+            }
+            filtered = res;
+            renderCards();
+        }
+
+        function renderCards() {
+            const grid = document.getElementById('newsGrid');
+            const empty = document.getElementById('emptyState');
+            const more = document.getElementById('loadMoreWrap');
+
+            if (!filtered.length) {
+                grid.innerHTML = '';
+                empty.style.display = '';
+                more.style.display = 'none';
+                return;
+            }
+            empty.style.display = 'none';
+
+            const slice = filtered.slice(0, displayCount);
+            grid.innerHTML = slice.map((a, i) => cardHtml(a, i)).join('');
+            more.style.display = filtered.length > displayCount ? '' : 'none';
+        }
+
+        function cardHtml(a, idx) {
+            const cls = srcClass(a.source);
+            const src = a.source || 'Unknown';
+            const link = a.link && a.link.startsWith('http') ? a.link : '#';
+            const title = escHtml(a.title || 'Untitled');
+            const time = a.time || '';
+            const nested = a.is_nested === true || a.is_nested === 'True' || a.is_nested === 'true';
+
+            return `
+      <div class="news-card" style="animation-delay:${Math.min(idx * 0.025, 0.5)}s">
+        <div class="card-top">
+          <span class="source-badge ${cls}">${escHtml(src)}</span>
+          ${nested ? '<span class="nested-badge">Related</span>' : ''}
+          <span class="card-time">⏱ ${time}</span>
+        </div>
+        <div class="card-title">
+          <a href="${link}" target="_blank" rel="noopener noreferrer">${title}</a>
+        </div>
+      </div>`;
+        }
+
+        function escHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function loadMore() {
+            displayCount += PAGE_SIZE;
+            renderCards();
+            window.scrollBy({ top: 400, behavior: 'smooth' });
+        }
+
+        async function refreshData() {
+            const btn = document.getElementById('refreshBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scraping…';
+            document.getElementById('spinner').style.display = 'flex';
+            try {
+                await fetch('/api/scrape', { method: 'POST' });
+                await fetchNews();
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Refresh';
+            }
+        }
+
+        // ── Search ────────────────────────────────────────────────────
+        let searchTimer;
+        document.getElementById('searchBar').addEventListener('input', e => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                currentSearch = e.target.value.trim();
+                displayCount = PAGE_SIZE;
+                applyFilters();
+            }, 250);
+        });
+
+        // ── Auto-refresh every 10 min (data only, no re-scrape) ──────
+        setInterval(fetchNews, 10 * 60 * 1000);
+
+        // ── Init ──────────────────────────────────────────────────────
+        fetchNews();
+    </script>
+</body>
+
+</html>
