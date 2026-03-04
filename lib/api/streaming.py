@@ -391,16 +391,32 @@ class UpstoxStreamer:
 
     def _on_market_error(self, error):
         self.market_connecting = False
-        logger.error(f"❌ Market Data Stream Error: {error}")
+        error_str = str(error)
+        if "401" in error_str or "403" in error_str or "Unauthorized" in error_str or "Forbidden" in error_str:
+            logger.error(f"❌ Market Data Stream auth error (will not retry): {error}")
+            self._terminating = True  # Prevent close handler from scheduling reconnect
+        else:
+            logger.error(f"❌ Market Data Stream Error: {error}")
 
     def _on_market_close(self, code=None, reason=None):
         self.market_data_connected = False
         self.market_connecting = False
         logger.warning(f"🔌 Market Data Stream Closed: Code={code}, Reason={reason}")
-        # Auto-reconnect logic
-        if not hasattr(self, '_terminating') or not self._terminating:
-            logger.info("🔄 Attempting to reconnect Market Data Stream in 5 seconds...")
-            threading.Timer(5.0, self.connect_market_data).start()
+        # Auto-reconnect only for genuine network disconnects, NOT auth failures.
+        # 401/403 mean the token is invalid — retrying with the same token is pointless.
+        if getattr(self, '_terminating', False):
+            return
+        reason_str = str(reason or "").lower()
+        if "401" in reason_str or "403" in reason_str or "unauthorized" in reason_str or "forbidden" in reason_str:
+            logger.error("❌ Market Data Stream auth failure (401/403). NOT reconnecting — token is invalid. User must re-authenticate.")
+            return
+        reconnect_count = getattr(self, '_reconnect_count', 0)
+        if reconnect_count >= 5:
+            logger.error("❌ Market Data Stream: Max reconnect attempts (5) reached. Giving up.")
+            return
+        self._reconnect_count = reconnect_count + 1
+        logger.info(f"🔄 Attempting to reconnect Market Data Stream in 5 seconds... (attempt {self._reconnect_count}/5)")
+        threading.Timer(5.0, self.connect_market_data).start()
 
     def _on_portfolio_open(self):
         self.portfolio_connected = True
@@ -419,9 +435,10 @@ class UpstoxStreamer:
 
     def disconnect_all(self):
         """Disconnect all active streams with safety checks"""
+        # Set _terminating BEFORE closing so the on_close handler doesn't schedule a reconnect
+        self._terminating = True
         if self.market_streamer:
             try:
-                # Try multiple possible method names for SDK streamer
                 if hasattr(self.market_streamer, 'disconnect'):
                     self.market_streamer.disconnect()
                 elif hasattr(self.market_streamer, 'stop'):
@@ -430,7 +447,7 @@ class UpstoxStreamer:
                     self.market_streamer.close()
             except Exception as e:
                 print(f"⚠️ Error disconnecting market streamer: {e}")
-                
+
         if self.portfolio_streamer:
             try:
                 if hasattr(self.portfolio_streamer, 'disconnect'):
@@ -439,7 +456,7 @@ class UpstoxStreamer:
                     self.portfolio_streamer.stop()
             except Exception as e:
                 print(f"⚠️ Error disconnecting portfolio streamer: {e}")
-                
+
         print("All streams disconnected.")
 
     def get_latest_data(self, instrument_key: str) -> Optional[Dict]:

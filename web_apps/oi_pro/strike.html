@@ -286,10 +286,10 @@
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     showlegend: true,
-                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.12 },
+                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 9 }, orientation: 'h', y: -0.15, x: 0 },
                     hovermode: isVertical ? 'x unified' : 'y unified',
-                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' } },
-                    margin: { t: 30, b: 80, l: 80, r: 80 },
+                    hoverlabel: { bgcolor: isDark ? '#0f172a' : '#ffffff', bordercolor: isDark ? '#334155' : '#e2e8f0', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter', size: 11 } },
+                    margin: { t: 36, b: 60, l: 60, r: 55 },
                 };
 
                 // ATM shape + annotation helper
@@ -303,13 +303,14 @@
 
                 const atmLabel = spotPrice > 0 ? [{
                     ...(isVertical
-                        ? { x: spotPrice, yref: 'paper', y: 1, xanchor: 'left' }
-                        : { y: spotPrice, xref: 'paper', x: 1, yanchor: 'bottom', xanchor: 'right' }),
-                    text: `ATM ${spotPrice.toLocaleString('en-IN')}`,
+                        ? { x: spotPrice, yref: 'paper', y: 1.02, xanchor: 'center', yanchor: 'bottom' }
+                        : { y: spotPrice, xref: 'paper', x: 1, yanchor: 'middle', xanchor: 'right' }),
+                    text: `▼ ${spotPrice.toLocaleString('en-IN')}`,
                     showarrow: false,
-                    font: { color: '#fbbf24', size: 9, family: 'Inter' },
-                    bgcolor: 'rgba(251,191,36,0.1)', bordercolor: 'rgba(251,191,36,0.3)',
-                    borderwidth: 1, borderpad: 3
+                    font: { color: '#fbbf24', size: 9, family: 'Inter', weight: 700 },
+                    bgcolor: 'rgba(0,0,0,0)',
+                    bordercolor: 'rgba(0,0,0,0)',
+                    borderwidth: 0, borderpad: 2
                 }] : [];
 
                 // ── Chart 1: Total OI ──
@@ -440,6 +441,192 @@
 
                 Plotly.react('chart-chg-div', [traceCE_Chg, tracePE_Chg, traceNetChg], layoutChg, { responsive: true, displayModeBar: false });
 
+                // ── Chart 3: Straddle Premium (CE LTP + PE LTP) ──
+                const ceLTP = fd.map(d => d.ce_ltp || 0);
+                const peLTP = fd.map(d => d.pe_ltp || 0);
+                const straddleCost = fd.map((d, i) => ceLTP[i] + peLTP[i]);
+                const atmPremium = straddleCost[Math.floor(straddleCost.length / 2)] || 0;
+
+                const traceCE_LTP = {
+                    x: isVertical ? strikes : ceLTP,
+                    y: isVertical ? ceLTP : strikes,
+                    name: 'Call Premium',
+                    type: 'bar',
+                    orientation: orientation,
+                    marker: { color: 'rgba(239,68,68,0.70)', line: { width: 0 } },
+                    hovertemplate: '<b>%{' + (isVertical ? 'x' : 'y') + '} CE</b><br>LTP: ₹%{' + (isVertical ? 'y' : 'x') + ':,.2f}<extra></extra>',
+                };
+
+                const tracePE_LTP = {
+                    x: isVertical ? strikes : peLTP,
+                    y: isVertical ? peLTP : strikes,
+                    name: 'Put Premium',
+                    type: 'bar',
+                    orientation: orientation,
+                    marker: { color: 'rgba(16,185,129,0.70)', line: { width: 0 } },
+                    hovertemplate: '<b>%{' + (isVertical ? 'x' : 'y') + '} PE</b><br>LTP: ₹%{' + (isVertical ? 'y' : 'x') + ':,.2f}<extra></extra>',
+                };
+
+                const traceStraddle = {
+                    x: isVertical ? strikes : straddleCost,
+                    y: isVertical ? straddleCost : strikes,
+                    name: 'Straddle Cost',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    [isVertical ? 'yaxis' : 'xaxis']: isVertical ? 'y2' : 'x2',
+                    line: { color: '#fbbf24', width: 2 },
+                    marker: { size: 4, color: '#fbbf24' },
+                    hovertemplate: '<b>Straddle %{' + (isVertical ? 'x' : 'y') + '}</b><br>₹%{' + (isVertical ? 'y' : 'x') + ':,.2f}<extra></extra>',
+                };
+
+                const layoutStraddle = {
+                    ...BASE,
+                    barmode: 'stack',
+                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : '#e2e8f0' },
+                    yaxis: { title: { text: isVertical ? 'Premium (₹)' : 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : '#e2e8f0' },
+                    ...(isVertical
+                        ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#fbbf24', size: 9 }, title: { text: 'Straddle ₹', font: { color: '#fbbf24', size: 9 } } } }
+                        : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#fbbf24', size: 9 }, title: { text: 'Straddle ₹', font: { color: '#fbbf24', size: 9 } } } }),
+                    shapes: atmShape,
+                    annotations: [
+                        ...atmLabel,
+                        atmPremium > 0 ? {
+                            xref: 'paper', yref: 'paper', x: 0.98, y: 0.98,
+                            text: `ATM Straddle: ₹${atmPremium.toFixed(0)}`,
+                            showarrow: false,
+                            font: { color: '#fbbf24', size: 10, family: 'Inter' },
+                            bgcolor: 'rgba(251,191,36,0.1)', bordercolor: 'rgba(251,191,36,0.3)',
+                            borderwidth: 1, borderpad: 4, xanchor: 'right'
+                        } : {}
+                    ],
+                };
+
+                Plotly.react('chart-straddle-div', [traceCE_LTP, tracePE_LTP, traceStraddle], layoutStraddle, { responsive: true, displayModeBar: false });
+
+                // ── Chart 4: OI Build vs Unwind Scatter ──
+                // X = OI Change, Y = Premium change (%)
+                // Quadrants: Long Buildup / Short Covering / Long Unwind / Short Buildup
+
+                const fmtPct = v => { const r = Math.round(v); return (r >= 0 ? '+' : '') + r + '%'; };
+                const fmtOI = v => { const r = Math.round(v); return (r >= 0 ? '+' : '') + r.toLocaleString('en-IN'); };
+
+                const scatterCE = fd
+                    .filter(d => (d.ce_ltp || 0) > 0 && (d.ce_close || 0) > 0)
+                    .map(d => ({
+                        strike: d.strike,
+                        oiChg: d.ce_oi_chg || 0,
+                        priceChgPct: Math.min(Math.max(((d.ce_ltp - d.ce_close) / d.ce_close) * 100, -500), 500),
+                    }));
+
+                const scatterPE = fd
+                    .filter(d => (d.pe_ltp || 0) > 0 && (d.pe_close || 0) > 0)
+                    .map(d => ({
+                        strike: d.strike,
+                        oiChg: d.pe_oi_chg || 0,
+                        priceChgPct: Math.min(Math.max(((d.pe_ltp - d.pe_close) / d.pe_close) * 100, -500), 500),
+                    }));
+
+                // Vibrant quadrant colors
+                const getCEColor = p => {
+                    if (p.oiChg >= 0 && p.priceChgPct <= 0) return { fill: 'rgba(239,68,68,0.90)', line: '#fca5a5' };  // Short Buildup
+                    if (p.oiChg >= 0 && p.priceChgPct > 0) return { fill: 'rgba(251,146,60,0.90)', line: '#fdba74' };  // Long Buildup
+                    if (p.oiChg < 0 && p.priceChgPct > 0) return { fill: 'rgba(56,189,248,0.90)', line: '#7dd3fc' };  // Short Cover
+                    return { fill: 'rgba(100,116,139,0.80)', line: '#94a3b8' };  // Long Unwind
+                };
+                const getPEColor = p => {
+                    if (p.oiChg >= 0 && p.priceChgPct >= 0) return { fill: 'rgba(16,185,129,0.90)', line: '#6ee7b7' };  // Short Buildup (bullish)
+                    if (p.oiChg >= 0 && p.priceChgPct < 0) return { fill: 'rgba(167,139,250,0.90)', line: '#c4b5fd' };  // Long Buildup (bearish)
+                    if (p.oiChg < 0 && p.priceChgPct < 0) return { fill: 'rgba(56,189,248,0.90)', line: '#7dd3fc' };  // Short Cover
+                    return { fill: 'rgba(100,116,139,0.80)', line: '#94a3b8' };  // Long Unwind
+                };
+
+                const ceCols = scatterCE.map(getCEColor);
+                const peCols = scatterPE.map(getPEColor);
+
+                const traceCEScatter = {
+                    x: scatterCE.map(p => p.oiChg),
+                    y: scatterCE.map(p => p.priceChgPct),
+                    customdata: scatterCE.map(p => [fmtOI(p.oiChg), fmtPct(p.priceChgPct)]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: 'CE Strikes',
+                    marker: {
+                        size: 14,
+                        color: ceCols.map(c => c.fill),
+                        symbol: 'circle',
+                        line: { width: 1.5, color: ceCols.map(c => c.line) }
+                    },
+                    text: scatterCE.map(p => `<b>${p.strike} CE</b>`),
+                    hovertemplate: '%{text}<br>OI \u0394: <b>%{customdata[0]}</b><br>Price \u0394: <b>%{customdata[1]}</b><extra></extra>',
+                };
+
+                const tracePEScatter = {
+                    x: scatterPE.map(p => p.oiChg),
+                    y: scatterPE.map(p => p.priceChgPct),
+                    customdata: scatterPE.map(p => [fmtOI(p.oiChg), fmtPct(p.priceChgPct)]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: 'PE Strikes',
+                    marker: {
+                        size: 14,
+                        color: peCols.map(c => c.fill),
+                        symbol: 'diamond',
+                        line: { width: 1.5, color: peCols.map(c => c.line) }
+                    },
+                    text: scatterPE.map(p => `<b>${p.strike} PE</b>`),
+                    hovertemplate: '%{text}<br>OI \u0394: <b>%{customdata[0]}</b><br>Price \u0394: <b>%{customdata[1]}</b><extra></extra>',
+                };
+
+                // Quadrant background fills
+                const quadrantFills = [
+                    { type: 'rect', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 1, yref: 'paper', fillcolor: isDark ? 'rgba(239,68,68,0.03)' : 'rgba(239,68,68,0.03)', line: { width: 0 } },  // TR (Short Buildup - bearish CE) — top-right from zero
+                    { type: 'rect', x0: 0, x1: 1, xref: 'paper', y0: 0, y1: 1, yref: 'paper', fillcolor: 'rgba(0,0,0,0)', line: { width: 0 } }, // placeholder
+                ];
+
+                const quadrantShapes = [
+                    // Vertical zero line
+                    {
+                        type: 'line', x0: 0, x1: 0, yref: 'paper', y0: 0, y1: 1,
+                        line: { color: isDark ? '#475569' : '#94a3b8', width: 1, dash: 'dash' }
+                    },
+                    // Horizontal zero line
+                    {
+                        type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 0, y1: 0,
+                        line: { color: isDark ? '#475569' : '#94a3b8', width: 1, dash: 'dash' }
+                    },
+                ];
+
+                const quadrantAnnotations = [
+                    { xref: 'paper', yref: 'paper', x: 0.01, y: 0.99, text: '▲ OI + ▲ Price', showarrow: false, font: { size: 9, color: 'rgba(251,146,60,0.9)', family: 'Inter', weight: 700 }, xanchor: 'left', yanchor: 'top', bgcolor: 'rgba(0,0,0,0)' },
+                    { xref: 'paper', yref: 'paper', x: 0.99, y: 0.99, text: '▼ OI + ▲ Price', showarrow: false, font: { size: 9, color: 'rgba(56,189,248,0.9)', family: 'Inter', weight: 700 }, xanchor: 'right', yanchor: 'top', bgcolor: 'rgba(0,0,0,0)' },
+                    { xref: 'paper', yref: 'paper', x: 0.01, y: 0.01, text: '▲ OI + ▼ Price', showarrow: false, font: { size: 9, color: 'rgba(239,68,68,0.9)', family: 'Inter', weight: 700 }, xanchor: 'left', yanchor: 'bottom', bgcolor: 'rgba(0,0,0,0)' },
+                    { xref: 'paper', yref: 'paper', x: 0.99, y: 0.01, text: '▼ OI + ▼ Price', showarrow: false, font: { size: 9, color: 'rgba(100,116,139,0.9)', family: 'Inter', weight: 700 }, xanchor: 'right', yanchor: 'bottom', bgcolor: 'rgba(0,0,0,0)' },
+                ];
+
+                const layoutScatter = {
+                    ...BASE,
+                    xaxis: {
+                        title: { text: 'OI Change (Contracts)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        tickfont: { color: isDark ? '#64748b' : '#94a3b8' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: false, tickformat: '.3s',
+                        showline: true, linecolor: isDark ? '#334155' : '#e2e8f0'
+                    },
+                    yaxis: {
+                        title: { text: 'Price Change (%)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        tickfont: { color: isDark ? '#64748b' : '#94a3b8' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9',
+                        zeroline: false, ticksuffix: '%',
+                        showline: true, linecolor: isDark ? '#334155' : '#e2e8f0'
+                    },
+                    shapes: quadrantShapes,
+                    annotations: quadrantAnnotations,
+                    hovermode: 'closest',
+                    legend: { ...BASE.legend, traceorder: 'normal' },
+                };
+
+                Plotly.react('chart-scatter-div', [traceCEScatter, tracePEScatter], layoutScatter, { responsive: true, displayModeBar: false });
+
             }, [data, spotPrice, orientation, strikeRange]);
 
             return (
@@ -447,31 +634,37 @@
 
 
                     <main className="pl-28 pr-4 py-8 w-full">
-                        {/* Header */}
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 pr-28">
-                            <div>
-                                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
-                                    Strike Analysis
-                                </h1>
-                                <p className="text-muted-foreground mt-1 flex items-center gap-2">
-                                    Total OI & Change in OI by Strike
-                                    {lastUpdated && (
-                                        <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full border border-border">
-                                            Updated: {lastUpdated.toLocaleTimeString()}
-                                        </span>
-                                    )}
-                                </p>
-                            </div>
-                            <div className="flex gap-4 items-center pr-32">
-                                <div className="bg-secondary p-3 rounded-xl border border-border min-w-[150px]">
-                                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Spot Price</p>
-                                    <p className="text-2xl font-bold text-foreground">{spotPrice}</p>
+                        {/* ── Compact Header + Controls Row ── */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-5 pr-28">
+                            {/* Title */}
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div>
+                                    <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
+                                        Strike Analytics
+                                    </h1>
+                                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                                        OI &amp; OI Change by Strike
+                                        {lastUpdated && (
+                                            <span className="bg-secondary text-muted-foreground px-1.5 py-0.5 rounded text-[10px] border border-border">
+                                                {lastUpdated.toLocaleTimeString()}
+                                            </span>
+                                        )}
+                                    </p>
                                 </div>
 
+                                {/* Spot Price Badge */}
+                                <div className="glass px-3 py-1.5 rounded-lg border border-border flex flex-col items-center">
+                                    <span className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">Spot</span>
+                                    <span className="text-base font-bold text-foreground leading-tight">{spotPrice ? spotPrice.toLocaleString('en-IN') : '---'}</span>
+                                </div>
+                            </div>
+
+                            {/* Controls */}
+                            <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     value={symbol}
                                     onChange={e => setSymbol(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50"
+                                    className="glass px-3 py-1.5 rounded-lg text-foreground text-sm font-semibold outline-none focus:border-emerald-500/50 h-8"
                                 >
                                     {SYMBOLS.map(s => <option key={s} value={s} className="bg-card">{s}</option>)}
                                 </select>
@@ -479,43 +672,41 @@
                                 <select
                                     value={expiry}
                                     onChange={e => setExpiry(e.target.value)}
-                                    className="glass px-4 py-2 rounded-xl text-foreground font-bold tracking-wide outline-none focus:border-emerald-500/50"
+                                    className="glass px-3 py-1.5 rounded-lg text-foreground text-sm font-semibold outline-none focus:border-emerald-500/50 h-8"
                                 >
                                     {expiries.map(e => <option key={e} value={e} className="bg-card">{formatDate(e)}</option>)}
                                 </select>
 
-                                <div className="bg-secondary p-2 rounded-xl border border-border flex items-center gap-3">
-                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Range: ATM ±{sliderValue}</span>
+                                {/* Strike Range Slider */}
+                                <div className="glass px-3 py-1 rounded-lg border border-border flex items-center gap-2 h-8">
+                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider whitespace-nowrap">±{sliderValue}</span>
                                     <input
                                         type="range"
-                                        min="2"
-                                        max="50"
-                                        step="1"
+                                        min="2" max="50" step="1"
                                         value={sliderValue}
                                         onChange={(e) => {
                                             const val = parseInt(e.target.value, 10);
                                             setSliderValue(val);
-                                            // Debounce update to chart
                                             if (window._sliderTimeout) clearTimeout(window._sliderTimeout);
-                                            window._sliderTimeout = setTimeout(() => {
-                                                setStrikeRange(val);
-                                            }, 300);
+                                            window._sliderTimeout = setTimeout(() => setStrikeRange(val), 300);
                                         }}
-                                        className="w-24 accent-emerald-500 cursor-pointer h-1 bg-secondary rounded-lg appearance-none"
+                                        className="w-20 accent-emerald-500 cursor-pointer h-1 bg-secondary rounded-lg appearance-none"
                                     />
                                 </div>
 
+                                {/* Orientation Toggle */}
                                 <button
                                     onClick={() => setOrientation(prev => prev === 'v' ? 'h' : 'v')}
-                                    className="glass w-10 h-10 flex items-center justify-center rounded-xl hover:bg-emerald-500/20 text-muted-foreground hover:text-emerald-400 transition-all font-bold"
-                                    title="Toggle Orientation"
+                                    className="glass w-8 h-8 flex items-center justify-center rounded-lg hover:bg-emerald-500/20 text-muted-foreground hover:text-emerald-400 transition-all text-sm"
+                                    title={orientation === 'v' ? 'Switch to Horizontal' : 'Switch to Vertical'}
                                 >
-                                    {orientation === 'v' ? '⟳' : '⟲'}
+                                    {orientation === 'v' ? '↕' : '↔'}
                                 </button>
 
+                                {/* Refresh */}
                                 <button
                                     onClick={fetchData}
-                                    className="glass w-10 h-10 flex items-center justify-center rounded-xl hover:bg-blue-500/20 text-muted-foreground hover:text-blue-400 transition-all font-bold"
+                                    className="glass w-8 h-8 flex items-center justify-center rounded-lg hover:bg-blue-500/20 text-muted-foreground hover:text-blue-400 transition-all text-sm"
                                     title="Refresh Now"
                                 >
                                     {loading ? '⏳' : '↺'}
@@ -576,19 +767,73 @@
                             );
                         })()}
 
-                        {/* Charts Area */}
-                        <div className="flex flex-col gap-8">
-                            <div className="glass p-6 rounded-3xl min-h-[600px] relative">
+                        {/* ── Charts Grid: Side by Side ── */}
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                            {/* Chart 1: Total OI */}
+                            <div className="glass p-4 rounded-2xl relative" style={{ minHeight: 0 }}>
+                                <div className="flex items-center justify-between mb-2 px-1">
+                                    <span className="text-xs font-semibold text-foreground tracking-wide">Total Open Interest</span>
+                                    <div className="flex gap-2">
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-rose-400"><span className="w-2 h-2 rounded-sm bg-red-400 inline-block"></span>CE</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block"></span>PE</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-violet-400"><span className="w-2 h-1 rounded bg-violet-400 inline-block"></span>Net</span>
+                                    </div>
+                                </div>
                                 {loading && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-card/50 backdrop-blur-sm z-10 rounded-3xl">
-                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+                                    <div className="absolute inset-0 flex items-center justify-center bg-card/60 backdrop-blur-sm z-10 rounded-2xl">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
                                     </div>
                                 )}
-                                <div id="chart-oi-div" className="w-full h-[600px]"></div>
+                                <div id="chart-oi-div" className="w-full" style={{ height: '420px' }}></div>
                             </div>
 
-                            <div className="glass p-6 rounded-3xl min-h-[600px] relative">
-                                <div id="chart-chg-div" className="w-full h-[600px]"></div>
+                            {/* Chart 2: OI Change */}
+                            <div className="glass p-4 rounded-2xl relative" style={{ minHeight: 0 }}>
+                                <div className="flex items-center justify-between mb-2 px-1">
+                                    <span className="text-xs font-semibold text-foreground tracking-wide">OI Change (Intraday)</span>
+                                    <div className="flex gap-2">
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-rose-400"><span className="w-2 h-2 rounded-sm bg-red-400 inline-block"></span>CE Buildup</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block"></span>PE Buildup</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-pink-400"><span className="w-2 h-1 rounded bg-pink-400 inline-block"></span>Net Δ</span>
+                                    </div>
+                                </div>
+                                <div id="chart-chg-div" className="w-full" style={{ height: '420px' }}></div>
+                            </div>
+                        </div>
+
+                        {/* ── Charts Row 2: Straddle Premium + OI Scatter ── */}
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
+                            {/* Chart 3: Straddle Premium */}
+                            <div className="glass p-4 rounded-2xl relative">
+                                <div className="flex items-center justify-between mb-2 px-1">
+                                    <div>
+                                        <span className="text-xs font-semibold text-foreground tracking-wide">Straddle Premium by Strike</span>
+                                        <span className="ml-2 text-[10px] text-muted-foreground">CE LTP + PE LTP — ATM = market expected move</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-rose-400"><span className="w-2 h-2 rounded-sm bg-red-400 inline-block"></span>CE LTP</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block"></span>PE LTP</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-400"><span className="w-3 h-0.5 bg-amber-400 inline-block"></span>Straddle</span>
+                                    </div>
+                                </div>
+                                <div id="chart-straddle-div" className="w-full" style={{ height: '380px' }}></div>
+                            </div>
+
+                            {/* Chart 4: OI Build vs Unwind Scatter */}
+                            <div className="glass p-4 rounded-2xl relative">
+                                <div className="flex items-center justify-between mb-2 px-1">
+                                    <div>
+                                        <span className="text-xs font-semibold text-foreground tracking-wide">OI Build vs Unwind</span>
+                                        <span className="ml-2 text-[10px] text-muted-foreground">OI Change × Price Change — each dot = one strike</span>
+                                    </div>
+                                    <div className="flex gap-2 flex-wrap justify-end">
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-orange-400"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block"></span>Long Buildup</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-rose-400"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block"></span>Short Buildup</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-blue-400"><span className="w-2 h-2 bg-blue-400 rotate-45 inline-block" style={{ clipPath: 'polygon(50% 0,100% 50%,50% 100%,0 50%)' }}></span>Short Cover</span>
+                                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-400"><span className="w-2 h-2 bg-slate-400 inline-block" style={{ clipPath: 'polygon(50% 0,100% 50%,50% 100%,0 50%)' }}></span>Unwind</span>
+                                    </div>
+                                </div>
+                                <div id="chart-scatter-div" className="w-full" style={{ height: '380px' }}></div>
                             </div>
                         </div>
                     </main>

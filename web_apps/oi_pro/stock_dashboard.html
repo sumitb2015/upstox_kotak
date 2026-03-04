@@ -280,7 +280,7 @@
                         </div>
 
                         <div className={`flex items-center font-medium ${chgColor} text-[11px] mt-0.5 tracking-wide`}>
-                            {chg > 0 ? '+' : ''}{chg ? chg.toFixed(2) : '0.00'}%
+                            {chg > 0 ? '+' : ''}{chg ? chg.toFixed(0) : '0.00'}%
                         </div>
                     </div>
                 </div>
@@ -306,11 +306,18 @@
 
                 const fetchQuotes = async () => {
                     try {
-                        const token = localStorage.getItem('token');
-                        let url = `/api/market-quote?index=${activeIndex}`;
-                        if (token) url += `&token=${token}`;
+                        const token = localStorage.getItem('oi_pro_jwt') || localStorage.getItem('token');
+                        const url = `/api/market-quote?index=${activeIndex}`;
+                        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-                        const response = await fetch(url);
+                        const response = await fetch(url, { headers });
+
+                        if (response.status === 401) {
+                            console.error("Unauthorized — token may be expired. Please log in again.");
+                            setIsConnected(false);
+                            return;
+                        }
+
                         const result = await response.json();
 
                         if (result.status === 'success' && result.type === 'stock_data') {

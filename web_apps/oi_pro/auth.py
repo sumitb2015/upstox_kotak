@@ -1,14 +1,36 @@
 import os
 from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
 import jwt
 from peewee import SqliteDatabase, Model, CharField, BooleanField, DateTimeField, ForeignKeyField
 
+# ── Load .env from project root (2 levels up from this file) ──
+try:
+    from dotenv import load_dotenv
+    _env_file = Path(__file__).parent.parent.parent / ".env"
+    load_dotenv(dotenv_path=_env_file, override=False)  # override=False: real env vars take priority
+except ImportError:
+    pass  # python-dotenv not installed — fall back to manual env vars
+
 # ── Configuration ──
-SECRET_KEY = os.getenv("OIPRO_SECRET_KEY", "oipro-dev-secret-key-change-in-prod")
+_raw_secret = os.getenv("OIPRO_SECRET_KEY")
+_insecure_defaults = {"oipro-dev-secret-key-change-in-prod", "", None}
+if _raw_secret in _insecure_defaults:
+    raise RuntimeError(
+        "\n"
+        "════════════════════════════════════════════════════════════\n"
+        " STARTUP ABORTED — OIPRO_SECRET_KEY is not set!\n"
+        "────────────────────────────────────────────────────────────\n"
+        " Set a strong, random secret before starting the server:\n"
+        "   export OIPRO_SECRET_KEY=$(python -c \"import secrets; print(secrets.token_hex(32))\")\n"
+        " Or add it to your .env file.\n"
+        "════════════════════════════════════════════════════════════\n"
+    )
+SECRET_KEY = _raw_secret
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
@@ -52,13 +74,27 @@ class BrokerCredential(BaseModel):
     created_at = DateTimeField(default=datetime.utcnow)
 
 def init_db():
-    """Initializes the SQLite database and creates necessary tables and default admin."""
+    """Initializes the SQLite database and creates necessary tables."""
     db.connect()
     db.create_tables([User, BrokerCredential], safe=True)
-    
-    # Create default admin if no users exist
+
+    # ── First-run hint ──────────────────────────────────────────
+    # Default admin credentials have been REMOVED for security.
+    # If no users exist, create the first admin manually via CLI:
+    #
+    #   from web_apps.oi_pro.auth import create_user
+    #   create_user("your@email.com", "YourStrongPassword", role="admin")
+    #
+    # Or use the /api/users POST endpoint once you have admin access.
+    # ────────────────────────────────────────────────────────────
     if User.select().count() == 0:
-        create_user("admin@oipro.com", "OIPro@123", role="admin")
+        import logging as _log
+        _log.getLogger("OIPRO").warning(
+            "[AUTH] No users found in database. "
+            "Create an admin user via CLI: "
+            "from web_apps.oi_pro.auth import create_user; "
+            "create_user('admin@yourdomain.com', 'StrongPassword', role='admin')"
+        )
     db.close()
 
 # ── Auth Utilities ──
@@ -151,9 +187,18 @@ def check_admin(current_user: User = Depends(get_current_user)):
 
 # ── Routes ──
 from fastapi.concurrency import run_in_threadpool
+from fastapi import Request as _Request
+
+# Fix #8: Module-level limiter — exported so main.py sets app.state.limiter = auth_limiter
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    auth_limiter = Limiter(key_func=get_remote_address)
+except ImportError:
+    auth_limiter = None
 
 @router.post("/api/login")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(request: _Request, form_data: OAuth2PasswordRequestForm = Depends()):
     # Run DB query and password hashing in a threadpool to avoid blocking WebSocket loop
     def _verify():
         u = get_user(form_data.username)

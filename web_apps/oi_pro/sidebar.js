@@ -11,6 +11,7 @@
         return; // Stop execution
     }
 
+
     function getJWTPayload() {
         const token = localStorage.getItem('oi_pro_jwt');
         if (!token) return null;
@@ -28,6 +29,21 @@
 
     const payload = getJWTPayload();
     const isAdmin = payload && payload.role === 'admin';
+
+    // --- Broker Token Gate ---
+    // Redirect non-admin users to /brokers if they have no active broker token.
+    // Exempt on login/brokers and public pages. Admins always bypass.
+    (function brokerGate() {
+        const GATE_EXEMPT = ['/login', '/brokers', '/pricing', '/privacy', '/terms', '/contact'];
+        const exempt = GATE_EXEMPT.some(p => window.location.pathname === p || window.location.pathname.startsWith(p + '/'));
+        if (exempt || isAdmin) return; // Admins and exempt pages skip the gate
+        const jwt = localStorage.getItem('oi_pro_jwt');
+        if (!jwt) return;
+        fetch('/api/broker/status', { headers: { 'Authorization': 'Bearer ' + jwt } })
+            .then(r => { if (!r.ok) return null; return r.json(); })
+            .then(data => { if (data && !data.has_token) window.location.href = '/brokers?no_broker=1'; })
+            .catch(() => { }); // Fail open on network error
+    })();
 
     // --- Global Auth Helpers ---
     window.fetchWithAuth = async (url, options = {}) => {
@@ -179,11 +195,6 @@
             href: "/heatmap",
             title: "Exposure Change Heatmap",
             svg: '<rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect>'
-        },
-        {
-            href: "/strategies",
-            title: "Strategy Command Center",
-            svg: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>'
         },
         {
             href: "/brokers",
@@ -430,6 +441,16 @@
         const isDark = document.documentElement.classList.contains('dark');
 
         // Build nav HTML
+        // Derive user display info from JWT payload
+        const userEmail = (payload && payload.sub) ? payload.sub : 'Unknown';
+        const emailPrefix = userEmail.split('@')[0];
+        const userInitials = emailPrefix.slice(0, 2).toUpperCase();
+        const userDisplayName = userEmail.length > 22 ? userEmail.slice(0, 20) + '…' : userEmail;
+        // Deterministic color derived from email string (stable across sessions)
+        const AVATAR_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#14b8a6'];
+        const colorIdx = emailPrefix.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+        const userAvatarColor = AVATAR_COLORS[colorIdx];
+
         const navItemsHtml = NAV_ITEMS.map(function (item) {
             const isActive = item.href === "/"
                 ? currentPath === "/"
@@ -459,6 +480,17 @@
                 </div>
 
                 <div class="mt-auto px-3 border-t border-border pt-4 flex flex-col gap-2">
+                    <!-- User Identity Card -->
+                    <div class="flex items-center gap-2.5 px-2 py-2 rounded-lg bg-muted/40 border border-border/50 mb-1 min-w-0 overflow-hidden" title="${payload && payload.sub ? payload.sub : 'Unknown'}">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white" style="background:${userAvatarColor}">
+                            ${userInitials}
+                        </div>
+                        <div class="nav-text flex flex-col min-w-0 flex-1">
+                            <span class="text-xs font-medium text-foreground truncate leading-tight">${userDisplayName}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded mt-0.5 inline-flex w-fit font-semibold ${isAdmin ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">${isAdmin ? 'Admin' : 'User'}</span>
+                        </div>
+                    </div>
+
                     <!-- Theme Toggle -->
                     <button id="theme-toggle" class="nav-item relative w-full group focus:outline-none">
                         <div class="w-5 h-5 flex items-center justify-center shrink-0">

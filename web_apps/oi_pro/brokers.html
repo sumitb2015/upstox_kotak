@@ -272,6 +272,28 @@
         </div>
     </div>
 
+    <!-- No Broker Access Banner (shown when redirected from dashboard with ?no_broker=1) -->
+    <!-- NOTE: outer div controls visibility only (display:none). Inner div handles flex layout. -->
+    <div id="no-broker-banner"
+        style="display:none; position:fixed; top:1.2rem; left:50%; transform:translateX(-50%); z-index:9999; max-width:520px; width:90%;">
+        <div
+            style="display:flex; align-items:center; gap:0.75rem;
+            background:linear-gradient(135deg,#92400e,#78350f); color:#fef3c7; border:1px solid #f59e0b;
+            border-radius:0.75rem; padding:0.85rem 1.4rem; box-shadow:0 8px 32px rgba(245,158,11,0.3); font-family:inherit;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <div>
+                <div style="font-weight:700; font-size:0.9rem;">Broker Access Required</div>
+                <div style="font-size:0.8rem; opacity:0.9; margin-top:0.15rem;">Add your broker credentials and generate
+                    a token to access the dashboard.</div>
+            </div>
+        </div>
+    </div>
+
     <div class="max-w-7xl mx-auto">
         <div class="breadcrumb">
             List | <span>Brokers</span>
@@ -378,6 +400,18 @@
     <script src="/sidebar.js"></script>
     <script>
         const jwt = localStorage.getItem('oi_pro_jwt');
+
+        // Show "no broker" warning banner if redirected from a dashboard page
+        const _urlP = new URLSearchParams(window.location.search);
+        if (_urlP.has('no_broker')) {
+            const banner = document.getElementById('no-broker-banner');
+            if (banner) {
+                banner.style.display = 'flex';
+                setTimeout(() => { banner.style.display = 'none'; }, 8000);
+                // Clean the URL so refresh doesn't re-show it
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
 
         function showNotification() {
             const el = document.getElementById('success-notification');

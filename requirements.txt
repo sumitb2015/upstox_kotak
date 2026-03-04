@@ -78,4 +78,7 @@ fastapi
 uvicorn
 passlib
 python-multipart
-bcryptplotly
+bcrypt
+plotly
+cryptography>=3.4.8
+slowapi>=0.1.9

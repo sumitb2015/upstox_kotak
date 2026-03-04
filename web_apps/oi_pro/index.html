@@ -618,7 +618,7 @@
                                                 <span className="text-[10px] uppercase tracking-wide text-neutral-400 font-medium">{sym}</span>
                                                 <span className="text-sm font-semibold text-white">{ltp ? ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : "---"}</span>
                                                 <span className={`text-[11px] font-semibold ${colorClass}`}>
-                                                    {isPositive ? '+' : ''}{chg.toFixed(2)}%
+                                                    {isPositive ? '+' : ''}{chg.toFixed(0)}%
                                                 </span>
                                             </button>
                                         );
