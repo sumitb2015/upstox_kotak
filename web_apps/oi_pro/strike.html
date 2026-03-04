@@ -363,8 +363,18 @@
                     ...BASE,
                     title: { text: 'Total Open Interest by Strike', font: { color: isDark ? '#e2e8f0' : '#0f172a', size: 14 }, x: 0.02 },
                     barmode: 'group',
-                    xaxis: { title: { text: isVertical ? 'Strike Price' : 'OI', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a' },
-                    yaxis: { title: { text: isVertical ? 'OI' : 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } }, tickfont: { color: isDark ? '#94a3b8' : '#475569' }, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickformat: '.3s' },
+                    xaxis: {
+                        title: { text: isVertical ? 'Strike Price' : 'OI', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        showspikes: true, spikemode: 'across', spikedash: 'dash', spikethickness: 1, spikecolor: 'rgba(148,163,184,0.3)'
+                    },
+                    yaxis: {
+                        title: { text: isVertical ? 'OI' : 'Strike Price', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569' },
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickformat: '.3s',
+                        showspikes: true, spikemode: 'across', spikedash: 'dash', spikethickness: 1, spikecolor: 'rgba(148,163,184,0.3)'
+                    },
                     ...(isVertical
                         ? { yaxis2: { overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickformat: '.3s' } }
                         : { xaxis2: { overlaying: 'x', side: 'top', gridcolor: 'rgba(0,0,0,0)', tickfont: { color: '#a78bfa', size: 9 }, title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a' } }),

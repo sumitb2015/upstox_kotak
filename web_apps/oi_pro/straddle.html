@@ -416,7 +416,12 @@
                         range: [marketOpen, marketClose],
                         tickformat: '%I:%M %p',
                         gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
-                        tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 }
+                        tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 },
+                        showspikes: true,
+                        spikemode: 'across',
+                        spikedash: 'dash',
+                        spikecolor: isDark ? 'rgba(148,163,184,0.3)' : 'rgba(71,85,105,0.3)',
+                        spikethickness: 1
                     },
                     yaxis: {
                         title: { text: 'Total Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
