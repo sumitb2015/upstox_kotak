@@ -134,6 +134,9 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - `POST /api/users`: Admin-only endpoint to create new users.
 - `DELETE /api/users/{email}`: Admin-only endpoint to remove user accounts.
 
+### Diagnostics
+- `GET /api/debug/ws-state`: Returns live WebSocket subscription state for the authenticated user — streamer connection status, subscribed instrument keys, cached feed keys, and event loop health. Used to diagnose live tick delivery issues.
+
 ### Strategy Management
 - `GET /api/strategies`: Returns status and metadata for all registered strategies.
 - `POST /api/strategies/start/{id}`: Spawns a background `live.py` process.
@@ -170,3 +173,4 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - **Weekend/Off-Market High-Low Fix**: Enhanced the Upstox WebSocket parsing logic to correctly extract daily OHLC data from the `ohlc_day` nested structure, ensuring high/low prices are populated on all dashboards even during weekends and non-trading hours.
 - **Authenticated UI Integrity**: The login gateway is now forced to Dark Mode permanently to ensure a consistent, secure-feeling point of entry, independent of the dashboard's theme settings.
 - **Exposure Change Heatmap Overhaul**: Fixed a backend caching bug that prevented correct Open Interest baseline lookups for precise percentage scaling. Delivered a massive UI/UX overhaul implementing vibrant non-linear neon scaling (Green/Red/Cyan/Amber), glassmorphism effects, a new `#0f1117` terminal dark mode, and fully dynamic tooltips accommodating both Light & Dark modes natively.
+- **Multi-Option Chart Live Ticks Bug Fix**: Resolved a race condition in `/ws/straddle` where option instrument keys were subscribed to Upstox before the WebSocket handshake had completed, causing silent subscription failures. `manager.subscribe()` now waits up to 5 seconds for `market_data_connected` before calling `subscribe_market_data()`. Also added a 10-second grace period in `StreamerRegistry.release()` to prevent needless streamer teardown on rapid page navigation. Frontend guard clauses blocking tick processing were also removed.
