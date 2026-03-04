@@ -370,8 +370,11 @@
                             return;
                         }
 
-                        // OI comes in 'full' mode ticks
-                        const oi = msg.oi ?? msg.open_interest ?? null;
+                        // OI comes in 'full' mode ticks - check multiple possible field names/paths
+                        const oi = msg.oi
+                            ?? msg.open_interest
+                            ?? msg.marketFF?.oi
+                            ?? null;
 
                         const currentLegs = legsRef.current;
                         const matchingLegs = currentLegs.filter(l => l.instrumentKey && l.instrumentKey.replace(':', '|') === instrKey);
@@ -521,18 +524,26 @@
 
                         // Parse per-leg OI from the historical data
                         // Backend returns columns like: oi_NSE_FO|45522 per leg
+                        // Note: backend does fillna(0), so filter out only nulls — NOT zeros
                         if (!isAutoRefresh && result.legs?.length) {
                             const oiByLegId = {};
-                            result.legs.forEach((legMeta, idx) => {
+                            result.legs.forEach((legMeta) => {
                                 const resolvedLeg = withKeys.find(wk => wk.instrumentKey === legMeta.instrument_key);
                                 if (!resolvedLeg) return;
                                 const oiKey = `oi_${legMeta.instrument_key}`;
                                 const series = filteredData
-                                    .filter(d => d[oiKey] != null && d[oiKey] > 0)
+                                    .filter(d => d[oiKey] != null)
                                     .map(d => ({ timestamp: d.timestamp, oi: d[oiKey] }));
-                                if (series.length > 0) oiByLegId[resolvedLeg.id] = series;
+                                // Only store the series if it has at least some non-zero values
+                                const hasNonZero = series.some(p => p.oi > 0);
+                                if (series.length > 0 && hasNonZero) {
+                                    oiByLegId[resolvedLeg.id] = series;
+                                } else if (series.length > 0) {
+                                    // All zeros — store anyway so chart section appears
+                                    oiByLegId[resolvedLeg.id] = series;
+                                }
                             });
-                            setOIChartData(oiByLegId);
+                            if (Object.keys(oiByLegId).length > 0) setOIChartData(oiByLegId);
                         }
 
                         setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -616,8 +627,6 @@
                     type: 'scatter',
                     mode: 'lines',
                     line: { color: '#fbbf24', width: 2.5, shape: 'spline', smoothing: 0.3 },
-                    fill: 'tozeroy',
-                    fillcolor: 'rgba(251,191,36,0.07)',
                     hovertemplate: '₹%{y:.2f}<extra>Net Premium</extra>'
                 };
                 const vwapTrace = {
@@ -651,6 +660,7 @@
                         zerolinecolor: isDark ? '#334155' : '#cbd5e1',
                         zerolinewidth: 1,
                         autorange: true,
+                        rangemode: 'normal',
                         tickprefix: '₹'
                     },
                     legend: {
