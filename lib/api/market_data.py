@@ -342,6 +342,31 @@ def get_full_option_chain(access_token, underlying_key, expiry):
 
     df['buildup'] = df.apply(get_buildup, axis=1)
 
+    # --- 3. Enrich with OHLC from MarketQuotes ---
+    if all_keys:
+        ohlc_map = {}
+        chunk_size = 400
+        for i in range(0, len(all_keys), chunk_size):
+            chunk = all_keys[i:i+chunk_size]
+            try:
+                quotes = get_market_quotes(access_token, chunk)
+                for k, quote_dict in quotes.items():
+                    # USE instrument_token because it matches instrument_key (like NSE_FO|45414)
+                    # whereas k might be a different format like NSE_FO:NIFTY...
+                    token_key = quote_dict.get('instrument_token')
+                    if token_key and 'ohlc' in quote_dict and quote_dict['ohlc']:
+                        ohlc_map[token_key] = quote_dict['ohlc']
+            except Exception as e:
+                print(f"Error fetching quotes for OHLC: {e}")
+                
+        def get_open(row): return ohlc_map.get(row['instrument_key'], {}).get('open', 0)
+        def get_high(row): return ohlc_map.get(row['instrument_key'], {}).get('high', 0)
+        def get_low(row): return ohlc_map.get(row['instrument_key'], {}).get('low', 0)
+        
+        df['open'] = df.apply(get_open, axis=1)
+        df['high'] = df.apply(get_high, axis=1)
+        df['low'] = df.apply(get_low, axis=1)
+
     return df
 
 

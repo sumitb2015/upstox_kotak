@@ -483,9 +483,9 @@
                                             const isATM = row.strike === atmStrike;
 
                                             // Colors
-                                            const ceBg = isATM ? "bg-amber-500/10" : row.strike < spotPrice ? "bg-emerald-500/[0.04]" : "";
-                                            const peBg = isATM ? "bg-amber-500/10" : row.strike > spotPrice ? "bg-rose-500/[0.04]" : "";
-                                            const rowClass = isATM ? "bg-amber-500/5 ring-1 ring-amber-500/20 z-10 relative" : "hover:bg-white/[0.03]";
+                                            const ceBg = isATM ? "bg-amber-500/15" : row.strike < spotPrice ? "bg-emerald-500/[0.04]" : "";
+                                            const peBg = isATM ? "bg-amber-500/15" : row.strike > spotPrice ? "bg-rose-500/[0.04]" : "";
+                                            const rowClass = isATM ? "bg-amber-500/10 ring-1 ring-amber-600/30 z-10 relative" : "hover:bg-white/[0.03]";
 
                                             // Helper for % Change
                                             const getPctChange = (current, prev) => {
@@ -561,18 +561,22 @@
 
                                                     {/* LTP */}
                                                     <td className={`py-2 px-1 ${ceBg} font-mono font-bold text-foreground text-right pr-4`}>
-                                                        {ce.ltp ? ce.ltp.toFixed(2) : "-"}
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            {ce.open > 0 && ce.open === ce.high && <span className="text-[8px] bg-rose-500/20 text-rose-500 px-1 py-0.5 rounded border border-rose-500/50 font-bold" title="Open = High">OH</span>}
+                                                            {ce.open > 0 && ce.open === ce.low && <span className="text-[8px] bg-emerald-500/20 text-emerald-500 px-1 py-0.5 rounded border border-emerald-500/50 font-bold" title="Open = Low">OL</span>}
+                                                            <span>{ce.ltp ? ce.ltp.toFixed(2) : "-"}</span>
+                                                        </div>
                                                     </td>
 
 
                                                     {/* === STRIKE === */}
-                                                    <td className={`py-3 px-4 font-black text-sm tracking-tighter border-x border-border sticky-col z-10 shadow-2xl ${isATM ? 'bg-amber-950/30 text-amber-500 ring-2 ring-amber-500/50' : 'bg-card'}`}>
+                                                    <td className={`py-3 px-4 font-black text-sm tracking-tighter border-x border-border sticky-col z-10 shadow-2xl ${isATM ? 'bg-amber-500/20 text-amber-900 ring-2 ring-amber-600/50' : 'bg-card'}`}>
                                                         <div className={`flex justify-center`}>
                                                             <span className={`px-2 py-0.5 rounded text-foreground font-bold`}>
                                                                 {row.strike}
                                                             </span>
                                                         </div>
-                                                        {isATM && <div className="text-[9px] text-amber-500/80 uppercase tracking-widest mt-1">ATM</div>}
+                                                        {isATM && <div className="text-[10px] text-amber-900 font-bold uppercase tracking-widest mt-1">ATM</div>}
                                                     </td>
 
 
@@ -580,7 +584,11 @@
 
                                                     {/* LTP */}
                                                     <td className={`py-2 px-1 ${peBg} font-mono font-bold text-foreground text-left pl-4`}>
-                                                        {pe.ltp ? pe.ltp.toFixed(2) : "-"}
+                                                        <div className="flex items-center justify-start gap-1">
+                                                            <span>{pe.ltp ? pe.ltp.toFixed(2) : "-"}</span>
+                                                            {pe.open > 0 && pe.open === pe.high && <span className="text-[8px] bg-rose-500/20 text-rose-500 px-1 py-0.5 rounded border border-rose-500/50 font-bold" title="Open = High">OH</span>}
+                                                            {pe.open > 0 && pe.open === pe.low && <span className="text-[8px] bg-emerald-500/20 text-emerald-500 px-1 py-0.5 rounded border border-emerald-500/50 font-bold" title="Open = Low">OL</span>}
+                                                        </div>
                                                     </td>
 
                                                     {/* LTP % */}
