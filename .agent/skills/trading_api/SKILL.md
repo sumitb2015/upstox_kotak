@@ -459,6 +459,18 @@ streamer.connect_portfolio(
 )
 ```
 
+### 📋 WebSocket Management Pattern (Production)
+For multi-user applications (FastAPI/Dashboards), follow the **Registry Pattern** to ensure NSE compliance (max one market data streamer per user):
+
+1.  **StreamerRegistry**:
+    - Centralized dictionary mapping `user_id` to a single `UpstoxStreamer` instance.
+    - Use `asyncio.Lock` for thread-safe access.
+2.  **Connection Sync Guard**:
+    - **Issue**: Subscribing immediately after creating a streamer often fails because the WebSocket handshake isn't finished.
+    - **Rule**: Implement a wait loop (up to 5s) that checks `streamer.market_data_connected` before calling `subscribe_market_data`.
+3.  **Graceful Teardown**:
+    - Use a refcount and a grace period (e.g., 10s) before disconnecting a streamer when all user sessions close to handle rapid page refreshes.
+
 ### Accessing Latest Data (Cache)
 You can also poll the streamer's local cache if you don't want event-driven logic:
 ```python

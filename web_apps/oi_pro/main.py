@@ -1008,16 +1008,11 @@ class ConnectionManager:
         await websocket.accept()
         self.market_watch_sockets.append(websocket)
 
-<<<<<<< HEAD
     async def subscribe(self, websocket: WebSocket, instrument_keys: List[str], user_streamer=None, mode: str = "ltpc"):
         """
         Subscribe a websocket to specific instrument keys.
         mode: 'ltpc' for price-only ticks, 'full' to include OI, Greeks, OHLC in every tick.
         """
-=======
-    async def subscribe(self, websocket: WebSocket, instrument_keys: List[str], user_streamer=None):
-        """Subscribe a websocket to specific instrument keys"""
->>>>>>> fix/security-hardening
         normalized_keys = [k.replace(':', '|') for k in instrument_keys]
         logger.info(f"[UPSTOX] [WS] Subscribing socket to: {normalized_keys} (mode={mode})")
         for key in normalized_keys:
@@ -1028,7 +1023,6 @@ class ConnectionManager:
         
         # Trigger subscription on the user's dedicated Upstox Streamer
         # (user_streamer injected by the WS endpoint that calls this method)
-<<<<<<< HEAD
         if user_streamer:
             # Wait up to 5 seconds for the streamer to fully connect before subscribing.
             # This prevents the 'socket is already closed' race condition that occurs
@@ -1052,15 +1046,6 @@ class ConnectionManager:
                     raise he
                 except Exception as e:
                     logger.error(f"[UPSTOX] [WS] Error subscribing to keys {normalized_keys}: {e}")
-=======
-        if user_streamer and user_streamer.market_streamer:
-            try:
-                user_streamer.subscribe_market_data(normalized_keys)
-            except HTTPException as he:
-                raise he
-            except Exception as e:
-                logger.error(f"[UPSTOX] [WS] Error subscribing to keys {normalized_keys}: {e}")
->>>>>>> fix/security-hardening
 
     async def broadcast(self, message: dict):
         """
@@ -1188,7 +1173,6 @@ class StreamerRegistry:
             self._refcounts[user_id] -= 1
             logger.info(f"[UPSTOX] [Registry] user_id={user_id} sessions={self._refcounts[user_id]}")
             if self._refcounts[user_id] <= 0:
-<<<<<<< HEAD
                 # Use a grace period before tearing down — a page navigation rapidly
                 # disconnects and reconnects, so we wait 10s to see if a new session arrives.
                 logger.info(f"[UPSTOX] [Registry] Sessions=0 for user_id={user_id}. Will teardown in 10s if no reconnect.")
@@ -3022,8 +3006,6 @@ async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(
     finally:
         manager.disconnect(websocket)
         await streamer_registry.release(current_user.id)
-<<<<<<< HEAD
-
 @app.get("/api/debug/ws-state")
 async def debug_ws_state(current_user: User = Depends(get_current_user)):
     """Debug endpoint: shows live WS subscriptions, streamer status, and latest cached feeds."""
@@ -3046,8 +3028,6 @@ async def debug_ws_state(current_user: User = Depends(get_current_user)):
         "market_watch_sockets": len(manager.market_watch_sockets),
         "global_loop_set": loop is not None,
     }
-=======
->>>>>>> fix/security-hardening
 
 @app.get("/api/expiries")
 async def fetch_expiries(symbol: str = "NIFTY", current_user: User = Depends(get_current_user)):

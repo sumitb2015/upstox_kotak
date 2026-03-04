@@ -15,6 +15,12 @@ This skill details how to interpret Open Interest (OI) data to confirm trends an
     - **Bullish**: PCR > 1.2 AND Price > VWAP.
     - **Bearish**: PCR < 0.6 AND Price < VWAP.
     - **Neutral**: PCR between 0.8 and 1.1.
+- **OI Change from Open (Normalization)**:
+    - `Current OI - OI at 9:15 AM (or first data point)`.
+    - This reflects the **net accumulation** of positions during the current session.
+    - **Interpretation**:
+        - Positive & Rising: New positions being built (Strong conviction).
+        - Negative/Falling from Peak: Positions being unwound (Profit booking or Panic).
 
 ## 🛠️ 2. Library Usage
 Use `lib.utils.indicators` and `lib.oi_analysis` modules. **Do NOT** calculate PCR manually.

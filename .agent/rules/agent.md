@@ -12,8 +12,10 @@ trigger: always_on
 
 ## 🔒 Security Standards
 - **No Hardcoding**: NEVER hardcode API keys, access tokens, passwords, or account IDs in source code.
-- **Environment Variables**: Use `os.getenv()` or secure config loaders.
+- **Credential Encryption**: All sensitive broker credentials stored at rest (SQLite/Redis) MUST be encrypted using `lib.utils.crypto_helper.encrypt_value`. 
+- **Environment Variables**: Use `os.getenv()` or secure config loaders. Use `OIPRO_SECRET_KEY` for key derivation.
 - **Git Ignore**: Ensure `secrets.yaml`, `.env`, and `*.pem` files are in `.gitignore`.
+- **Rate Limiting**: Protect authentication and heavy analytical endpoints using `slowapi` (`auth_limiter`).
 
 ## 📝 Logging Standards
 To maintain observability, all strategies MUST use the following tag prefixes in their logs:
@@ -43,10 +45,11 @@ To maintain observability, all strategies MUST use the following tag prefixes in
 | **Greeks Tracking** | Persistent storage & Historical Strike-wise Greeks | `[.agent/skills/greeks_tracking/SKILL.md](file:///c:/algo/upstox/.agent/skills/greeks_tracking/SKILL.md)` |
 | **Web Dashboard** | React, FastAPI, Plotly 3D, Shadcn UI standards | `[.agent/skills/web_dashboard_development/SKILL.md](file:///c:/algo/upstox/.agent/skills/web_dashboard_development/SKILL.md)` |
 
-## 🛠️ API Rules
-- **Expiry Selection**: Use `get_expiry_for_strategy` ONLY with `expiry_type` literals: `"current_week"`, `"next_week"`, or `"monthly"`. **"weekly" is NOT supported.**
-- **Instrument Keys**: All instrument utilities (e.g., `get_expiry_for_strategy`, `get_option_instrument_key`, `get_strike_token`) take **short symbols**: `"NIFTY"`, `"BANKNIFTY"`, `"FINNIFTY"`. Do NOT pass full keys like `NSE_INDEX|...` to these functions.
 - **JSON Serialization (Redis/FastAPI)**: ALWAYS convert Pandas `Timestamp` fields to strings before returning JSON payloads or pushing to Redis to prevent serialization crashes.
+- **WebSocket Modes**:
+    - Use `mode="ltpc"` for lightweight price tracking.
+    - Use `mode="full"` when real-time **Open Interest (OI)**, **Volume**, or **OHLC** is required.
+- **Streamer Management**: Use `StreamerRegistry` pattern to ensure one dedicated streamer per user (NSE compliance). Implementation MUST include a 5s async wait for the streamer connection before sending subscription commands to avoid race conditions.
 ## 💰 Margin & Order Safety
 - **Pre-Trade Validation**: All strategies MUST check for sufficient funds BEFORE placing any "Sell" order or entering a new "Buy" position.
 - **Use `margin_helper`**: Utilize `kotak_api.lib.margin_helper` for standardized checks.

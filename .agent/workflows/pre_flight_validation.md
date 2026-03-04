@@ -10,12 +10,15 @@ Perform these checks **15 minutes before market open** (09:00 AM IST) to ensure 
 - [ ] **Internet**: Verify connectivity.
 - [ ] **Time Sync**: Ensure system time is synced with NTP.
 - [ ] **Disk Space**: Check if there is enough space for logs (`df -h`).
+- [ ] **Dependencies**: Ensure `peewee`, `selenium`, and `cryptography` are installed.
+    - Run: `pip install peewee selenium cryptography` if unsure.
 
 ## 2. Authentication & Tokens
 - [ ] **Upstox Token**: Generate a fresh access token for the day.
     - Run: `python lib/core/authentication.py --force`
     - Verify: `access_token.txt` is updated with today's date.
 - [ ] **Kotak Session**: Verify Kotak Neo execution API login.
+- [ ] **Credential Security**: Ensure `OIPRO_SECRET_KEY` is set in the environment and `lib/utils/crypto_helper.py` is present.
 
 ## 3. Financial Readiness
 - [ ] **Margin Availablity**:

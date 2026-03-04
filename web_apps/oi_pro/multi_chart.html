@@ -453,6 +453,7 @@
                             matchingLegs.forEach(leg => {
                                 setOIChartData(prev => {
                                     const buf = [...(prev[leg.id] || [])];
+                                    const initialOI = buf.length > 0 ? buf[0].oi : oi; // Use first known OI as initial
                                     const last = buf[buf.length - 1];
                                     if (last && now.slice(0, 16) === last.timestamp.slice(0, 16)) {
                                         buf[buf.length - 1] = { ...last, oi };
@@ -681,8 +682,8 @@
             // ---------- Render OI chart ----------
             useEffect(() => {
                 if (!oiChartRef.current) return;
-                const hasOIData = Object.keys(oiChartData).length > 0;
-                if (!hasOIData) { Plotly.purge(oiChartRef.current); return; }
+                const activeLegIds = Object.keys(oiChartData);
+                if (activeLegIds.length === 0) { Plotly.purge(oiChartRef.current); return; }
 
                 const gridColor = isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)';
                 const axisColor = isDark ? '#475569' : '#94a3b8';
@@ -695,27 +696,30 @@
                 const marketClose = new Date(firstTime);
                 marketClose.setHours(15, 30, 0, 0);
 
-                const traces = Object.entries(oiChartData).map(([legId, series], idx) => {
+                const traces = activeLegIds.map((legId, idx) => {
+                    const series = oiChartData[legId];
                     const leg = legs.find(l => String(l.id) === String(legId));
                     const label = leg ? `${leg.action.toUpperCase()} ${leg.strike}${leg.type}` : `Leg ${idx + 1}`;
                     const color = LEG_COLORS[idx % LEG_COLORS.length];
+
+                    // Normalize: Calculate Change from start of day
+                    const initialOI = series.length > 0 ? series[0].oi : 0;
+
                     return {
                         x: series.map(d => d.timestamp),
-                        y: series.map(d => d.oi),
+                        y: series.map(d => d.oi - initialOI),
                         name: label,
                         type: 'scatter',
                         mode: 'lines',
                         line: { color, width: 2, shape: 'hv' }, // step chart for OI
-                        fill: 'tozeroy',
-                        fillcolor: color.replace(')', ', 0.06)').replace('rgb', 'rgba'),
-                        hovertemplate: `%{y:,.0f} OI<extra>${label}</extra>`
+                        hovertemplate: `%{y:+, .0f} OI Change<extra>${label}</extra>`
                     };
                 });
 
                 Plotly.react(oiChartRef.current, traces, {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    margin: { t: 4, r: 16, l: 72, b: 36 },
+                    margin: { t: 4, r: 16, l: 80, b: 36 },
                     font: { family: 'Inter', size: 11, color: axisColor },
                     xaxis: {
                         type: 'date',
@@ -921,7 +925,7 @@
                                     <div className="flex items-center gap-2 my-1 flex-shrink-0">
                                         <div className="flex-1 h-px" style={{ background: isDark ? 'rgba(51,65,85,0.6)' : 'rgba(226,232,240,0.8)' }}></div>
                                         <span className="text-[9px] uppercase font-bold tracking-widest" style={{ color: isDark ? '#475569' : '#94a3b8' }}>
-                                            ◆ Open Interest
+                                            ◆ Open Interest Change
                                         </span>
                                         <div className="flex-1 h-px" style={{ background: isDark ? 'rgba(51,65,85,0.6)' : 'rgba(226,232,240,0.8)' }}></div>
                                     </div>

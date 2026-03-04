@@ -7,6 +7,11 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
 import jwt
 from peewee import SqliteDatabase, Model, CharField, BooleanField, DateTimeField, ForeignKeyField
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+# ── Rate Limiting ──
+auth_limiter = Limiter(key_func=get_remote_address)
 
 # ── Load .env from project root (2 levels up from this file) ──
 try:

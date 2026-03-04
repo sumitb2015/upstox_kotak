@@ -37,6 +37,17 @@ This skill outlines the standard architecture and best practices for building fi
     -   **Tooltips**: Customize `hoverinfo` or `hovertemplate` to show precise data.
     -   **Responsiveness**: Ensure charts resize by setting `responsive: true` in Plotly config and using `w-full` logic.
     -   **3D Surface Rendering**: When rendering Plotly `surface` charts, ensure the `z` data is explicitly structured as an array of arrays (e.g., a 2D matrix representing values across X and Y). Pass exact matching flat arrays for `x` and `y` axes. Failure to format `z` as strictly 2D will result in a blank canvas rendering despite successful plotting of scatter points.
+5.  **Dual-Chart Layout (Price + OI)**:
+    -   Professional dashboards MUST use a synchronized dual-chart layout:
+        -   **Top Chart**: Price (Candlestick or Line with Area fill).
+        -   **Bottom Chart**: Open Interest Change (Line Chart).
+    -   Keep the height ratio approximately 2:1 or 3:2.
+    -   Ensure X-axes are synchronized so zooming on one zooms the other.
+6.  **OI Normalization (Change from Open)**:
+    -   **Rule**: Never plot raw absolute OI on a time-series chart. It is difficult to read.
+    -   **Standard**: Always plot **OI Change = Current OI - Initial OI (at session start)**.
+    -   This ensures the chart starts at zero and clearly shows build-up (positive) vs. unwinding (negative).
+    -   **Visuals**: Use a clean line chart WITHOUT shading (`fill: null`) to prevent visual clutter when multiple strikes are plotted.
 
 4.  **UI/UX Standards (Premium Glassmorphism & Toggles)**:
     -   **Background**: Use deep dark backgrounds (e.g., `#030712`).
@@ -70,8 +81,8 @@ This skill outlines the standard architecture and best practices for building fi
     ```
 
 3.  **Real-Time Line Fills (Plotly)**:
-    -   To visualize momentum, use `fill: 'tozeroy'` with explicit color tracking in Plotly instead of raw bar charts.
-    -   Split data streams into discrete `positiveY` and `negativeY` arrays on the frontend dynamically to give independent positive/negative fill colors.
+    -   To visualize price momentum, use `fill: 'tozeroy'` with explicit color tracking in Plotly.
+    -   **Crucial**: For **Daily OI Change** charts, do NOT use fills. Use simple lines to keep the multi-strike view readable.
 
 ### B. Backend (FastAPI)
 1.  **Port Management**:

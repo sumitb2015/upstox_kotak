@@ -11,3 +11,4 @@ description: Post Development Workflow
 7. Always try to keep the overall folders and files clean based on the necessary files.
 8. Check in the code to Git/GitHub, ensuring `.gitignore` is respected and no secrets are committed.
 9. Check the README.md file and verify if the modifications are important and should be added to the README.md file.
+10. **Enrich Agent Context**: For significant feature implementations (e.g., new infrastructure, security hardening, UI patterns), update the relevant `.agent/skills/`, `.agent/rules/`, and `.agent/workflows/` to preserve this knowledge for future tasks.

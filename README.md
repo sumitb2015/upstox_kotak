@@ -18,8 +18,9 @@ A robust, modular algorithmic trading framework designed for Indian stock market
   - 1. **Stock Dashboard**: Grid view of customizable NIFTY & BANKNIFTY stocks showing LTP, change, and momentum with auto-refreshing logic.
   2. **Indices Dashboard**: Categorized view of NSE Major, Broad Market, Sectoral, and Thematic indices with market breadth indicators.
   3. **Semantic Theming**: Built-in Light and Dark Mode toggle embedded across the entire analytics suite, persisting user preferences seamlessly.
-  - **Multi-Option Chart**: Build custom multi-leg option strategies and view net premium charts updating in real-time via WebSockets.
-  - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts and custom strike selection.
+  - **Multi-Option Chart**: Build custom multi-leg option strategies with a **Synchronized Dual-Chart layout** (Price Action + Normalized OI Change).
+  - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts.
+  - **Strike Analysis (Restored)**: Four-chart diagnostic view including Greeks/PCR, **Straddle Premium**, and **OI Build/Unwind Scatter**.
   - **OI Buildup Heatmap**: NIFTY-focused heatmap tracking day-over-day OI buildup every minute. Loads full-day history from 9:15 AM on restart. Strikes auto-pin to current ATM ± 8 (50-pt intervals). Buildup classified as Long/Short Buildup, Short Covering, or Long Unwinding — all relative to previous session's baseline OI.
   - **Persistence Engine**: Automatic daily CSV snapshots of all index Greeks, allowing full state recovery on server restart.
   - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
@@ -101,8 +102,10 @@ python strategies/directional/nifty_breakout/live.py
 
 The analytics dashboard is protected by a professional security layer:
 - **JWT Authentication**: Secure, token-based sessions with industry-standard JWT.
+- **Credential Encryption**: Fernet-based symmetric encryption for all broker API secrets stored at rest.
 - **Role-Based Access (RBAC)**: Distinct permissions for `admin` and `user` roles.
-- **Encrypted Storage**: Bcrypt hashing for all user credentials.
+- **Rate Limiting**: Protection for sensitive authentication and analytical endpoints using `slowapi`.
+- **Encrypted Storage**: Bcrypt hashing for all user portal passwords.
 - **Persistent Database**: SQLite-based user management.
 
 ## 📚 Documentation
