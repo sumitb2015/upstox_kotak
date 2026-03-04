@@ -1854,6 +1854,51 @@ async def get_fii_dii_data(current_user: User = Depends(get_current_user)):
         logger.error(f"[CORE] Error reading FII/DII CSV: {e}")
         raise HTTPException(status_code=500, detail="Error reading data source")
 
+@app.get("/news-pulse", response_class=HTMLResponse)
+async def get_news_pulse_page(request: Request):
+    """Serves the News Pulse aggregator page."""
+    try:
+        html_path = Path(__file__).parent / "news_pulse.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading News Pulse: {e}", status_code=500)
+
+
+@app.get("/api/news-pulse")
+async def get_news_pulse_data(current_user: User = Depends(get_current_user)):
+    """Reads pulse_highlights.csv and returns articles as JSON."""
+    import pandas as pd
+    csv_path = Path("/home/sumit/upstox_kotak/pulse_highlights.csv")
+    if not csv_path.exists():
+        return {"articles": [], "total": 0, "error": "CSV not found"}
+    try:
+        df = pd.read_csv(csv_path)
+        df = df.where(pd.notnull(df), None)
+        articles = df.to_dict(orient="records")
+        return {
+            "articles": articles,
+            "total": len(articles),
+            "last_updated": csv_path.stat().st_mtime
+        }
+    except Exception as e:
+        logger.error(f"[CORE] Error reading pulse CSV: {e}")
+        raise HTTPException(status_code=500, detail="Error reading news data")
+
+
+@app.post("/api/news-pulse/scrape")
+async def scrape_news_pulse(current_user: User = Depends(get_current_user)):
+    """Triggers a fresh scrape of pulse.zerodha.com."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../pulse"))
+    try:
+        from web_apps.pulse.scraper import scrape_and_save
+        count = await run_in_threadpool(scrape_and_save)
+        return {"scraped": count, "status": "ok"}
+    except Exception as e:
+        logger.error(f"[CORE] Pulse scrape error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/market-watch", response_class=HTMLResponse)
 async def get_market_watch(request: Request):
     """Serves the Unified HTML for the Market Watch Dashboard"""
@@ -1931,6 +1976,152 @@ async def get_market_quote(
         import traceback
         logger.error(f"[UPSTOX] [Dashboard] Error fetching market quote API: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/stock-analytics")
+async def get_stock_analytics(
+    current_user: User = Depends(get_current_user),
+    index: str = Query("NIFTY", description="Index: NIFTY or BANKNIFTY")
+):
+    """
+    Classifies each constituent stock into one of 4 OI-based categories using
+    FUTURES (NSE_FO) contracts – where OI data is meaningful:
+      - Long Buildup:   Price ↑ + OI ↑  (fresh longs)
+      - Short Buildup:  Price ↓ + OI ↑  (fresh shorts)
+      - Short Covering: Price ↑ + OI ↓  (shorts exiting)
+      - Long Unwinding: Price ↓ + OI ↓  (longs exiting)
+
+    Steps:
+    1. Download NSE instrument master to resolve stock → futures key
+    2. Batch-fetch full market quotes for all futures keys
+    3. Use futures net_change (vs prev_close), oi, prev_oi for classification
+    """
+    try:
+        # --- Cache Check ---
+        cache_key = f"cache:stock_analytics:{index.upper()}"
+        cached_res = redis_wrapper.get_json(cache_key)
+        if cached_res:
+            return cached_res
+
+        upstox_token = await get_access_token(current_user)
+        if not upstox_token:
+            return {"status": "error", "message": "No active broker connection"}
+
+        stocks = list(BANKNIFTY_KEYS.keys()) if index.upper() == "BANKNIFTY" else list(NIFTY_50_KEYS.keys())
+
+        from lib.api.market_data import get_market_quotes, download_nse_market_data
+        from lib.utils.instrument_utils import get_future_instrument_key
+
+        # Step 1: Download NSE instrument master (needed to resolve futures keys)
+        nse_data = await run_in_threadpool(download_nse_market_data)
+        if nse_data is None or nse_data.empty:
+            return {"status": "error", "message": "Failed to download NSE instrument master"}
+
+        # Step 2: Resolve each stock's nearest futures key
+        symbol_to_future_key = {}
+        for symbol in stocks:
+            fkey = get_future_instrument_key(symbol, nse_data)
+            if fkey:
+                symbol_to_future_key[symbol] = fkey
+
+        if not symbol_to_future_key:
+            return {"status": "error", "message": "No futures keys resolved – market may be closed or data unavailable"}
+
+        # Step 3: Batch-fetch full market quotes for all futures keys
+        all_future_keys = list(symbol_to_future_key.values())
+        quotes = await run_in_threadpool(get_market_quotes, upstox_token, all_future_keys)
+
+        # Build a reverse map: future_key → quote
+        future_key_to_quote = {}
+        for key, q in quotes.items():
+            token = q.get('instrument_token', '')
+            future_key_to_quote[token] = q
+            future_key_to_quote[key] = q  # also index by response key
+
+        results = []
+        for symbol, fkey in symbol_to_future_key.items():
+            quote = future_key_to_quote.get(fkey)
+            if not quote:
+                for q in quotes.values():
+                    if q.get('instrument_token') == fkey:
+                        quote = q
+                        break
+            if not quote:
+                continue
+
+            ltp        = quote.get('last_price', 0) or 0
+            net_change = quote.get('net_change', 0) or 0
+            prev_close = round(ltp - net_change, 2) if ltp else 0
+            oi         = quote.get('oi', 0) or 0
+            prev_oi    = quote.get('oi_day_low', 0) or 0  
+
+            if oi == 0:
+                continue
+
+            if not prev_oi or prev_oi >= oi:
+                prev_oi = quote.get('oi_day_high', 0) or 0
+
+            if not prev_oi:
+                prev_oi = oi  
+
+            price_up   = net_change > 0
+            oi_up      = oi > prev_oi
+            oi_chg     = oi - prev_oi
+            oi_chg_pct = round((oi_chg / prev_oi * 100), 2) if prev_oi else 0
+
+            if price_up and oi_up:       category = "Long Buildup"
+            elif not price_up and oi_up: category = "Short Buildup"
+            elif price_up and not oi_up: category = "Short Covering"
+            else:                        category = "Long Unwinding"
+
+            results.append({
+                "symbol":      symbol,
+                "future_key":  fkey,
+                "ltp":         round(ltp, 2),
+                "prev_close":  prev_close,
+                "chg":         round(net_change, 2),
+                "chg_pct":     round(net_change / prev_close * 100, 2) if prev_close else 0,
+                "oi":          int(oi),
+                "prev_oi":     int(prev_oi),
+                "oi_chg":      int(oi_chg),
+                "oi_chg_pct":  oi_chg_pct,
+                "category":    category,
+            })
+
+        cats = ["Long Buildup", "Short Buildup", "Short Covering", "Long Unwinding"]
+        grouped = {}
+        for cat in cats:
+            subset = [r for r in results if r["category"] == cat]
+            subset.sort(key=lambda x: abs(x["oi_chg_pct"]), reverse=True)
+            grouped[cat] = subset
+
+        final_res = {
+            "status": "success",
+            "data": grouped,
+            "total": len(results),
+            "resolved": len(symbol_to_future_key),
+            "cached": False,
+            "ts": datetime.now().strftime("%H:%M:%S")
+        }
+
+        # --- Cache Set ---
+        # Set cache with 60s expiry
+        redis_wrapper.set_json(cache_key, final_res, ex=60)
+        
+        return final_res
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"[CORE] [Stock Analytics] Error: {e}")
+        return {"status": "error", "message": str(e)}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        logger.error(f"[CORE] [Stock Analytics] Error: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 # Duplicate consolidated (see line 647)
 pass

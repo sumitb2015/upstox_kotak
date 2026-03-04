@@ -15,7 +15,7 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
 - **Secure OI Pro Dashboard**: Interactive analytics dashboard with JWT-based authentication and role-based access control (RBAC).
   - **User Management**: Administrator dashboard for managing platform accounts directly from the web interface.
-  - 1. **Stock Dashboard**: Grid view of customizable NIFTY & BANKNIFTY stocks showing LTP, change, and momentum with auto-refreshing logic.
+  - 1. **Stock Dashboard**: Grid view of customizable NIFTY & BANKNIFTY stocks with an **Analytics Tab** showing Futures-based Buildup (Long/Short Buildup, Short Covering, Long Unwinding) with Redis caching.
   2. **Indices Dashboard**: Categorized view of NSE Major, Broad Market, Sectoral, and Thematic indices with market breadth indicators.
   3. **Semantic Theming**: Built-in Light and Dark Mode toggle embedded across the entire analytics suite, persisting user preferences seamlessly.
   - **Multi-Option Chart**: Build custom multi-leg option strategies with a **Synchronized Dual-Chart layout** (Price Action + Normalized OI Change).

@@ -4,9 +4,13 @@ OI Pro is a comprehensive options analytics dashboard designed for Indian market
 
 ## 🌐 Website Pages & Functionalities
 
-### 1. Dashboard / Home (`/`)
-- **Functionality**: Serves as the central cockpit. Displays real-time prices for major indices (NIFTY 50, BANK NIFTY, FINNIFTY, etc.) with daily percentage changes.
-- **Key Features**: Live market watch, quick navigation to all analytics modules.
+### 1. Stock Dashboard (`/index.html`)
+- **Functionality**: Multi-layered analysis for Nifty and BankNifty constituent stocks.
+- **Key Features**: 
+  - **Live Price Grid**: Real-time tracking of LTP, Change%, and day's range.
+  - **Buildup Analytics Tab**: Professional quadrant analysis (Long/Short Buildup, Short Covering, Long Unwinding) based on **Futures Price & OI Change**.
+  - **Performance Optimization**: Powered by a 60-second Redis cache to ensure lightning-fast data delivery and reduced API overhead.
+  - **Modern UI**: High-density list view with zero-gap layout and stylized sentiment indicators.
 
 ### 2. Cumulative OI Analysis (`/cumulative`)
 - **Functionality**: Aggregates Open Interest across multiple strikes (ATM ± N) to show overall market sentiment.
@@ -113,6 +117,7 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - `GET /api/pcr-data`: PCR and sentiment classification per strike.
 - `GET /api/max-pain-data`: Max Pain strike and IV data for the volatility smile.
 - `GET /api/cumulative-oi`: Aggregated OI metrics for a range of strikes.
+- `GET /api/stock-analytics`: Futures-based stock classification (Buildup/Unwinding) with 60s Redis caching.
 - `GET /api/fii-dii`: Returns historical FII and DII net flow data along with Nifty close values from a CSV source.
 
 ### Specialized Analytics
@@ -174,3 +179,4 @@ The backend is built with **FastAPI** and provides the following RESTful endpoin
 - **Authenticated UI Integrity**: The login gateway is now forced to Dark Mode permanently to ensure a consistent, secure-feeling point of entry, independent of the dashboard's theme settings.
 - **Exposure Change Heatmap Overhaul**: Fixed a backend caching bug that prevented correct Open Interest baseline lookups for precise percentage scaling. Delivered a massive UI/UX overhaul implementing vibrant non-linear neon scaling (Green/Red/Cyan/Amber), glassmorphism effects, a new `#0f1117` terminal dark mode, and fully dynamic tooltips accommodating both Light & Dark modes natively.
 - **Multi-Option Chart Live Ticks Bug Fix**: Resolved a race condition in `/ws/straddle` where option instrument keys were subscribed to Upstox before the WebSocket handshake had completed, causing silent subscription failures. `manager.subscribe()` now waits up to 5 seconds for `market_data_connected` before calling `subscribe_market_data()`. Also added a 10-second grace period in `StreamerRegistry.release()` to prevent needless streamer teardown on rapid page navigation. Frontend guard clauses blocking tick processing were also removed.
+- **Stock Dashboard Analytics Integration**: Launched a professional "Buildup Analytics" suite within the Stock Dashboard, utilizing nearest-futures contract data (NSE_FO) for high-fidelity sentiment analysis. Implemented a robust 60-second Redis caching layer and an ultra-compact, high-density UI layout to maximize data visibility on a single screen.
