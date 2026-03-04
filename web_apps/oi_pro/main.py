@@ -61,6 +61,12 @@ from lib.api.historical import get_intraday_data_v3
 from lib.core.authentication import get_access_token as auth_get_token
 from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepare_snapshot, get_total_exposure, calculate_flip_point
 from lib.utils.greeks_storage import greeks_storage
+# Fix #6: Fernet encryption helper for broker credentials at rest
+from lib.utils.crypto_helper import encrypt_value, decrypt_value
+# Fix #8: Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import pandas as pd
 from datetime import datetime
 
@@ -242,7 +248,10 @@ def tail_file(filename, lines=100):
 
 # --- Strategy Management ---
 
-STRATEGIES_BASE_PATH = Path("c:/upstox_kotak/upstox_kotak/strategies")
+# Fix #7: Use portable relative paths, not Windows-hardcoded 'c:\\...' strings.
+# Override at deploy time by setting the STRATEGIES_BASE_PATH env variable.
+_default_strategies_path = Path(__file__).parent.parent.parent / "strategies"
+STRATEGIES_BASE_PATH = Path(os.getenv("STRATEGIES_BASE_PATH", str(_default_strategies_path)))
 
 STRATEGIES_INFO = {
     "aggressive_renko_dip": {
@@ -353,10 +362,13 @@ class StrategyManager:
                     for sym, qty in raw_positions.items():
                         ltp = None
                         key = redis_wrapper.get_raw(f"symbol_lookup:{sym}")
-                        if key and 'streamer' in globals() and streamer:
-                            data = streamer.get_latest_data(key)
-                            if data:
-                                ltp = data.get('ltp')
+                        if key:
+                            # Try any active user streamer for LTP lookup
+                            s = streamer_registry.get_any()
+                            if s:
+                                data = s.get_latest_data(key)
+                                if data:
+                                    ltp = data.get('ltp')
                         enhanced_positions[sym] = {"qty": qty, "ltp": ltp}
                     state_details['positions'] = enhanced_positions
 
@@ -384,7 +396,9 @@ class StrategyManager:
             
         # Set PYTHONPATH to project root so imports work
         env = os.environ.copy()
-        env["PYTHONPATH"] = "c:/upstox_kotak/upstox_kotak"
+        # Fix #7: Use portable path relative to this file, not Windows-hardcoded path
+        project_root = str(Path(__file__).parent.parent.parent.resolve())
+        env["PYTHONPATH"] = os.environ.get("PYTHONPATH", project_root)
         
         try:
             # Create/Open log file (overwrite for fresh logs on new run)
@@ -507,9 +521,50 @@ strategy_manager = StrategyManager()
 
 app = FastAPI(title="OI Pro Analytics API", version="1.0.0")
 
-# app = FastAPI(...) is at line 373
+# Fix #8: Use the shared limiter from auth.py (single instance for auth routes)
+from web_apps.oi_pro.auth import auth_limiter
+if auth_limiter:
+    app.state.limiter = auth_limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# We will move the merged startup_event down to line 1479 area for consistency
+# ─── Middleware Block (must be registered BEFORE routes) ─────────────────────
+#
+# Fix #10: Security Headers Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Injects standard HTTP security headers on every response."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Fix #3: CORS — env-configurable origin whitelist.
+# Set CORS_ORIGINS to a comma-separated list of allowed origins in .env
+# Default: localhost only (safe for development)
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:8001,http://127.0.0.1:8001")
+ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+if "*" in ALLOWED_ORIGINS:
+    import logging as _clog
+    _clog.getLogger("OIPRO").critical(
+        "[SECURITY] CORS_ORIGINS contains '*' — this is unsafe in production! "
+        "Set explicit allowed origins in your .env file."
+    )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+)
 
 @app.middleware("http")
 async def db_session_middleware(request: Request, call_next):
@@ -714,6 +769,21 @@ async def update_strategy_config(strategy_id: str, new_config: Dict, admin: User
 
 # --- Broker Management API ---
 
+@app.get("/api/broker/status")
+def broker_status(current_user: User = Depends(get_current_user)):
+    """
+    Lightweight endpoint for sidebar.js to check if the user has
+    a valid broker token. Returns {has_token: bool}.
+    Used as the access control gate — dashboard pages are only
+    accessible when has_token=True.
+    """
+    has_token = BrokerCredential.select().where(
+        BrokerCredential.user == current_user,
+        BrokerCredential.access_token.is_null(False),
+        BrokerCredential.access_token != ""
+    ).exists()
+    return {"has_token": has_token}
+
 @app.get("/api/brokers")
 def list_brokers(current_user: User = Depends(get_current_user)):
     """Returns the list of brokers for the current user."""
@@ -750,9 +820,9 @@ def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)
             
             # Update secrets only if they are not the masked placeholders
             if api_key and not api_key.startswith("***"):
-                broker.api_key = api_key
+                broker.api_key = encrypt_value(api_key)  # Fix #6
             if api_secret and not api_secret.startswith("***"):
-                broker.api_secret = api_secret
+                broker.api_secret = encrypt_value(api_secret)  # Fix #6
                 
             broker.save()
             return {"status": "success", "message": "Broker updated successfully", "id": broker.id}
@@ -767,8 +837,8 @@ def add_broker(broker_data: dict, current_user: User = Depends(get_current_user)
             user=current_user,
             broker_name=broker_name,
             name_tag=name_tag,
-            api_key=api_key,
-            api_secret=api_secret,
+            api_key=encrypt_value(api_key),        # Fix #6
+            api_secret=encrypt_value(api_secret),  # Fix #6
             redirect_uri=redirect_uri
         )
         return {"status": "success", "message": "Broker saved successfully", "id": broker.id}
@@ -794,12 +864,25 @@ def generate_broker_token(broker_id: int, current_user: User = Depends(get_curre
         # Construct Upstox Auth URL
         # redirect_uri must match what's in Upstox Developer Portal
         # We use state to pass broker_id for the callback to identify the entry
+        # Fix #6: Decrypt credentials before use in OAuth URL
+        decrypted_key = decrypt_value(broker.api_key)
+        # Fix #9: Sign the state parameter with HMAC to prevent IDOR enumeration
+        import hmac as _hmac
+        import hashlib as _hashlib
+        from web_apps.oi_pro.auth import SECRET_KEY as _JWT_SECRET
+        state_payload = str(broker.id)
+        state_sig = _hmac.new(
+            _JWT_SECRET.encode("utf-8"),
+            state_payload.encode("utf-8"),
+            _hashlib.sha256
+        ).hexdigest()
+        signed_state = f"{state_sig}:{state_payload}"
         auth_url = (
             f"https://api-v2.upstox.com/login/authorization/dialog"
             f"?response_type=code"
-            f"&client_id={broker.api_key}"
+            f"&client_id={decrypted_key}"
             f"&redirect_uri={requests.utils.quote(broker.redirect_uri or 'http://127.0.0.1:8001/api/brokers/callback/upstox')}"
-            f"&state={broker.id}"
+            f"&state={signed_state}"
         )
         
         return {"status": "success", "auth_url": auth_url}
@@ -811,9 +894,25 @@ def upstox_callback(request: Request, code: str, state: str):
     """
     OAuth Callback for Upstox.
     Exchanges authorization code for access token.
-    Supports both direct navigation (redirect) and popup fetch API (JSON response).
+    Fix #9: Validates HMAC-signed state to prevent IDOR broker enumeration.
     """
-    broker_id = state
+    # --- Fix #9: Verify HMAC-signed state before looking up broker ---
+    import hmac as _hmac
+    import hashlib as _hashlib
+    from web_apps.oi_pro.auth import SECRET_KEY as _JWT_SECRET
+
+    try:
+        sig, broker_id = state.split(":", 1)
+        expected_sig = _hmac.new(
+            _JWT_SECRET.encode("utf-8"),
+            broker_id.encode("utf-8"),
+            _hashlib.sha256
+        ).hexdigest()
+        if not _hmac.compare_digest(sig, expected_sig):
+            raise ValueError("Invalid state signature")
+    except (ValueError, AttributeError):
+        return HTMLResponse(content="<h2>Invalid OAuth state. Possible CSRF attack.</h2>", status_code=400)
+
     try:
         broker = BrokerCredential.get_by_id(broker_id)
         
@@ -841,8 +940,8 @@ def upstox_callback(request: Request, code: str, state: str):
                 return {"status": "error", "message": "Auth failed", "details": jsr}
             return HTMLResponse(content=f"<h2>Auth Failed</h2><pre>{json.dumps(jsr, indent=2)}</pre>", status_code=400)
             
-        # Update Broker entry
-        broker.access_token = access_token
+        # Update Broker entry — Fix #6: encrypt access token before storing
+        broker.access_token = encrypt_value(access_token)
         broker.last_token_at = datetime.utcnow()
         broker.status = "Active"
         broker.save()
@@ -909,7 +1008,7 @@ class ConnectionManager:
         await websocket.accept()
         self.market_watch_sockets.append(websocket)
 
-    async def subscribe(self, websocket: WebSocket, instrument_keys: List[str]):
+    async def subscribe(self, websocket: WebSocket, instrument_keys: List[str], user_streamer=None):
         """Subscribe a websocket to specific instrument keys"""
         normalized_keys = [k.replace(':', '|') for k in instrument_keys]
         logger.info(f"[UPSTOX] [WS] Subscribing socket to: {normalized_keys}")
@@ -919,14 +1018,31 @@ class ConnectionManager:
             if websocket not in self.subscriptions[key]:
                 self.subscriptions[key].append(websocket)
         
-        # Trigger subscription on Upstox Streamer
-        if streamer and streamer.market_streamer:
-            try:
-                streamer.subscribe_market_data(normalized_keys)
-            except HTTPException as he:
-                raise he
-            except Exception as e:
-                logger.error(f"[UPSTOX] [WS] Error subscribing to keys {normalized_keys}: {e}")
+        # Trigger subscription on the user's dedicated Upstox Streamer
+        # (user_streamer injected by the WS endpoint that calls this method)
+        if user_streamer:
+            # Wait up to 5 seconds for the streamer to fully connect before subscribing.
+            # This prevents the 'socket is already closed' race condition that occurs
+            # when a fresh streamer is created but the WS handshake hasn't completed yet.
+            max_wait = 5.0
+            elapsed = 0.0
+            while not user_streamer.market_data_connected and elapsed < max_wait:
+                logger.info(f"[UPSTOX] [WS] Waiting for streamer to connect before subscribing... ({elapsed:.1f}s)")
+                await asyncio.sleep(0.5)
+                elapsed += 0.5
+            
+            if not user_streamer.market_data_connected:
+                logger.error(f"[UPSTOX] [WS] Streamer did not connect within {max_wait}s. Subscription FAILED for: {normalized_keys}")
+                return
+
+            if user_streamer.market_streamer:
+                try:
+                    user_streamer.subscribe_market_data(normalized_keys)
+                    logger.info(f"[UPSTOX] [WS] Successfully subscribed to: {normalized_keys}")
+                except HTTPException as he:
+                    raise he
+                except Exception as e:
+                    logger.error(f"[UPSTOX] [WS] Error subscribing to keys {normalized_keys}: {e}")
 
     async def broadcast(self, message: dict):
         """
@@ -998,8 +1114,157 @@ class ConnectionManager:
                     self.market_watch_sockets.remove(conn)
 
 manager = ConnectionManager()
-streamer: Optional[UpstoxStreamer] = None
 loop = None # Global event loop reference
+
+# --- Per-User Streamer Registry ---
+# Replaces the single shared global streamer with one UpstoxStreamer per logged-in user.
+# This ensures each user only consumes their own Upstox data entitlement (NSE compliance).
+class StreamerRegistry:
+    """Thread-safe registry mapping user_id -> (UpstoxStreamer, session_count)."""
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self._streamers: Dict[int, UpstoxStreamer] = {}  # user_id -> streamer
+        self._refcounts: Dict[int, int] = {}             # user_id -> active WS session count
+
+    async def acquire(self, user_id: int, token: str) -> UpstoxStreamer:
+        """Get or create the streamer for this user. Increments the session reference count."""
+        async with self._lock:
+            if user_id not in self._streamers:
+                logger.info(f"[UPSTOX] [Registry] Creating new streamer for user_id={user_id}")
+                s = UpstoxStreamer(token)
+                # Reset any previous auth-failure state so this clean token gets a fresh start
+                s._terminating = False
+                s._reconnect_count = 0
+                s.connect_market_data(
+                    instrument_keys=list(SYMBOL_MAP.values()),
+                    mode="ltpc",
+                    on_message=lambda data: asyncio.run_coroutine_threadsafe(manager.broadcast(data), loop) if loop else None
+                )
+                self._streamers[user_id] = s
+                self._refcounts[user_id] = 0
+            else:
+                # Existing streamer (e.g. user opened a second tab).
+                # If it stopped due to auth failure, reset and try reconnecting with the fresh token.
+                s = self._streamers[user_id]
+                if getattr(s, '_terminating', False):
+                    logger.info(f"[UPSTOX] [Registry] Reconnecting dead streamer with fresh token for user_id={user_id}")
+                    s._terminating = False
+                    s._reconnect_count = 0
+                    s.access_token = token
+                    s.configuration.access_token = token
+                    s.connect_market_data(
+                        instrument_keys=list(SYMBOL_MAP.values()),
+                        mode="ltpc",
+                        on_message=lambda data: asyncio.run_coroutine_threadsafe(manager.broadcast(data), loop) if loop else None
+                    )
+            self._refcounts[user_id] += 1
+            logger.info(f"[UPSTOX] [Registry] user_id={user_id} sessions={self._refcounts[user_id]}")
+            return self._streamers[user_id]
+
+
+    async def release(self, user_id: int):
+        """Decrement session count. Disconnect and remove streamer when last session closes."""
+        async with self._lock:
+            if user_id not in self._refcounts:
+                return
+            self._refcounts[user_id] -= 1
+            logger.info(f"[UPSTOX] [Registry] user_id={user_id} sessions={self._refcounts[user_id]}")
+            if self._refcounts[user_id] <= 0:
+                # Use a grace period before tearing down — a page navigation rapidly
+                # disconnects and reconnects, so we wait 10s to see if a new session arrives.
+                logger.info(f"[UPSTOX] [Registry] Sessions=0 for user_id={user_id}. Will teardown in 10s if no reconnect.")
+                asyncio.create_task(self._delayed_teardown(user_id))
+
+    async def _delayed_teardown(self, user_id: int):
+        """Tear down the streamer only if still at 0 sessions after a grace period."""
+        await asyncio.sleep(10)
+        async with self._lock:
+            count = self._refcounts.get(user_id, 0)
+            if count > 0:
+                logger.info(f"[UPSTOX] [Registry] Grace period: user_id={user_id} reconnected (sessions={count}). Skipping teardown.")
+                return
+            s = self._streamers.pop(user_id, None)
+            self._refcounts.pop(user_id, None)
+            if s:
+                logger.info(f"[UPSTOX] [Registry] No more sessions for user_id={user_id}. Closing streamer.")
+                try:
+                    s.disconnect_all()
+                except Exception as e:
+                    logger.warning(f"[UPSTOX] [Registry] Error closing streamer for user_id={user_id}: {e}")
+
+
+
+    def get_any(self) -> Optional[UpstoxStreamer]:
+        """Return any active streamer (used for background LTP lookups)."""
+        return next(iter(self._streamers.values()), None)
+
+    def shutdown_all(self):
+        """Disconnect all streamers on server shutdown."""
+        for uid, s in list(self._streamers.items()):
+            try:
+                s.disconnect_all()
+            except Exception:
+                pass
+        self._streamers.clear()
+        self._refcounts.clear()
+
+streamer_registry = StreamerRegistry()
+
+# --- WebSocket Authentication Helper ---
+
+async def authenticate_websocket(websocket: WebSocket, token: str = None) -> Optional[object]:
+    """
+    Fix #4: Centralized WebSocket authentication.
+    Validates the JWT from an initial auth message sent over the WS connection.
+    Falls back to URL query param (deprecated — tokens in URLs appear in server logs).
+    Closes with code 1008 (Policy Violation) if auth fails.
+
+    Usage:
+      1. Client connects to ws://host/ws/straddle
+      2. Client immediately sends: {"action": "auth", "token": "<jwt>"}
+      3. Server validates and stores current_user on the connection
+    """
+    from web_apps.oi_pro.auth import verify_jwt, get_user as _get_user
+
+    try:
+        if token:
+            # Legacy: token in URL query param (deprecated — kept for backward compat)
+            logger.warning(
+                "[CORE] [WS] Received token via URL query param (deprecated). "
+                "Send {action: 'auth', token: '...'} as first WS message instead."
+            )
+            email = verify_jwt(token)
+            user = _get_user(email)
+            if not user or not user.is_active:
+                await websocket.close(code=1008)
+                return None
+            return user
+
+        # Secure path: wait up to 5s for an auth message
+        try:
+            auth_raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            auth_msg = json.loads(auth_raw)
+        except (asyncio.TimeoutError, json.JSONDecodeError):
+            logger.warning("[CORE] [WS] Auth timeout or invalid JSON — closing connection")
+            await websocket.close(code=1008)
+            return None
+
+        if auth_msg.get("action") != "auth" or not auth_msg.get("token"):
+            logger.warning("[CORE] [WS] First message must be {action:'auth', token:'...'}")
+            await websocket.close(code=1008)
+            return None
+
+        email = verify_jwt(auth_msg["token"])
+        user = _get_user(email)
+        if not user or not user.is_active:
+            await websocket.close(code=1008)
+            return None
+        return user
+
+    except Exception as e:
+        logger.warning(f"[CORE] [WS] Auth failed: {e}")
+        await websocket.close(code=1008)
+        return None
 
 # --- WebSocket Endpoints ---
 
@@ -1007,68 +1272,65 @@ loop = None # Global event loop reference
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(None)):
     """
     Consolidated WebSocket endpoint for real-time Straddle updates.
-    Client sends JSON subscribe request.
+    Each user gets their own dedicated Upstox streamer (NSE compliant).
+    Fix #4: Auth via initial {action:'auth', token:'...'} message, not URL param.
     """
-    # Manual token check for WS
-    current_user = None
-    try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            current_user = get_user(email)
-    except:
-         await websocket.close(code=1008) # Policy Violation
-         return
-
     await manager.connect(websocket)
-    logger.info("[CORE] [WS] New Straddle WS Connection")
+    current_user = await authenticate_websocket(websocket, token)
+    if current_user is None:
+        return
+    logger.info(f"[CORE] [WS] New Straddle WS Connection (user: {current_user.email})")
+    user_token = await get_access_token(current_user)
+    if not user_token:
+        await websocket.send_json({"type": "error", "message": "No valid Upstox token. Please reconnect Upstox broker."})
+        await websocket.close(code=1008)
+        return
+    user_streamer = await streamer_registry.acquire(current_user.id, user_token)
     try:
         while True:
-            # Flexible: accept text or json
             data = await websocket.receive_text()
             try:
                 msg = json.loads(data)
                 if msg.get("action") == "subscribe" and msg.get("keys"):
-                    # Normalize keys
                     keys = [k.replace(':', '|') for k in msg.get("keys", [])]
-                    await manager.subscribe(websocket, keys)
+                    await manager.subscribe(websocket, keys, user_streamer=user_streamer)
             except json.JSONDecodeError:
                 logger.warning(f"[CORE] [WS] Invalid JSON received: {data}")
     except WebSocketDisconnect:
         logger.info("[CORE] [WS] Straddle WS Disconnected")
         manager.disconnect(websocket)
+    finally:
+        await streamer_registry.release(current_user.id)
 
 @app.websocket("/ws/cumulative-prices")
 async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(None)):
     """
     WebSocket endpoint for cumulative option prices.
-    Authenticates via token query parameter and broadcasts live price updates.
+    Each user gets their own dedicated Upstox streamer (NSE compliant).
+    Fix #4: Auth via initial {action:'auth', token:'...'} message, not URL param.
     """
-    # Manual token check
-    current_user = None
-    try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            current_user = get_user(email)
-    except:
-         await websocket.close(code=1008)
-         return
     await manager.connect(websocket)
-    logger.info("[CORE] [WS] [CumulativePrices] New connection")
+    current_user = await authenticate_websocket(websocket, token)
+    if current_user is None:
+        return
+    logger.info(f"[CORE] [WS] [CumulativePrices] New connection (user: {current_user.email})")
+    user_token = await get_access_token(current_user)
+    if not user_token:
+        await websocket.send_json({"type": "error", "message": "No valid Upstox token. Please reconnect Upstox broker."})
+        await websocket.close(code=1008)
+        return
+    user_streamer = await streamer_registry.acquire(current_user.id, user_token)
 
     ce_keys = []
     pe_keys = []
     index_key = None
-    symbol = "NIFTY"  # track current symbol for threshold lookup
-    # Session-open baseline for % change calculation (set on first valid tick)
+    symbol = "NIFTY"
     ce_open = None
     pe_open = None
 
     try:
         while True:
             try:
-                # Non-blocking receive: wait 1s for a message, then broadcast update
                 try:
                     data = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
                     msg = json.loads(data)
@@ -1079,34 +1341,31 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                             logger.info(f"[UPSTOX] [WS] [CumulativePrices] Subscribing {symbol} {expiry}...")
                             await websocket.send_json({"type": "status", "status": "loading", "symbol": symbol})
 
-                            token = await get_access_token(current_user)
+                            user_token = await get_access_token(current_user)
                             index_key = SYMBOL_MAP.get(symbol)
                             if not index_key:
                                 await websocket.send_json({"type": "error", "message": f"Unknown symbol: {symbol}"})
                                 continue
 
-                            df = await run_in_threadpool(get_option_chain_dataframe, token, index_key, expiry)
+                            df = await run_in_threadpool(get_option_chain_dataframe, user_token, index_key, expiry)
                             if df is not None and not df.empty:
                                 ce_keys = [k for k in df['ce_key'].tolist() if k and isinstance(k, str)]
                                 pe_keys = [k for k in df['pe_key'].tolist() if k and isinstance(k, str)]
 
-                                # Subscribe all option keys + the index key to real-time streamer
                                 all_option_keys = ce_keys + pe_keys
-                                if streamer and all_option_keys:
+                                if user_streamer and all_option_keys:
                                     try:
-                                        streamer.subscribe_market_data(all_option_keys, mode="ltpc")
+                                        user_streamer.subscribe_market_data(all_option_keys, mode="ltpc")
                                     except Exception as sub_err:
                                         logger.error(f"[UPSTOX] [WS] [CumulativePrices] Subscription error: {sub_err}")
 
-                                # Also subscribe the index key so Spot price is always available
-                                if streamer and index_key:
+                                if user_streamer and index_key:
                                     try:
-                                        streamer.subscribe_market_data([index_key], mode="ltpc")
+                                        user_streamer.subscribe_market_data([index_key], mode="ltpc")
                                     except Exception as idx_err:
                                         logger.error(f"[UPSTOX] [WS] [CumulativePrices] Index key subscription error: {idx_err}")
 
                                 logger.info(f"[CORE] [WS] [CumulativePrices] {len(ce_keys)} CE + {len(pe_keys)} PE keys for {symbol}")
-                                # Reset open baseline whenever user re-subscribes
                                 ce_open = None
                                 pe_open = None
                                 await websocket.send_json({
@@ -1119,10 +1378,9 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                             else:
                                 await websocket.send_json({"type": "error", "message": "Could not fetch option chain."})
                 except asyncio.TimeoutError:
-                    pass  # 1-second elapsed — compute and broadcast
+                    pass
 
-                # Compute and send cumulative update
-                if (ce_keys or pe_keys) and streamer:
+                if (ce_keys or pe_keys) and user_streamer:
                     ce_sum = 0.0
                     pe_sum = 0.0
                     ce_valid = 0
@@ -1130,7 +1388,7 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                     spot = 0.0
 
                     for k in ce_keys:
-                        f = streamer.get_latest_data(k)
+                        f = user_streamer.get_latest_data(k)
                         if f:
                             ltp = f.get('ltp') or f.get('last_price') or 0
                             if ltp > 0:
@@ -1138,7 +1396,7 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                                 ce_valid += 1
 
                     for k in pe_keys:
-                        f = streamer.get_latest_data(k)
+                        f = user_streamer.get_latest_data(k)
                         if f:
                             ltp = f.get('ltp') or f.get('last_price') or 0
                             if ltp > 0:
@@ -1146,17 +1404,12 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                                 pe_valid += 1
 
                     if index_key:
-                        idx_f = streamer.get_latest_data(index_key)
+                        idx_f = user_streamer.get_latest_data(index_key)
                         if idx_f:
                             spot = idx_f.get('ltp') or idx_f.get('last_price') or 0
 
                     diff = round(ce_sum - pe_sum, 2)
-                    # CE > PE => more call premium => bearish (resistance)
-                    # PE > CE => more put premium => bullish (support)
-                    # Adaptive thresholds per symbol (premiums scale with index level)
-                    SENTIMENT_THRESHOLDS = {
-                        "NIFTY": 50, "BANKNIFTY": 150, "SENSEX": 200
-                    }
+                    SENTIMENT_THRESHOLDS = {"NIFTY": 50, "BANKNIFTY": 150, "SENSEX": 200}
                     threshold = SENTIMENT_THRESHOLDS.get(symbol, 50)
                     if diff > threshold:
                         sentiment = "Bearish"
@@ -1165,7 +1418,6 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                     else:
                         sentiment = "Neutral"
 
-                    # --- % Change from session open (set on first valid tick) ---
                     if ce_sum > 0 and ce_open is None:
                         ce_open = ce_sum
                     if pe_sum > 0 and pe_open is None:
@@ -1173,8 +1425,6 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
 
                     ce_chg = round(((ce_sum - ce_open) / ce_open) * 100, 3) if ce_open else 0.0
                     pe_chg = round(((pe_sum - pe_open) / pe_open) * 100, 3) if pe_open else 0.0
-
-                    # Per-strike average premiums (more meaningful than total sum)
                     avg_ce = round(ce_sum / ce_valid, 2) if ce_valid > 0 else 0.0
                     avg_pe = round(pe_sum / pe_valid, 2) if pe_valid > 0 else 0.0
 
@@ -1182,10 +1432,10 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                         "type": "cumulative_update",
                         "ce_sum": round(ce_sum, 2),
                         "pe_sum": round(pe_sum, 2),
-                        "ce_chg": ce_chg,       # % change from session open
-                        "pe_chg": pe_chg,       # % change from session open
-                        "avg_ce": avg_ce,        # avg CE premium per strike
-                        "avg_pe": avg_pe,        # avg PE premium per strike
+                        "ce_chg": ce_chg,
+                        "pe_chg": pe_chg,
+                        "avg_ce": avg_ce,
+                        "avg_pe": avg_pe,
                         "diff": diff,
                         "spot": round(spot, 2),
                         "ce_count": ce_valid,
@@ -1204,90 +1454,35 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
                 await asyncio.sleep(1)
     finally:
         manager.disconnect(websocket)
+        await streamer_registry.release(current_user.id)
         logger.info("[CORE] [WS] [CumulativePrices] Disconnected")
 
-async def startup_event_ws():
+async def prefetch_prev_closes(token: str):
     """
-    Initializes the Upstox WebSocket bridge on application startup.
-    Sets up the market watch streamer and pre-fetches historical data for indices.
+    Pre-fetches previous day closes for all indices and caches them in Redis.
+    Called lazily when the first user WebSocket connects.
     """
-    global streamer, loop
-    loop = asyncio.get_event_loop()
-    logger.info("[UPSTOX] [WS] Starting Upstox WebSocket Bridge...")
-    try:
-        # Initialize streamer with access token
-        token = await get_access_token()
-        if not token:
-            logger.info("[UPSTOX] [WS] No token available yet. Streamer will initialize on first user login.")
-            return
-
-        streamer = UpstoxStreamer(token)
-        
-        # Define callback that bridges Thread -> Async
-        def on_market_update(data):
-            if loop and manager:
-                asyncio.run_coroutine_threadsafe(manager.broadcast(data), loop)
-                
-        # Connect streamer
-        indices_keys = list(SYMBOL_MAP.values())
-        logger.info(f"[UPSTOX] [WS] Subscribing to Dashboard Indices: {indices_keys}")
-
-        # --- Pre-fetch Previous Closes for Indices ---
-        logger.info("[UPSTOX] [WS] Pre-fetching previous closes for indices...")
-        for sym, key in SYMBOL_MAP.items():
-            try:
-                # Fetch last 5 days daily candles
-                end_date = datetime.now().strftime("%Y-%m-%d")
-                start_date = (datetime.now() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
-                
-                # We need to run this in threadpool as it's blocking
-                hist_df = await run_in_threadpool(fetch_historical_data, token, key, "day", 1, start_date, end_date)
-                
-                if not hist_df.empty:
-                    # Get the last row. 
-                    # If today is a trading day and market is open/closed, the last candle MIGHT be today.
-                    # We want the PREVIOUS day's close.
-                    # Upstox Historical API usually includes today's candle if query covers it.
-                    
-                    # Logic: If last candle date is today, take the one before it. 
-                    # If last candle date is before today, take it.
-                    last_row = hist_df.iloc[-1]
-                    last_date = last_row['timestamp'].date()
-                    today_date = datetime.now().date()
-                    
-                    if last_date == today_date and len(hist_df) > 1:
-                        prev_close = hist_df.iloc[-2]['close']
-                    else:
-                        prev_close = last_row['close']
-                    if prev_close > 0:
-                        redis_wrapper.hset_json("PREV_CLOSES", sym, prev_close)
-                        logger.info(f"[UPSTOX] [WS]    {sym}: Prev Close = {prev_close}")
+    logger.info("[UPSTOX] [WS] Pre-fetching previous closes for indices...")
+    for sym, key in SYMBOL_MAP.items():
+        try:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = (datetime.now() - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+            hist_df = await run_in_threadpool(fetch_historical_data, token, key, "day", 1, start_date, end_date)
+            if not hist_df.empty:
+                last_row = hist_df.iloc[-1]
+                last_date = last_row['timestamp'].date()
+                today_date = datetime.now().date()
+                if last_date == today_date and len(hist_df) > 1:
+                    prev_close = hist_df.iloc[-2]['close']
                 else:
-                    logger.warning(f"[UPSTOX] [WS]    {sym}: No historical data found")
-            except HTTPException as he:
-                raise he
-            except Exception as e:
-                logger.error(f"[UPSTOX] [WS]    {sym}: Failed to fetch history: {e}")
-
-        # --- Prefetch Option Master for LTP Lookup ---
-        asyncio.create_task(prefetch_option_master())
-        
-        # --- Start Greeks Poller (1-min interval) ---
-        # Note: redundant as unified_background_poller is started in startup_event
-        # asyncio.create_task(unified_background_poller())
-
-        # Start Streamer
-        streamer.connect_market_data(
-            instrument_keys=indices_keys, 
-            mode="ltpc", 
-            on_message=on_market_update
-        )
-        logger.info("[UPSTOX] [WS] Upstox Streamer Connected & Listening")
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"[UPSTOX] [WS] Failed to initialize Upstox Streamer: {e}")
+                    prev_close = last_row['close']
+                if prev_close > 0:
+                    redis_wrapper.hset_json("PREV_CLOSES", sym, prev_close)
+                    logger.info(f"[UPSTOX] [WS]    {sym}: Prev Close = {prev_close}")
+            else:
+                logger.warning(f"[UPSTOX] [WS]    {sym}: No historical data found")
+        except Exception as e:
+            logger.error(f"[UPSTOX] [WS]    {sym}: Failed to fetch history: {e}")
 
 async def prefetch_option_master():
     """Fetches option chains for all indices to populate symbol_lookup in Redis."""  
@@ -1407,7 +1602,6 @@ async def unified_background_poller():
     
     cycle_count = 0
     is_baseline_fetched = False
-    is_streamer_started = False
     is_master_prefetched = False
     
     while True:
@@ -1432,11 +1626,11 @@ async def unified_background_poller():
             if not is_baseline_fetched:
                 await fetch_baseline_oi()
                 is_baseline_fetched = True
-                
-            if not is_streamer_started:
-                await startup_event_ws()
-                is_streamer_started = True
-                
+
+            # Note: Streamers are no longer started globally here.
+            # Each user gets a dedicated UpstoxStreamer via StreamerRegistry
+            # when they first connect to any /ws/* endpoint.
+
             if not is_master_prefetched:
                 asyncio.create_task(prefetch_option_master())
                 is_master_prefetched = True
@@ -1533,84 +1727,78 @@ async def unified_background_poller():
 
 @app.on_event("startup")
 async def startup_event():
-    """Consolidated startup sequence: Initialize DB, then let pollers handle the rest lazily."""
+    """Consolidated startup sequence: Initialize DB, capture event loop, start background poller."""
+    global loop
+    loop = asyncio.get_event_loop()
     logger.info("[CORE] Dashboard Server Starting...")
-    
-    # 1. Initialize Authentication Database
+
     try:
         init_db()
         logger.info("[AUTH] Database initialized")
     except Exception as e:
         logger.error(f"[AUTH] [Error] Failed to init DB: {e}")
 
-    # 2. Launch Background Poller (which will handle lazy init once token is available)
     logger.info("[CORE] Launching Background Poller...")
     asyncio.create_task(unified_background_poller())
-    logger.info("[CORE] Server standby mode active.")
+    # Kick off prefetch option master lazily once a token becomes available
+    asyncio.create_task(prefetch_option_master())
+    logger.info("[CORE] Server standby mode active — streamers will start per-user on first WS connect.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global streamer
-    if streamer:
-        logger.info("[UPSTOX] [WS] Disconnecting Upstox Streamer...")
-        streamer.disconnect_all()
+    logger.info("[UPSTOX] [WS] Shutting down all user streamers...")
+    streamer_registry.shutdown_all()
 
 @app.websocket("/ws/market-watch")
 async def websocket_market_watch(websocket: WebSocket, token: str = Query(None)):
     """
     WebSocket endpoint for the dashboard market watch (LTP updates).
-    Authenticates via token and subscribes the user to real-time index updates.
-    """
-    # Manual token check
-    current_user = None
-    try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            current_user = get_user(email)
-    except:
-         await websocket.close(code=1008)
-         return
-    """
-    WebSocket endpoint for Dashboard Indices (NIFTY, BANKNIFTY, etc.)
-    Broadcasts in format: { type: "market_update", prices: { SYMBOL: { ltp: ..., chg: ... } } }
+    Each user gets their own dedicated Upstox streamer (NSE compliant).
+    Fix #4: Auth via initial {action:'auth', token:'...'} message, not URL param.
     """
     await manager.connect_market_watch(websocket)
+    current_user = await authenticate_websocket(websocket, token)
+    if current_user is None:
+        return
+    user_token = await get_access_token(current_user)
+    if not user_token:
+        await websocket.send_json({"type": "error", "message": "No valid Upstox token. Please reconnect Upstox broker."})
+        await websocket.close(code=1008)
+        return
+    user_streamer = await streamer_registry.acquire(current_user.id, user_token)
+    # Pre-fetch previous closes the first time a user connects (non-blocking)
+    if not redis_wrapper.hget_json("PREV_CLOSES", "NIFTY"):
+        asyncio.create_task(prefetch_prev_closes(user_token))
     try:
-        # Send latest data immediately if available
-        if streamer:
-            initial_prices = {}
-            for symbol, key in SYMBOL_MAP.items():
-                data = streamer.get_latest_data(key)
-                if data:
-                    ltp = data.get('ltp') or data.get('last_price')
-                    close = data.get('close') or data.get('ohlc_day', {}).get('close') or data.get('ohlc', {}).get('close')
-                    high = data.get('high') or data.get('ohlc_day', {}).get('high') or data.get('ohlc', {}).get('high')
-                    low = data.get('low') or data.get('ohlc_day', {}).get('low') or data.get('ohlc', {}).get('low')
-                    chg = 0.0
-                    if ltp and close:
-                        chg = round(((ltp - close) / close) * 100, 2)
-                    
-                    if ltp:
-                        initial_prices[symbol] = {"ltp": ltp, "chg": chg, "high": high, "low": low}
-            
-            if initial_prices:
-                await websocket.send_json({
-                    "type": "market_update",
-                    "prices": initial_prices
-                })
+        # Send latest data immediately if already cached in this user's streamer
+        initial_prices = {}
+        for symbol, key in SYMBOL_MAP.items():
+            data = user_streamer.get_latest_data(key)
+            if data:
+                ltp = data.get('ltp') or data.get('last_price')
+                close = data.get('close') or data.get('ohlc_day', {}).get('close') or data.get('ohlc', {}).get('close')
+                high = data.get('high') or data.get('ohlc_day', {}).get('high') or data.get('ohlc', {}).get('high')
+                low = data.get('low') or data.get('ohlc_day', {}).get('low') or data.get('ohlc', {}).get('low')
+                chg = 0.0
+                if ltp and close:
+                    chg = round(((ltp - close) / close) * 100, 2)
+                if ltp:
+                    initial_prices[symbol] = {"ltp": ltp, "chg": chg, "high": high, "low": low}
+        if initial_prices:
+            await websocket.send_json({"type": "market_update", "prices": initial_prices})
 
         while True:
-            # Keep connection alive
             await websocket.receive_text()
-            
+
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        pass
     except HTTPException as he:
         raise he
     except Exception as e:
         logger.error(f"[CORE] Market Watch WS Error: {e}")
+    finally:
         manager.disconnect(websocket)
+        await streamer_registry.release(current_user.id)
 
 @app.get("/stock-dashboard", response_class=HTMLResponse)
 async def get_stock_dashboard(request: Request):
@@ -1684,17 +1872,14 @@ async def get_future_intraday(request: Request):
 
 @app.get("/api/market-quote")
 async def get_market_quote(
-    token: str = Query(None),
+    current_user: User = Depends(get_current_user),
     index: str = Query("NIFTY", description="Index to fetch quotes for: NIFTY, BANKNIFTY, or INDICES")
 ):
-    """REST endpoint for Index constituents real-time updates and daily changes"""
+    """REST endpoint for Index constituents real-time updates and daily changes.
+    Fix #5: Requires JWT authentication via Authorization: Bearer header.
+    """
     try:
-        if token:
-            from web_apps.oi_pro.auth import verify_jwt, get_user
-            email = verify_jwt(token)
-            get_user(email)
-            
-        upstox_token = await get_access_token()
+        upstox_token = await get_access_token(current_user)
         if not upstox_token:
             return {"status": "error", "message": "No active broker connection"}
             
@@ -1748,14 +1933,8 @@ async def get_market_quote(
 # Duplicate consolidated (see line 647)
 pass
 
-# CORS Configuration for React Frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Adjust in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# (CORS middleware moved to the top of the file — after app = FastAPI())
+# See "Middleware Block" section above for the definitive CORS config.
 
 async def get_access_token(user: User = None):
     """
@@ -2800,7 +2979,6 @@ async def get_max_pain_data(symbol: str = Query(..., description="Symbol like NI
 
 @app.websocket("/ws/price/{symbol}")
 async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(None)):
-    # Manual token check
     current_user = None
     try:
         if token:
@@ -2808,29 +2986,47 @@ async def price_websocket(websocket: WebSocket, symbol: str, token: str = Query(
             email = verify_jwt(token)
             current_user = get_user(email)
     except:
-         await websocket.close(code=1008)
-         return
-    global streamer
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket)
-    
-    if streamer is None:
-        token_upstox = await get_access_token(current_user)
-        streamer = UpstoxStreamer(token_upstox)
-        streamer.connect_market_data(
-            instrument_keys=list(SYMBOL_MAP.values()),
-            mode="ltpc"
-        )
-
+    user_token = await get_access_token(current_user)
+    user_streamer = await streamer_registry.acquire(current_user.id, user_token)
     try:
         while True:
             await asyncio.sleep(0.5)
             key = SYMBOL_MAP.get(symbol.upper())
-            if key and streamer:
-                latest = streamer.get_latest_data(key)
+            if key and user_streamer:
+                latest = user_streamer.get_latest_data(key)
                 if latest and 'ltp' in latest:
                     await websocket.send_json({"type": "price", "ltp": latest['ltp']})
     except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    finally:
         manager.disconnect(websocket)
+        await streamer_registry.release(current_user.id)
+
+@app.get("/api/debug/ws-state")
+async def debug_ws_state(current_user: User = Depends(get_current_user)):
+    """Debug endpoint: shows live WS subscriptions, streamer status, and latest cached feeds."""
+    streamer = streamer_registry._streamers.get(current_user.id)
+    streamer_info = {}
+    if streamer:
+        streamer_info = {
+            "market_data_connected": streamer.market_data_connected,
+            "market_connecting": streamer.market_connecting,
+            "terminating": getattr(streamer, '_terminating', False),
+            "reconnect_count": getattr(streamer, '_reconnect_count', 0),
+            "cached_feed_keys": list(streamer.latest_feeds.keys()),
+            "market_callbacks_count": len(streamer.market_callbacks),
+        }
+    active_subs = {k: len(v) for k, v in manager.subscriptions.items()}
+    return {
+        "user_id": current_user.id,
+        "streamer": streamer_info,
+        "active_ws_subscriptions": active_subs,
+        "market_watch_sockets": len(manager.market_watch_sockets),
+        "global_loop_set": loop is not None,
+    }
 
 @app.get("/api/expiries")
 async def fetch_expiries(symbol: str = "NIFTY", current_user: User = Depends(get_current_user)):
@@ -3679,7 +3875,7 @@ async def get_multi_strike_oi_data(
             
         # Sort and fill gaps
         merged = merged.sort_values('timestamp').ffill().fillna(0)
-        merged['timestamp'] = merged['timestamp'].dt.strftime('%H:%M')
+        merged['timestamp'] = merged['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
         logger.info(f"[UPSTOX] [Multi-Strike OI] Success. Rows: {len(merged)}")
         return {
@@ -3782,7 +3978,7 @@ async def get_multi_strike_price_data(
             
         # Sort and fill gaps
         merged = merged.sort_values('timestamp').ffill().fillna(0)
-        merged['timestamp'] = merged['timestamp'].dt.strftime('%H:%M')
+        merged['timestamp'] = merged['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
         logger.info(f"[UPSTOX] [Multi-Strike Price] Success. Rows: {len(merged)}")
         return {
@@ -3944,54 +4140,48 @@ async def future_price_oi_websocket(websocket: WebSocket, symbol: str, token: st
          await websocket.close(code=1008)
          return
          
-    global streamer
+    user_token = await get_access_token(current_user)
+    user_streamer = await streamer_registry.acquire(current_user.id, user_token)
     await manager.connect(websocket)
-    
+
     try:
         from lib.utils.instrument_utils import get_future_instrument_key
         from lib.api.market_data import download_nse_market_data
         nse_data = await run_in_threadpool(download_nse_market_data)
         future_key = get_future_instrument_key(symbol, nse_data)
         index_key = SYMBOL_MAP.get(symbol, f"NSE_INDEX|{symbol}")
-        
+
         if not future_key:
             raise Exception("Future key not found")
-            
-        if streamer is None:
-            token_upstox = await get_access_token(current_user)
-            streamer = UpstoxStreamer(token_upstox)
-            
-        # Ensure we subscribe to full mode for futures so we get OI
-        streamer.connect_market_data(
-            instrument_keys=[future_key],
-            mode="full"
-        )
-        streamer.subscribe_market_data([future_key], mode="full")
-        streamer.subscribe_market_data([index_key], mode="ltpc")
+
+        user_streamer.connect_market_data(instrument_keys=[future_key], mode="full")
+        user_streamer.subscribe_market_data([future_key], mode="full")
+        user_streamer.subscribe_market_data([index_key], mode="ltpc")
 
         while True:
-            await asyncio.sleep(1) # Update every second
-            if streamer:
-                f_data = streamer.get_latest_data(future_key)
-                s_data = streamer.get_latest_data(index_key)
-                
+            await asyncio.sleep(1)
+            if user_streamer:
+                f_data = user_streamer.get_latest_data(future_key)
+                s_data = user_streamer.get_latest_data(index_key)
+
                 if f_data and 'ltp' in f_data and 'oi' in f_data:
                     import time
                     ts = int(time.time() * 1000)
-                    
                     await websocket.send_json({
-                        "type": "future-price-oi", 
+                        "type": "future-price-oi",
                         "time": ts,
                         "price": f_data['ltp'],
                         "spot": s_data.get('ltp', 0) if s_data else 0,
                         "oi": f_data['oi']
                     })
     except (WebSocketDisconnect, asyncio.CancelledError):
-        manager.disconnect(websocket)
+        pass
     except Exception as e:
         import traceback
         traceback.print_exc()
+    finally:
         manager.disconnect(websocket)
+        await streamer_registry.release(current_user.id)
 
 @app.get("/surface-3d", response_class=HTMLResponse)
 async def surface_3d_page():
@@ -4188,4 +4378,4 @@ async def api_option_chain_3d(
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=False)

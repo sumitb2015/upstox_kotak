@@ -349,20 +349,30 @@
                 ws.onmessage = (event) => {
                     try {
                         const msg = JSON.parse(event.data);
+
+                        // Skip non-price messages (status, error, etc.)
+                        if (msg.type) {
+                            console.log(`[WS] Server msg: type=${msg.type}`, msg);
+                            return;
+                        }
+
                         let instrKey = msg.instrument_key || msg.key;
                         if (instrKey) instrKey = instrKey.replace(':', '|');
 
-                        const ltp = msg.ltp || msg.last_price;
-                        if (!instrKey || ltp == null) return;
-
-                        console.log(`⚡ [WS] Tick: ${instrKey} = ${ltp}`);
+                        const ltp = msg.ltp ?? msg.last_price;
+                        if (!instrKey || ltp == null) {
+                            console.warn('[WS] Dropping tick — missing key or ltp:', msg);
+                            return;
+                        }
 
                         const currentLegs = legsRef.current;
                         const matchingLegs = currentLegs.filter(l => l.instrumentKey && l.instrumentKey.replace(':', '|') === instrKey);
                         if (matchingLegs.length === 0) {
-                            console.warn(`⚠️ [WS] Received tick for unknown key: ${instrKey}`);
+                            // Not subscribed to this key — ignore silently
                             return;
                         }
+
+                        console.log(`⚡ [WS] Tick: ${instrKey} = ${ltp} (legs: ${matchingLegs.map(l => l.id).join(',')})`);
 
                         // ---- Update mutable ref immediately (no stale state) ----
                         matchingLegs.forEach(l => { livePricesRef.current[l.id] = ltp; });
@@ -388,38 +398,32 @@
                             });
                         }, 400);
 
-                        // ---- Guard: only compute net & update chart when ALL legs have ticked ----
-                        const required = requiredKeysRef.current;
-                        const allReady = [...required].every(id => livePricesRef.current[id] != null);
-                        if (!allReady) return;
+                        // Stop updating the chart if market is closed (> 15:30 IST)
+                        const now = getISTString();
+                        const h = parseInt(now.substring(11, 13), 10);
+                        const m = parseInt(now.substring(14, 16), 10);
+                        if (h > 15 || (h === 15 && m > 30)) return;
 
-                        // Stop updating the chart if market is closed (> 15:30)
-                        const timeCheck = new Date();
-                        if (timeCheck.getHours() > 15 || (timeCheck.getHours() === 15 && timeCheck.getMinutes() > 30)) return;
-
-                        // Compute net premium
+                        // ---- Compute net premium from ALL legs (use 0 for legs not yet ticked) ----
+                        // We no longer require ALL legs to have ticked — one received tick is enough to draw.
                         let net = 0;
                         currentLegs.forEach(leg => {
-                            const price = livePricesRef.current[leg.id] || 0;
+                            if (!leg.instrumentKey) return;
+                            const price = livePricesRef.current[leg.id] ?? 0;
                             const mult = leg.action === 'sell' ? 1 : -1;
                             net += price * mult * (leg.lot || 1);
                         });
                         setNetPremium(net);
 
                         // Append to chart (Aggregation: update current minute point to reduce noise)
-                        const now = getISTString();
                         setChartData(prev => {
-                            if (prev.length === 0) return prev;
                             const buf = [...prev];
                             const last = buf[buf.length - 1];
 
-                            // Check if current tick belongs to the same minute as the last point
-                            // now: YYYY-MM-DDTHH:MM:SS+05:30 (Minute is at index 11-16)
+                            // Compare minute buckets (YYYY-MM-DDTHH:MM)
                             if (last && now.slice(0, 16) === last.timestamp.slice(0, 16)) {
-                                // Update existing point to avoid density noise
                                 buf[buf.length - 1] = { ...last, premium: net };
                             } else {
-                                // New minute bucket: append new point, use previous VWAP as baseline
                                 buf.push({ timestamp: now, premium: net, vwap: last ? last.vwap : net });
                                 if (buf.length > 2000) buf.shift();
                             }
@@ -427,7 +431,7 @@
                         });
 
                         setLastUpdated(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-                    } catch (e) { console.error(e); }
+                    } catch (e) { console.error('[WS] onmessage error:', e); }
                 };
 
                 ws.onclose = () => setWsConnected(false);
@@ -473,8 +477,10 @@
                     if (result.status === "success" && result.data?.length > 0) {
                         const filteredData = result.data.filter(d => {
                             if (!d.timestamp) return false;
-                            const dt = new Date(d.timestamp);
-                            return dt.getHours() < 15 || (dt.getHours() === 15 && dt.getMinutes() <= 30);
+                            // Extract IST hour/min directly from 'YYYY-MM-DDTHH:MM:SS+05:30'
+                            const h = parseInt(d.timestamp.substring(11, 13), 10);
+                            const m = parseInt(d.timestamp.substring(14, 16), 10);
+                            return h < 15 || (h === 15 && m <= 30);
                         });
                         setChartData(filteredData);
                         const last = filteredData[filteredData.length - 1];
