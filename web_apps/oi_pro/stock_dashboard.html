@@ -53,72 +53,159 @@
     <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
 
     <style>
-        /* Light Mode Defaults (Root Variables) */
+        /* Modern Design System Tokens */
         :root {
-            --background: #ffffff;
-            --foreground: #09090b;
-
-            --card: #ffffff;
-            --card-foreground: #09090b;
-
-            --popover: #ffffff;
-            --popover-foreground: #09090b;
-
-            --primary: #18181b;
-            --primary-foreground: #fafafa;
-
-            --secondary: #f4f4f5;
-            --secondary-foreground: #18181b;
-
-            --muted: #f4f4f5;
-            --muted-foreground: #52525b;
-            /* Darkened for better contrast */
-
-            --accent: #f4f4f5;
-            --accent-foreground: #18181b;
-
-            --destructive: #ef4444;
-            --destructive-foreground: #fafafa;
-
-            --border: #e4e4e7;
-            --input: #e4e4e7;
-            --ring: #18181b;
+            /* Light Mode - Airy & Clean */
+            --bg-main: #f8faff;
+            --bg-card: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #4f46e5 50%, #7c3aed 100%);
+            --gainer-color: #16a34a;
+            --gainer-bg: #f0fdf4;
+            --loser-color: #dc2626;
+            --loser-bg: #fff1f2;
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --card-hover-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            --glass-bg: rgba(255, 255, 255, 0.8);
+            --glass-border: rgba(255, 255, 255, 0.5);
         }
 
-        /* Dark Mode Implementation */
         .dark {
-            --background: #09090b;
-            --foreground: #fafafa;
-
-            --card: #09090b;
-            --card-foreground: #fafafa;
-
-            --popover: #09090b;
-            --popover-foreground: #fafafa;
-
-            --primary: #fafafa;
-            --primary-foreground: #18181b;
-
-            --secondary: #27272a;
-            --secondary-foreground: #fafafa;
-
-            --muted: #27272a;
-            --muted-foreground: #a1a1aa;
-
-            --accent: #27272a;
-            --accent-foreground: #fafafa;
-
-            --destructive: #7f1d1d;
-            --destructive-foreground: #fafafa;
-
-            --border: #27272a;
-            --input: #27272a;
-            --ring: #d4d4d8;
+            /* Dark Mode - Deep Navy & Glassmorphism */
+            --bg-main: #060910;
+            --bg-card: #0d1421;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+            --gainer-color: #00ff88;
+            --gainer-bg: rgba(0, 255, 136, 0.08);
+            --loser-color: #ff4466;
+            --loser-bg: rgba(255, 68, 102, 0.08);
+            --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+            --card-hover-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
         }
 
-        /* --- Custom UI Extensions --- */
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s;
+        }
+
+        .main-content {
+            margin-left: 5.5rem;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1rem;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s, border-color 0.3s;
+        }
+
+        .modern-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            box-shadow: var(--card-shadow);
+            transition: all 0.3s ease;
+        }
+
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--card-hover-shadow);
+        }
+
+        .gainer-glow {
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.1);
+            border-color: rgba(0, 255, 136, 0.3) !important;
+        }
+
+        .loser-glow {
+            box-shadow: 0 0 15px rgba(255, 68, 102, 0.1);
+            border-color: rgba(255, 68, 102, 0.3) !important;
+        }
+
+        .dark .gainer-glow:hover {
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.2);
+            border-color: var(--gainer-color) !important;
+        }
+
+        .dark .loser-glow:hover {
+            box-shadow: 0 0 25px rgba(255, 68, 102, 0.2);
+            border-color: var(--loser-color) !important;
+        }
+
+        /* Gradient Text & Underlines */
+        .text-gradient {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .active-tab-indicator {
+            height: 3px;
+            background: var(--accent-gradient);
+            border-radius: 100px;
+            box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+        }
+
+        .pill-button {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .pill-button.active {
+            background: var(--accent-gradient);
+            color: white;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Pulse Live Indicator */
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .live-dot::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: inherit;
+            border-radius: inherit;
+            animation: pulse-ring 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.33);
+                opacity: 1;
+            }
+
+            80%,
+            100% {
+                transform: scale(2.5);
+                opacity: 0;
+            }
+        }
+
         .custom-scrollbar::-webkit-scrollbar {
-            width: 5px;
+            width: 4px;
         }
 
         .custom-scrollbar::-webkit-scrollbar-track {
@@ -126,75 +213,8 @@
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #d4d4d8;
+            background: rgba(148, 163, 184, 0.3);
             border-radius: 10px;
-        }
-
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #3f3f46;
-        }
-
-        .shadcn-card {
-            background-color: var(--card);
-            color: var(--card-foreground);
-            border-radius: 0.75rem;
-            border: 1px solid var(--border);
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-            transition: all 0.2s ease;
-        }
-
-        .shadcn-card:hover {
-            border-color: #6366f1;
-            /* Indigo hover border */
-            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.1);
-        }
-
-        body {
-            background-color: var(--background);
-            color: var(--foreground);
-            font-family: 'Inter', sans-serif;
-            min-height: 100vh;
-            margin: 0;
-            font-feature-settings: "rlig" 1, "calt" 1;
-            transition: all 0.2s;
-        }
-
-        .main-content {
-            margin-left: 5.5rem;
-            padding: 1.5rem;
-            min-height: 100vh;
-            transition: margin-left 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        @media (max-width: 768px) {
-            .main-content {
-                margin-left: 0;
-                padding-bottom: 5rem;
-            }
-        }
-
-        /* Shadcn Card borders */
-        .shadcn-card {
-            background-color: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            color: var(--card-foreground);
-        }
-
-        .stock-card {
-            transition: border-color 0.15s ease, background-color 0.15s ease;
-        }
-
-        /* Subtle hover instead of floating */
-        .stock-card:hover {
-            border-color: var(--accent);
-            background-color: var(--accent);
-        }
-
-        /* Progress Bar Animation */
-        .progress-bar {
-            transition: width 0.5s ease-in-out;
         }
     </style>
 </head>
@@ -210,119 +230,160 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
+        const ThemeToggle = ({ isDark, toggle }) => (
+            <button
+                onClick={toggle}
+                className="p-2 rounded-xl bg-card border border-border hover:border-indigo-500/50 transition-all active:scale-90"
+            >
+                {isDark ? (
+                    <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 5a7 7 0 100 14 7 7 0 000-14z" />
+                    </svg>
+                ) : (
+                    <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                )}
+            </button>
+        );
+
         const IconArrowUp = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
-                <path d="m5 12 7-7 7 7" />
-                <path d="M12 19V5" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" />
             </svg>
         );
 
         const IconArrowDown = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-rose-500">
-                <path d="M12 5v14" />
-                <path d="m19 12-7 7-7-7" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
             </svg>
         );
 
         const IconMinus = () => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500">
-                <path d="M5 12h14" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M20 12H4" />
             </svg>
         );
 
-        const StatBadge = ({ value, label, colorClass }) => (
-            <div className="flex flex-col items-start gap-0.5">
-                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${label === 'Advances' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                    {label}
-                </span>
-                <span className={`text-2xl font-bold tracking-tight ${colorClass}`}>{value}</span>
-            </div>
-        );
-
-        const AdvanceDeclineCard = ({ advances, declines, activeIndex }) => {
-            const total = advances + declines;
-            const advancePct = total > 0 ? (advances / total) * 100 : 50;
-            const declinePct = total > 0 ? (declines / total) * 100 : 50;
-
-            const indexName = activeIndex === 'BANKNIFTY' ? 'Bank Nifty' : 'Nifty 50';
+        const Header = ({ activeIndex, setActiveIndex, isConnected, isDark, toggleTheme }) => {
+            const [time, setTime] = useState(new Date());
+            useEffect(() => {
+                const timer = setInterval(() => setTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
 
             return (
-                <div className="shadcn-card px-5 pt-5 pb-3 mb-1 max-w-xl">
-                    <div className="flex items-center justify-between mb-5">
-                        <div className="space-y-1">
-                            <h2 className="text-sm border-l-2 border-zinc-700 pl-2 font-medium leading-none text-foreground tracking-tight">Market Breadth</h2>
-                            <p className="text-[11px] pl-2.5 text-muted-foreground">{indexName} Constituents · Ratio {advances}:{declines}</p>
+                <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                            </svg>
                         </div>
-                        <div className="flex items-center gap-6">
-                            <StatBadge value={advances} label="Advances" colorClass="text-emerald-500" />
-                            <StatBadge value={declines} label="Declines" colorClass="text-rose-500" />
+                        <div>
+                            <h1 className="text-2xl font-black tracking-tight text-foreground">OI <span className="text-gradient">PRO</span></h1>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <div className="live-dot"></div>
+                                <span className="text-[10px] font-bold tracking-widest uppercase opacity-60">
+                                    {time.toLocaleTimeString('en-US', { hour12: false })} • {isConnected ? 'Live' : 'Offline'}
+                                </span>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Progress Bar Container */}
-                    <div className="relative h-1.5 bg-secondary rounded-full overflow-hidden w-full">
-                        <div
-                            className="absolute top-0 left-0 h-full bg-emerald-500 progress-bar"
-                            style={{ width: `${advancePct}%` }}
-                        ></div>
-                        <div
-                            className="absolute top-0 right-0 h-full bg-rose-500 progress-bar"
-                            style={{ width: `${declinePct}%` }}
-                        ></div>
+                    <div className="flex items-center gap-3 self-end md:self-auto">
+                        <div className="flex p-1 bg-card/50 backdrop-blur-sm border border-border rounded-2xl">
+                            <button
+                                onClick={() => setActiveIndex('NIFTY')}
+                                className={`pill-button px-5 py-2 text-xs font-bold rounded-xl ${activeIndex === 'NIFTY' ? 'active' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                                NIFTY 50
+                            </button>
+                            <button
+                                onClick={() => setActiveIndex('BANKNIFTY')}
+                                className={`pill-button px-5 py-2 text-xs font-bold rounded-xl ${activeIndex === 'BANKNIFTY' ? 'active' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                                BANK NIFTY
+                            </button>
+                        </div>
+                        <ThemeToggle isDark={isDark} toggle={toggleTheme} />
                     </div>
-                </div>
+                </header>
             );
         };
 
         const StockCard = ({ symbol, data }) => {
-            const { ltp, chg, prev } = data;
-            const isPositive = chg > 0;
-            const isNegative = chg < 0;
+            const isGainer = data.chg > 0;
+            const isLoser = data.chg < 0;
+            const themeClass = isGainer ? 'border-emerald-500/30' : isLoser ? 'border-rose-500/30' : 'border-border/30';
+            const glowClass = isGainer ? 'shadow-[0_0_15px_-5px_rgba(16,185,129,0.3)]' : isLoser ? 'shadow-[0_0_15px_-5px_rgba(239,68,68,0.3)]' : '';
 
-            let borderClass = "";
-            let textClass = "text-muted-foreground";
-            let IconBtn = IconMinus;
-            let bgAccent = "bg-secondary/40 text-muted-foreground";
-            let chgColor = "text-zinc-500";
-
-            if (isPositive) {
-                borderClass = "hover:border-emerald-500/50 hover:bg-emerald-500/5";
-                textClass = "text-emerald-500";
-                chgColor = "text-emerald-500";
-                IconBtn = IconArrowUp;
-                bgAccent = "bg-emerald-500/10 text-emerald-500";
-            } else if (isNegative) {
-                borderClass = "hover:border-rose-500/50 hover:bg-rose-500/5";
-                textClass = "text-rose-500";
-                chgColor = "text-rose-500";
-                IconBtn = IconArrowDown;
-                bgAccent = "bg-rose-500/10 text-rose-500";
-            }
+            // Calculate chgp if missing
+            const chgp = data.chgp !== undefined ? data.chgp : (data.chg && data.prev ? (data.chg / data.prev * 100) : 0);
 
             return (
-                <div className={`stock-card shadcn-card p-3 flex flex-col justify-between h-full ${borderClass}`}>
-                    <div className="flex justify-between items-start mb-3">
-                        <h3 className="font-semibold text-foreground tracking-tight text-[13px] truncate pr-2" title={symbol}>{symbol}</h3>
-                        <div className={`p-1 rounded-sm ${bgAccent}`}>
-                            <IconBtn />
+                <div className={`glass-card p-2 group stock-card-hover ${themeClass} ${glowClass} relative overflow-hidden flex flex-col justify-between h-[85px]`}>
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-black tracking-tighter text-muted-foreground uppercase truncate max-w-[70%]">{symbol}</span>
+                        <div className={`p-0.5 rounded-sm ${isGainer ? 'text-emerald-500 bg-emerald-500/10' : isLoser ? 'text-rose-500 bg-rose-500/10' : 'text-muted-foreground'}`}>
+                            {isGainer ? <IconArrowUp /> : isLoser ? <IconArrowDown /> : <IconMinus />}
                         </div>
                     </div>
 
-                    <div className="mt-auto">
-                        <div className="flex items-baseline overflow-hidden">
-                            <span className="text-xl font-bold tracking-tight text-foreground truncate">
-                                {ltp ? ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
-                            </span>
+                    <div className="space-y-0.5">
+                        <div className="text-sm font-black tracking-tight text-foreground tabular-nums">
+                            {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 1 }).format(data.ltp)}
                         </div>
-
-                        <div className={`flex items-center font-medium ${chgColor} text-[11px] mt-0.5 tracking-wide`}>
-                            {chg > 0 ? '+' : ''}{chg ? chg.toFixed(2) : '0.00'}%
+                        <div className={`text-[10px] font-bold flex items-center gap-1 ${isGainer ? 'text-emerald-500' : isLoser ? 'text-rose-500' : 'text-muted-foreground'}`}>
+                            <span>{isGainer ? '+' : ''}{data.chg.toFixed(2)}</span>
+                            <span className="opacity-70">({chgp.toFixed(2)}%)</span>
                         </div>
                     </div>
                 </div>
             );
         };
+
+        const AdvanceDeclineCard = ({ advances, declines, activeIndex }) => {
+            const total = (advances + declines) || 1;
+            const advPercent = (advances / total) * 100;
+
+            return (
+                <div className="glass-card p-3 mb-4 border-border/40 relative overflow-hidden group">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="space-y-0.5">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Market Breadth</span>
+                            <div className="flex items-baseline gap-2">
+                                <h3 className="text-xl font-black tracking-tighter text-foreground">{advances} / {total}</h3>
+                                <span className="text-[9px] bg-indigo-500/10 text-indigo-500 px-1.5 py-0.5 rounded-sm font-bold">RATIO {advances}:{declines}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4">
+                            <div className="text-right">
+                                <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-tight flex items-center gap-1 justify-end">
+                                    <IconArrowUp /> Advances
+                                </span>
+                                <div className="text-sm font-black text-emerald-500">{advances}</div>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-[9px] font-bold text-rose-500 uppercase tracking-tight flex items-center gap-1 justify-end">
+                                    <IconArrowDown /> Declines
+                                </span>
+                                <div className="text-sm font-black text-rose-500">{declines}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="h-1 w-full bg-rose-500/20 rounded-full overflow-hidden flex relative">
+                        <div
+                            className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                            style={{ width: `${advPercent}%` }}
+                        />
+                    </div>
+                </div>
+            );
+        };
+
 
         // ── Analytics Tab: Long Buildup, Short Buildup, Short Covering, Long Unwinding ──
         const analyticsConfig = [
@@ -562,29 +623,40 @@
 
         const Dashboard = () => {
             const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+            const [stocks, setStocks] = useState({});
+            const [isConnected, setIsConnected] = useState(false);
+            const [activeIndex, setActiveIndex] = useState('NIFTY');
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [history, setHistory] = useState({ NIFTY: [], BANKNIFTY: [] });
+
+            const lastPushTimeRef = useRef({ NIFTY: 0, BANKNIFTY: 0 });
+
+            const toggleTheme = () => {
+                const isNowDark = !isDark;
+                setIsDark(isNowDark);
+                if (isNowDark) {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('theme', 'light');
+                }
+                window.dispatchEvent(new Event('themeToggled'));
+            };
+
             useEffect(() => {
                 const handleTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
                 window.addEventListener('themeToggled', handleTheme);
                 return () => window.removeEventListener('themeToggled', handleTheme);
             }, []);
-            const [stocks, setStocks] = useState({});
-            const [isConnected, setIsConnected] = useState(false);
-            const [activeIndex, setActiveIndex] = useState('NIFTY');
-            const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'chart'
-            const [history, setHistory] = useState({ NIFTY: [], BANKNIFTY: [] });
-
-            // Reference to keep track of the last time we pushed to history
-            const lastPushTimeRef = useRef({ NIFTY: 0, BANKNIFTY: 0 });
 
             useEffect(() => {
-                // Clear out the stale stocks array immediately when switching tabs
-                // to prevent old index data from flashing before the fetch resolves.
                 setStocks({});
                 setIsConnected(false);
 
                 const fetchQuotes = async () => {
                     try {
-                        const token = localStorage.getItem('token');
+                        const token = localStorage.getItem('oi_pro_jwt') || localStorage.getItem('token');
                         let url = `/api/market-quote?index=${activeIndex}`;
                         if (token) url += `&token=${token}`;
 
@@ -602,15 +674,12 @@
                             setIsConnected(true);
                         } else {
                             setIsConnected(false);
-                            console.error("API Error", result.message);
                         }
                     } catch (e) {
-                        console.error("Fetch error", e);
                         setIsConnected(false);
                     }
                 };
 
-                // Fetch on unmount/mount is handled, but polling interval
                 let isMounted = true;
                 const poll = async () => {
                     if (isMounted) await fetchQuotes();
@@ -625,7 +694,6 @@
                 }
             }, [activeIndex]);
 
-            // Calculate breadths
             const { advances, declines, sortedStocks } = useMemo(() => {
                 let a = 0; let d = 0;
                 const entries = Object.entries(stocks);
@@ -640,28 +708,19 @@
                 };
             }, [stocks]);
 
-            // Append to history every ~1 min if we have valid data
             useEffect(() => {
                 const now = Date.now();
                 const dateObj = new Date(now);
                 const hours = dateObj.getHours();
                 const mins = dateObj.getMinutes();
+                const isMarketOpen = (hours > 9 || (hours === 9 && mins >= 15)) && (hours < 15 || (hours === 15 && mins <= 30));
 
-                // Check if current time is between 9:15 AM and 3:30 PM
-                const isMarketOpen = (hours > 9 || (hours === 9 && mins >= 15)) &&
-                    (hours < 15 || (hours === 15 && mins <= 30));
-
-                const total = advances + declines;
-
-                if (total > 0 && isConnected && isMarketOpen) {
+                if ((advances + declines) > 0 && isConnected && isMarketOpen) {
                     const timeSinceLastPushed = now - lastPushTimeRef.current[activeIndex];
-
-                    if (timeSinceLastPushed >= 60000) { // 1 minute
+                    if (timeSinceLastPushed >= 60000) {
                         setHistory(prev => {
                             const newIndexHistory = [...prev[activeIndex], { time: now, advances, declines }];
-                            // Keep last 400 data points (~1 trading day)
                             if (newIndexHistory.length > 400) newIndexHistory.shift();
-
                             return { ...prev, [activeIndex]: newIndexHistory };
                         });
                         lastPushTimeRef.current[activeIndex] = now;
@@ -670,82 +729,61 @@
             }, [advances, declines, activeIndex, isConnected]);
 
             return (
-                <div className="pb-12 max-w-[1400px]">
-                    <header className="mb-6 flex items-center justify-between pb-3">
-                        <div className="flex items-center gap-6">
-                            <div className="space-y-1">
-                                <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                                    Stock Components
-                                </h1>
-                                <p className="text-sm text-muted-foreground">Market Snapshot & Sector Breadth</p>
-                            </div>
+                <div className="pb-20 max-w-[1500px] mx-auto">
+                    <Header
+                        activeIndex={activeIndex}
+                        setActiveIndex={setActiveIndex}
+                        isConnected={isConnected}
+                        isDark={isDark}
+                        toggleTheme={toggleTheme}
+                    />
 
-                            {/* Shadcn Segmented Control / Tabs */}
-                            <div className="flex items-center p-1 bg-card border border-border rounded-lg">
+                    {/* Modern Tab Navigation */}
+                    <div className="mb-10 flex items-center justify-between border-b border-border/50 relative">
+                        <div className="flex gap-8 relative">
+                            {['dashboard', 'chart', 'analytics'].map(tab => (
                                 <button
-                                    onClick={() => setActiveIndex('NIFTY')}
-                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeIndex === 'NIFTY' ? 'bg-secondary text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                                    key={tab}
+                                    className={`relative pb-4 text-sm font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                    onClick={() => setActiveTab(tab)}
                                 >
-                                    Nifty 50
+                                    {tab}
+                                    {activeTab === tab && (
+                                        <div className="absolute bottom-0 left-0 right-0 active-tab-indicator -mb-[1px]"></div>
+                                    )}
                                 </button>
-                                <button
-                                    onClick={() => setActiveIndex('BANKNIFTY')}
-                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeIndex === 'BANKNIFTY' ? 'bg-secondary text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                                >
-                                    Bank Nifty
-                                </button>
-                            </div>
+                            ))}
                         </div>
-
-                        <div className="flex items-center gap-2 text-[11px] font-medium bg-card border border-border px-3 py-1.5 rounded-md shadow-sm">
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></div>
-                            <span className={isConnected ? 'text-emerald-500 font-semibold' : 'text-rose-500 font-semibold'}>
-                                {isConnected ? 'LIVE' : 'DISCONNECTED'}
-                            </span>
-                        </div>
-                    </header>
-
-                    {/* View Switcher Tabs */}
-                    <div className="mb-6 flex gap-2 border-b border-border">
-                        <button
-                            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === 'dashboard' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'}`}
-                            onClick={() => setActiveTab('dashboard')}
-                        >
-                            Dashboard
-                        </button>
-                        <button
-                            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === 'chart' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'}`}
-                            onClick={() => setActiveTab('chart')}
-                        >
-                            Breadth Chart
-                        </button>
-                        <button
-                            className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${activeTab === 'analytics' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'}`}
-                            onClick={() => setActiveTab('analytics')}
-                        >
-                            Analytics
-                        </button>
                     </div>
 
-                    <AdvanceDeclineCard advances={advances} declines={declines} activeIndex={activeIndex} />
+                    {activeTab === 'dashboard' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <AdvanceDeclineCard advances={advances} declines={declines} activeIndex={activeIndex} />
+                            {sortedStocks.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-32 glass-card">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-500 mb-6"></div>
+                                    <span className="text-muted-foreground text-xs font-black uppercase tracking-[0.3em]">Synching Market Data...</span>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-9 gap-3">
+                                    {sortedStocks.map(([symbol, data]) => (
+                                        <StockCard key={symbol} symbol={symbol} data={data} />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                    {activeTab === 'dashboard' ? (
-                        sortedStocks.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-20 shadcn-card border border-dashed border-border">
-                                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-zinc-500 mb-4"></div>
-                                <span className="text-muted-foreground text-sm font-medium tracking-wide">Fetching Quotes...</span>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-3">
-                                {sortedStocks.map(([symbol, data]) => (
-                                    <StockCard key={symbol} symbol={symbol} data={data} />
-                                ))}
-                            </div>
-                        )
-                    ) : activeTab === 'chart' ? (
-                        <BreadthChart history={history[activeIndex]} />
-                    ) : (
-                        <AnalyticsTab activeIndex={activeIndex} />
+                    {activeTab === 'chart' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <BreadthChart history={history[activeIndex]} />
+                        </div>
+                    )}
+
+                    {activeTab === 'analytics' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <AnalyticsTab activeIndex={activeIndex} />
+                        </div>
                     )}
                 </div>
             );
