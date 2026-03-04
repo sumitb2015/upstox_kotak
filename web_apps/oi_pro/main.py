@@ -1919,7 +1919,7 @@ async def get_stock_analytics(
 
         # --- Cache Set ---
         # Set cache with 60s expiry
-        redis_wrapper.set_json(cache_key, final_res, expire=60)
+        redis_wrapper.set_json(cache_key, final_res, ex=60)
         
         return final_res
 
