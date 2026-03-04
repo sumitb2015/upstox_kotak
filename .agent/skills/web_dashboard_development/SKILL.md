@@ -56,6 +56,7 @@ This skill outlines the standard architecture and best practices for building fi
     -   **Glass Cards**: Use semi-transparent surfaces `rgba(15, 23, 42, 0.8)` with heavy blur `backdrop-filter: blur(20px)` and subtle borders `rgba(255,255,255,0.07)`.
     -   **Typography**: Use `Inter` font, extremely bold weights (`font-black`/`800`) for metrics, and wide tracking `tracking-[0.15em]` for uppercase sublabels.
     -   **Color Coding**: Standardize on `#10b981` (Emerald) for positive/Put dominant, `#f87171` (Rose) for negative/Call dominant, and `#fbbf24` (Amber) for Spot prices.
+    -   **ATM High-Contrast (Light Mode)**: For the ATM strike, prioritize readability by using high-contrast text (`text-amber-900` / bold) and distinct cell backgrounds (e.g., `bg-amber-500/20`) to prevent washing out in light backgrounds. 
     -   **Loading States**: Always implement a "Loading..." spinner or shimmer effect while waiting for initial API or WebSocket payloads to prevent layout jump.
     -   **Sentiment Badges**: Implement explicit visual badges (Bullish/Bearish/Neutral) dynamically driven by underlying data differences.
 

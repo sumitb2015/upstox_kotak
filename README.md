@@ -29,6 +29,8 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Extensive Strategy Library**: Over 20+ detailed strategy implementations with comprehensive `README.md` guides covering entry/exit logic, risk management, and execution examples.
 - **OI Pro Dashboards**: 15+ Advanced analytics pages including:
   - **Option PCR Grid**: Real-time Strike-wise PCR with Bull/Bear Sentiment indicators.
+  - **Option Chain Markers**: Visual indicators for **OH (Open=High)** and **OL (Open=Low)** price conditions on every strike.
+  - **Premium ATM Visibility**: High-contrast identifier for the ATM strike in both Light and Dark modes.
   - **Max Pain & Volatility Smile**: Automated Max Pain calculation with IV smile visualization.
   - **Cumulative GEX**: Systemic Gamma Exposure tracking with Regime Identification.
   - **Multi-Strike Comparison**: Contrast OI and Price action across up to 5 strikes simultaneously.

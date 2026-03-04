@@ -41,6 +41,8 @@ When analyzing the full chain (via `lib.api.option_chain`):
 - **Long Build-up**: Price Rise + OI Rise (Strong Bullish).
 - **Short Covering**: Price Rise + OI Drop (Bullish Reversal).
 - **Long Unwinding**: Price Drop + OI Drop (Bearish Reversal).
+- **OH (Open = High)**: Indicates a strike opened and immediately saw selling pressure (Bearish for that strike).
+- **OL (Open = Low)**: Indicates a strike opened and immediately saw buying support (Bullish for that strike).
 
 ## 🚦 4. Confidence Thresholds
 For a strategy to take a trade based on OI:
