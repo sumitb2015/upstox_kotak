@@ -319,14 +319,44 @@
                 const spot = metadata.spot || 0;
 
                 // ── Shared layout base ────────────────────────────────────────────────
+                const tooltipBg = isDark ? '#0f172a' : '#ffffff';
+                const tooltipBorder = isDark ? '#334155' : '#e2e8f0';
+                const tooltipFontColor = isDark ? '#f1f5f9' : '#1e293b';
+                const gridColor = isDark ? 'rgba(148,163,184,0.07)' : '#edf0f5';
+                const zerolineColor = isDark ? 'rgba(148,163,184,0.15)' : '#cbd5e1';
+                const tickFontColor = isDark ? '#94a3b8' : '#64748b';
+                const axisLabelColor = isDark ? '#64748b' : '#94a3b8';
+                const markerBorder = isDark ? '#1e293b' : '#ffffff';
+                const axisLineColor = isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0';
+
                 const BASE_LAYOUT = {
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     plot_bgcolor: 'rgba(0,0,0,0)',
-                    font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
+                    font: { family: 'Inter', color: tickFontColor },
                     hovermode: 'closest',
-                    hoverlabel: { bgcolor: '#111827', font: { color: isDark ? 'white' : '#0f172a', family: 'Inter' }, bordercolor: '#374151' },
-                    xaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickfont: { color: isDark ? '#94a3b8' : '#475569' } },
-                    yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a', tickfont: { color: isDark ? '#94a3b8' : '#475569' }, tickformat: '.3s' },
+                    hoverlabel: {
+                        bgcolor: tooltipBg,
+                        font: { color: tooltipFontColor, family: 'Inter', size: 12 },
+                        bordercolor: tooltipBorder,
+                        namelength: -1
+                    },
+                    xaxis: {
+                        gridcolor: gridColor,
+                        gridwidth: 1,
+                        zerolinecolor: zerolineColor,
+                        zerolinewidth: 1,
+                        tickfont: { color: tickFontColor, size: 10 },
+                        linecolor: axisLineColor
+                    },
+                    yaxis: {
+                        gridcolor: gridColor,
+                        gridwidth: 1,
+                        zerolinecolor: zerolineColor,
+                        zerolinewidth: 1,
+                        tickfont: { color: tickFontColor, size: 10 },
+                        tickformat: '.3s',
+                        linecolor: axisLineColor
+                    },
                 };
 
                 // Vertical ATM shape (shared across charts)
@@ -360,11 +390,11 @@
                             x: ce_subset.map(d => d.strike_price),
                             y: ce_subset.map(d => d.ce_oi),
                             hovertemplate:
-                                `<b>CE %{x}</b><br>` +
-                                `<span style="color:${BUILDUP_COLORS[type]}">${type}</span><br>` +
-                                `OI: %{y:,.0f}<br>` +
-                                `LTP: ₹%{customdata[0]:.2f}<br>` +
-                                `OI Chg: %{customdata[1]:+,.0f}` +
+                                `<b style="color:${tooltipFontColor}">CE %{x}</b><br>` +
+                                `<span style="color:${BUILDUP_COLORS[type]};font-weight:700">${type}</span><br>` +
+                                `<span style="color:${tickFontColor}">OI: %{y:,.0f}</span><br>` +
+                                `<span style="color:${tickFontColor}">LTP: ₹%{customdata[0]:.2f}</span><br>` +
+                                `<span style="color:${tickFontColor}">OI Chg: %{customdata[1]:+,.0f}</span>` +
                                 `<extra></extra>`,
                             customdata: ce_subset.map(d => [d.ce_ltp, d.ce_oi_chg || 0]),
                             mode: 'markers',
@@ -372,9 +402,9 @@
                             marker: {
                                 size: ce_subset.map(d => scaleSize(d.ce_oi)),
                                 color: BUILDUP_COLORS[type],
-                                opacity: 0.88,
+                                opacity: 1.0,
                                 symbol: 'circle',
-                                line: { color: '#030712', width: 1.5 }
+                                line: { color: markerBorder, width: 1.5 }
                             }
                         });
                     }
@@ -384,11 +414,11 @@
                             x: pe_subset.map(d => d.strike_price),
                             y: pe_subset.map(d => d.pe_oi),
                             hovertemplate:
-                                `<b>PE %{x}</b><br>` +
-                                `<span style="color:${BUILDUP_COLORS[type]}">${type}</span><br>` +
-                                `OI: %{y:,.0f}<br>` +
-                                `LTP: ₹%{customdata[0]:.2f}<br>` +
-                                `OI Chg: %{customdata[1]:+,.0f}` +
+                                `<b style="color:${tooltipFontColor}">PE %{x}</b><br>` +
+                                `<span style="color:${BUILDUP_COLORS[type]};font-weight:700">${type}</span><br>` +
+                                `<span style="color:${tickFontColor}">OI: %{y:,.0f}</span><br>` +
+                                `<span style="color:${tickFontColor}">LTP: ₹%{customdata[0]:.2f}</span><br>` +
+                                `<span style="color:${tickFontColor}">OI Chg: %{customdata[1]:+,.0f}</span>` +
                                 `<extra></extra>`,
                             customdata: pe_subset.map(d => [d.pe_ltp, d.pe_oi_chg || 0]),
                             mode: 'markers',
@@ -396,47 +426,68 @@
                             marker: {
                                 size: pe_subset.map(d => scaleSize(d.pe_oi)),
                                 color: BUILDUP_COLORS[type],
-                                opacity: 0.88,
+                                opacity: 1.0,
                                 symbol: 'diamond',
-                                line: { color: '#030712', width: 1.5 }
+                                line: { color: markerBorder, width: 1.5 }
                             }
                         });
                     }
                 });
 
-                // Top-3 CE + PE OI strikes as floating annotations
+                // Top CE + PE strikes: vertical reference lines (no annotation boxes — hover provides details)
                 const topCE = [...data].sort((a, b) => (b.ce_oi || 0) - (a.ce_oi || 0)).slice(0, 3);
                 const topPE = [...data].sort((a, b) => (b.pe_oi || 0) - (a.pe_oi || 0)).slice(0, 3);
-                const strike1Annotations = [
-                    ...topCE.map(d => ({
-                        x: d.strike_price, y: d.ce_oi,
-                        text: `CE ${d.strike_price.toLocaleString('en-IN')}`,
-                        showarrow: true, arrowhead: 0, arrowcolor: 'rgba(16,185,129,0.4)',
-                        arrowsize: 0.5, ax: 0, ay: -28,
-                        font: { size: 9, color: '#10b981', family: 'Inter' },
-                        bgcolor: 'rgba(16,185,129,0.08)', borderpad: 2,
-                        bordercolor: 'rgba(16,185,129,0.2)', borderwidth: 1
-                    })),
-                    ...topPE.map(d => ({
-                        x: d.strike_price, y: d.pe_oi,
-                        text: `PE ${d.strike_price.toLocaleString('en-IN')}`,
-                        showarrow: true, arrowhead: 0, arrowcolor: 'rgba(239,68,68,0.4)',
-                        arrowsize: 0.5, ax: 0, ay: 28,
-                        font: { size: 9, color: '#f87171', family: 'Inter' },
-                        bgcolor: 'rgba(239,68,68,0.08)', borderpad: 2,
-                        bordercolor: 'rgba(239,68,68,0.2)', borderwidth: 1
-                    })),
-                    ...atmAnnotation
-                ];
+
+                // Vertical shapes for top-3 CE (green dashed) + top-3 PE (red dashed)
+                const ceShapes = topCE.map((d, i) => ({
+                    type: 'line', x0: d.strike_price, x1: d.strike_price,
+                    yref: 'paper', y0: 0, y1: 1,
+                    line: { color: `rgba(16,185,129,${i === 0 ? 0.75 : 0.4})`, width: i === 0 ? 1.5 : 1, dash: 'dash' }
+                }));
+                const peShapes = topPE.map((d, i) => ({
+                    type: 'line', x0: d.strike_price, x1: d.strike_price,
+                    yref: 'paper', y0: 0, y1: 1,
+                    line: { color: `rgba(239,68,68,${i === 0 ? 0.75 : 0.4})`, width: i === 0 ? 1.5 : 1, dash: 'dash' }
+                }));
+
+                // Clean top labels — bold colored text, no background boxes
+                const ceLabels = topCE.map((d, i) => ({
+                    x: d.strike_price, yref: 'paper', y: i === 0 ? 0.99 : 0.89 - i * 0.09,
+                    text: `CE ${d.strike_price.toLocaleString('en-IN')}`,
+                    showarrow: false,
+                    font: { size: 9, color: i === 0 ? '#34d399' : 'rgba(52,211,153,0.8)', family: 'Inter' },
+                    xanchor: 'left', yanchor: 'top', xshift: 4
+                }));
+                const peLabels = topPE.map((d, i) => ({
+                    x: d.strike_price, yref: 'paper', y: i === 0 ? 0.99 : 0.89 - i * 0.09,
+                    text: `PE ${d.strike_price.toLocaleString('en-IN')}`,
+                    showarrow: false,
+                    font: { size: 9, color: i === 0 ? '#f87171' : 'rgba(248,113,113,0.8)', family: 'Inter' },
+                    xanchor: 'right', yanchor: 'top', xshift: -4
+                }));
+
+                const topStrikeShapes = [...ceShapes, ...peShapes];
+                const strike1Annotations = [...ceLabels, ...peLabels, ...atmAnnotation];
 
                 const chart1Layout = {
                     ...BASE_LAYOUT,
                     showlegend: true,
-                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.15, x: 0 },
-                    margin: { t: 20, b: 100, l: 80, r: 40 },
-                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike Price', font: { color: isDark ? '#64748b' : '#64748b', size: 11 } } },
-                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Open Interest', font: { color: isDark ? '#64748b' : '#64748b', size: 11 } } },
-                    shapes: atmShape,
+                    legend: {
+                        font: { color: tickFontColor, size: 10, family: 'Inter' },
+                        orientation: 'h', y: -0.18, x: 0,
+                        bgcolor: 'rgba(0,0,0,0)',
+                        borderwidth: 0
+                    },
+                    margin: { t: 24, b: 110, l: 80, r: 40 },
+                    xaxis: {
+                        ...BASE_LAYOUT.xaxis,
+                        title: { text: 'Strike Price', font: { color: axisLabelColor, size: 11 }, standoff: 12 }
+                    },
+                    yaxis: {
+                        ...BASE_LAYOUT.yaxis,
+                        title: { text: 'Open Interest', font: { color: axisLabelColor, size: 11 }, standoff: 12 }
+                    },
+                    shapes: [...atmShape, ...topStrikeShapes],
                     annotations: strike1Annotations,
                 };
 
@@ -487,13 +538,16 @@
                     ...BASE_LAYOUT,
                     barmode: 'group',
                     showlegend: true,
-                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18 },
-                    margin: { t: 20, b: 90, l: 70, r: 70 },
-                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } } },
-                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Total OI', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } } },
+                    legend: {
+                        font: { color: tickFontColor, size: 10, family: 'Inter' },
+                        orientation: 'h', y: -0.2, bgcolor: 'rgba(0,0,0,0)', borderwidth: 0
+                    },
+                    margin: { t: 24, b: 100, l: 70, r: 70 },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: axisLabelColor, size: 10 } } },
+                    yaxis: { ...BASE_LAYOUT.yaxis, title: { text: 'Total OI', font: { color: axisLabelColor, size: 10 } } },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
-                        tickfont: { color: '#a78bfa', size: 9 }, zeroline: true, zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        tickfont: { color: '#a78bfa', size: 9 }, zeroline: true, zerolinecolor: zerolineColor,
                         title: { text: 'Net OI', font: { color: '#a78bfa', size: 9 } }
                     },
                     height: 400,
@@ -546,12 +600,16 @@
                     ...BASE_LAYOUT,
                     barmode: 'group',
                     showlegend: true,
-                    legend: { font: { color: isDark ? '#94a3b8' : '#475569', size: 10 }, orientation: 'h', y: -0.18 },
-                    margin: { t: 20, b: 90, l: 75, r: 70 },
-                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } } },
+                    legend: {
+                        font: { color: tickFontColor, size: 10, family: 'Inter' },
+                        orientation: 'h', y: -0.2, bgcolor: 'rgba(0,0,0,0)', borderwidth: 0
+                    },
+                    margin: { t: 24, b: 100, l: 75, r: 70 },
+                    xaxis: { ...BASE_LAYOUT.xaxis, title: { text: 'Strike', font: { color: axisLabelColor, size: 10 } } },
                     yaxis: {
-                        ...BASE_LAYOUT.yaxis, title: { text: 'OI Change', font: { color: isDark ? '#64748b' : '#64748b', size: 10 } },
-                        zeroline: true, zerolinecolor: isDark ? '#475569' : '#cbd5e1', zerolinewidth: 1.5
+                        ...BASE_LAYOUT.yaxis,
+                        title: { text: 'OI Change', font: { color: axisLabelColor, size: 10 } },
+                        zeroline: true, zerolinecolor: zerolineColor, zerolinewidth: 1.5
                     },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
@@ -564,7 +622,7 @@
                         ...atmAnnotation,
                         {
                             xref: 'paper', yref: 'paper', x: 0.01, y: 0.5, text: '← Unwind / Build →',
-                            showarrow: false, font: { size: 8, color: isDark ? '#475569' : '#cbd5e1', family: 'Inter' }
+                            showarrow: false, font: { size: 8, color: isDark ? '#475569' : '#94a3b8', family: 'Inter' }
                         }
                     ],
                 };
@@ -718,45 +776,81 @@
                         )}
 
                         {/* Distribution Chart Section */}
-                        <div className="flex flex-col gap-8">
-                            <div className="glass p-8 rounded-[2.5rem] border-border/80 shadow-[0_0_60px_rgba(0,0,0,0.6)]">
-                                <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                                    <div>
-                                        <h3 className="text-2xl font-black text-foreground tracking-tighter uppercase">{symbol} SENTIMENT DISTRIBUTION</h3>
-                                        <p className="text-slate-600 text-xs font-heavy uppercase tracking-widest mt-1">Volumetric Resistance &amp; Support{spot > 0 && <span className="ml-3 text-amber-500/70">&middot; ATM {spot.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>}</p>
-                                    </div>
-                                    <div className="flex gap-6">
+                        <div className="flex flex-col gap-6">
+                            {/* Main Sentiment Chart */}
+                            <div className="glass rounded-2xl border-border/60 shadow-lg overflow-hidden">
+                                {/* Chart Header */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 pt-5 pb-4 gap-3 border-b border-border/40">
+                                    <div className="flex flex-col gap-0.5">
                                         <div className="flex items-center gap-2">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.3)]"></div>
-                                            <span className="text-xs font-black text-muted-foreground tracking-wider">CALLS</span>
+                                            <span className="w-1 h-5 rounded-full bg-emerald-500 inline-block"></span>
+                                            <h3 className="text-base font-black text-foreground tracking-tight uppercase">
+                                                {symbol} Sentiment Distribution
+                                            </h3>
                                         </div>
-                                        <div className="flex items-center gap-2 pr-2">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.3)]" style={{ borderRadius: '0', transform: 'rotate(45deg)' }}></div>
-                                            <span className="text-xs font-black text-muted-foreground tracking-wider">PUTS</span>
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground pl-3">
+                                            Volumetric Resistance &amp; Support
+                                            {spot > 0 && (
+                                                <span className="ml-2 text-amber-500/80">
+                                                    &middot; ATM {spot.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
+                                    {/* Legend */}
+                                    <div className="flex items-center gap-5 pr-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-3 h-3 rounded-full bg-[#10b981] shadow-[0_0_6px_rgba(16,185,129,0.5)]"></div>
+                                            <span className="text-[11px] font-bold text-muted-foreground tracking-wider">CALLS</span>
                                         </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-3 h-3 bg-[#ef4444] shadow-[0_0_6px_rgba(239,68,68,0.5)]" style={{ borderRadius: '2px', transform: 'rotate(45deg)' }}></div>
+                                            <span className="text-[11px] font-bold text-muted-foreground tracking-wider">PUTS</span>
+                                        </div>
+                                        {/* Buildup type legend pills */}
+                                        {Object.entries(BUILDUP_COLORS).map(([t, c]) => (
+                                            <div key={t} className="hidden xl:flex items-center gap-1">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c }}></div>
+                                                <span className="text-[9px] font-bold tracking-wide" style={{ color: c }}>{t.split(' ')[0]}</span>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
 
-                                <div id="plotly-chart" ref={chartRef} className="w-full h-[500px] relative">
-                                    {loading && (
-                                        <div className="absolute inset-0 bg-background/40 backdrop-blur-md z-10 flex items-center justify-center rounded-3xl">
-                                            <div className="flex flex-col items-center gap-4">
-                                                <div className="w-14 h-14 border-[5px] border-emerald-500/10 border-t-emerald-500 rounded-full animate-spin"></div>
-                                                <span className="text-[11px] font-black text-emerald-500 tracking-[0.4em] uppercase animate-pulse">Analyzing Chain</span>
+                                {/* Chart Body */}
+                                <div className="px-4 pb-4 pt-2">
+                                    <div id="plotly-chart" ref={chartRef} className="w-full h-[420px] relative">
+                                        {loading && (
+                                            <div className="absolute inset-0 bg-background/60 backdrop-blur-md z-10 flex items-center justify-center rounded-xl">
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <div className="w-10 h-10 border-[3px] border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+                                                    <span className="text-[10px] font-black text-emerald-500 tracking-[0.35em] uppercase animate-pulse">Analyzing Chain</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <div className="glass p-8 rounded-[2.5rem] border-border/80 shadow-lg">
-                                    <h3 className="text-xl font-black text-foreground tracking-tighter mb-6 uppercase">Total OI by Strike</h3>
-                                    <div ref={oiChartRef} className="w-full h-[400px]"></div>
+                            {/* OI + OI Change Charts */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div className="glass rounded-2xl border-border/60 shadow-lg overflow-hidden">
+                                    <div className="flex items-center gap-2 px-6 pt-5 pb-3 border-b border-border/40">
+                                        <span className="w-1 h-4 rounded-full bg-sky-500 inline-block"></span>
+                                        <h3 className="text-sm font-black text-foreground tracking-tight uppercase">Total OI by Strike</h3>
+                                    </div>
+                                    <div className="px-3 pb-3 pt-1">
+                                        <div ref={oiChartRef} className="w-full h-[380px]"></div>
+                                    </div>
                                 </div>
-                                <div className="glass p-8 rounded-[2.5rem] border-border/80 shadow-lg">
-                                    <h3 className="text-xl font-black text-foreground tracking-tighter mb-6 uppercase">OI Change by Strike</h3>
-                                    <div ref={changeChartRef} className="w-full h-[400px]"></div>
+                                <div className="glass rounded-2xl border-border/60 shadow-lg overflow-hidden">
+                                    <div className="flex items-center gap-2 px-6 pt-5 pb-3 border-b border-border/40">
+                                        <span className="w-1 h-4 rounded-full bg-pink-500 inline-block"></span>
+                                        <h3 className="text-sm font-black text-foreground tracking-tight uppercase">OI Change by Strike</h3>
+                                    </div>
+                                    <div className="px-3 pb-3 pt-1">
+                                        <div ref={changeChartRef} className="w-full h-[380px]"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

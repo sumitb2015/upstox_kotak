@@ -313,13 +313,12 @@
         };
 
         const StockCard = ({ symbol, data }) => {
-            const isGainer = data.chg > 0;
-            const isLoser = data.chg < 0;
+            const absChg = data.ltp && data.prev ? (data.ltp - data.prev) : 0;
+            const chgp = data.chg !== undefined ? data.chg : 0;
+            const isGainer = absChg > 0;
+            const isLoser = absChg < 0;
             const themeClass = isGainer ? 'border-emerald-500/30' : isLoser ? 'border-rose-500/30' : 'border-border/30';
             const glowClass = isGainer ? 'shadow-[0_0_15px_-5px_rgba(16,185,129,0.3)]' : isLoser ? 'shadow-[0_0_15px_-5px_rgba(239,68,68,0.3)]' : '';
-
-            // Calculate chgp if missing
-            const chgp = data.chgp !== undefined ? data.chgp : (data.chg && data.prev ? (data.chg / data.prev * 100) : 0);
 
             return (
                 <div className={`glass-card p-2 group stock-card-hover ${themeClass} ${glowClass} relative overflow-hidden flex flex-col justify-between h-[85px]`}>
@@ -335,8 +334,8 @@
                             {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 1 }).format(data.ltp)}
                         </div>
                         <div className={`text-[10px] font-bold flex items-center gap-1 ${isGainer ? 'text-emerald-500' : isLoser ? 'text-rose-500' : 'text-muted-foreground'}`}>
-                            <span>{isGainer ? '+' : ''}{data.chg.toFixed(2)}</span>
-                            <span className="opacity-70">({chgp.toFixed(2)}%)</span>
+                            <span>{isGainer ? '+' : ''}{absChg.toFixed(2)}</span>
+                            <span className="opacity-70">({chgp.toFixed(1)}%)</span>
                         </div>
                     </div>
                 </div>
