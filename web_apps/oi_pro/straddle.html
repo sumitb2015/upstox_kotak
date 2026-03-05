@@ -476,6 +476,73 @@
                 Plotly.react(chartRef.current, [bandBot, bandTop, premiumArea, vwapTrace, ceTrace, peTrace], layout, { responsive: true, displayModeBar: false });
             };
 
+            // --- Panel Calculations ---
+            const cePrice = Number(kpis.ce_ltp) || 0;
+            const pePrice = Number(kpis.pe_ltp) || 0;
+            const totalLegPrice = cePrice + pePrice;
+            const cePct = totalLegPrice > 0 ? ((cePrice / totalLegPrice) * 100).toFixed(1) : 0;
+            const pePct = totalLegPrice > 0 ? ((pePrice / totalLegPrice) * 100).toFixed(1) : 0;
+            const isPutHeavy = pePrice > cePrice;
+            const skewTitle = isPutHeavy ? "PUT HEAVY" : "CALL HEAVY";
+            const skewColor = isPutHeavy ? "text-red-400" : "text-emerald-400";
+
+            const greeks = metadata.greeks || {};
+            const ceDelta = greeks.ce_delta || 0;
+            const peDelta = greeks.pe_delta || 0;
+            const netDelta = ceDelta + peDelta;
+            let deltaSkewFlag = "NEUTRAL";
+            let deltaSkewColor = "text-muted-foreground";
+            if (netDelta > 0.05) { deltaSkewFlag = "BULLISH SKEW"; deltaSkewColor = "text-emerald-400"; }
+            else if (netDelta < -0.05) { deltaSkewFlag = "BEARISH SKEW"; deltaSkewColor = "text-red-400"; }
+
+            const ceGamma = greeks.ce_gamma || 0;
+            const peGamma = greeks.pe_gamma || 0;
+            const avgGamma = (ceGamma + peGamma) / 2;
+
+            const ceTheta = greeks.ce_theta || 0;
+            const peTheta = greeks.pe_theta || 0;
+            const netTheta = -1 * (ceTheta + peTheta);
+
+            const ceVega = greeks.ce_vega || 0;
+            const peVega = greeks.pe_vega || 0;
+            const netVega = (ceVega + peVega);
+
+            const ceIv = greeks.ce_iv || 0;
+            const peIv = greeks.pe_iv || 0;
+            const avgIv = (ceIv + peIv) / 2;
+
+            const todayDate = new Date();
+            const expiryDate = expiry ? new Date(expiry) : null;
+            let daysToExpiry = "---";
+            if (expiryDate) {
+                expiryDate.setHours(23, 59, 59, 999);
+                const diffTime = expiryDate - todayDate;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                daysToExpiry = diffDays < 0 ? 0 : diffDays;
+            }
+
+            const marketOpen = new Date();
+            marketOpen.setHours(9, 15, 0, 0);
+            const marketClose = new Date();
+            marketClose.setHours(15, 30, 0, 0);
+            const currentSessionTime = Math.max(marketOpen.getTime(), Math.min(todayDate.getTime(), marketClose.getTime()));
+            const sessionDuration = marketClose.getTime() - marketOpen.getTime();
+            const sessionElapsed = currentSessionTime - marketOpen.getTime();
+            const sessionProgressPct = Math.max(0, Math.min(100, (sessionElapsed / sessionDuration) * 100));
+
+            const formatTimeShort = (d) => {
+                const hours = d.getHours().toString().padStart(2, '0');
+                const mins = d.getMinutes().toString().padStart(2, '0');
+                return `${hours}:${mins}`;
+            };
+            const currentTimeStr = formatTimeShort(new Date(currentSessionTime));
+
+            const currentStraddle = Number(kpis.current) || 0;
+            const currentVwap = Number(kpis.vwap) || 0;
+            const gap = currentStraddle - currentVwap;
+            const gapAbs = Math.abs(gap).toFixed(1);
+            const sellerIsProfitable = gap <= 0;
+
             return (
                 <div className="min-h-screen bg-transparent text-muted-foreground antialiased flex overflow-hidden">
 
@@ -587,6 +654,152 @@
                                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-emerald-500"></div>
                                     </div>
                                 )}
+                            </div>
+                        </div>
+
+                        {/* Options Skew, Session Info & Greeks Panels */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 mb-12">
+                            {/* Options Skew */}
+                            <div className="glass p-6 rounded-[1.5rem] border-border/40 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-emerald-500/10 transition-colors"></div>
+                                <h4 className="text-[9px] font-black text-muted-foreground/60 tracking-[0.2em] uppercase mb-6 z-10 flex justify-between items-center">
+                                    <span>Options Skew</span>
+                                    <span className="opacity-0 group-hover:opacity-100 transition-opacity">LIVE</span>
+                                </h4>
+
+                                <div className="flex flex-col items-center mb-10">
+                                    <h2 className={`text-4xl leading-none font-black tracking-tighter ${skewColor} uppercase transition-all duration-300 transform group-hover:scale-105`}>
+                                        {totalLegPrice > 0 ? skewTitle : "---"}
+                                    </h2>
+                                    <div className="h-1 w-12 bg-border/40 rounded-full mt-3"></div>
+                                </div>
+
+                                <div className="flex flex-col w-full px-1">
+                                    <div className="flex justify-between items-end w-full mb-4">
+                                        <div className="flex flex-col">
+                                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 opacity-60">CE LEG</span>
+                                            <div className="text-xl font-black text-foreground font-mono">₹{cePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                        </div>
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 opacity-60">PE LEG</span>
+                                            <div className="text-xl font-black text-foreground font-mono">₹{pePrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="relative w-full h-2.5 bg-card/40 rounded-full flex overflow-hidden border border-border/30 shadow-inner">
+                                        <div className="h-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all duration-700 ease-out" style={{ width: `${cePct}%` }}></div>
+                                        <div className="h-full bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-all duration-700 ease-out" style={{ width: `${pePct}%` }}></div>
+                                    </div>
+
+                                    <div className="flex justify-between w-full mt-3 px-1">
+                                        <div className="flex items-center gap-1.5 leading-none">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                            <span className="text-[10px] font-black text-foreground font-mono">{cePct}%</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 leading-none">
+                                            <span className="text-[10px] font-black text-foreground font-mono">{pePct}%</span>
+                                            <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Session Info */}
+                            <div className="glass p-6 rounded-[1.5rem] border-border/40 flex flex-col h-full relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                                <h4 className="text-[9px] font-black text-muted-foreground/60 tracking-[0.2em] uppercase mb-6 z-10">Time Mechanics</h4>
+
+                                <div className="flex-grow flex flex-col">
+                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1 opacity-60 block">Days to Expiry</span>
+                                            <div className="flex items-baseline gap-2">
+                                                <span className="text-5xl font-black text-indigo-400 tracking-tighter">{daysToExpiry}</span>
+                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">DAYS</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col items-end pr-1 pt-1">
+                                            <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-2 opacity-60">Straddle vs VWAP</div>
+                                            <div className={`text-xl font-black font-mono ${sellerIsProfitable ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {sellerIsProfitable ? '▼' : '▲'} ₹{totalLegPrice > 0 && currentVwap > 0 ? gapAbs : '---'}
+                                            </div>
+                                            <span className="text-[8px] font-bold text-muted-foreground opacity-50 mt-1 uppercase">GAP MAGNITUDE</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-auto pt-6 border-t border-border/30">
+                                        <div className="flex justify-between items-center w-full mb-3">
+                                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest opacity-60">Intraday Session</span>
+                                            <span className="text-[10px] font-black text-foreground font-mono">{currentTimeStr} <span className="text-muted-foreground/40 font-bold">/ 15:30</span></span>
+                                        </div>
+                                        <div className="relative w-full h-1.5 bg-card/40 rounded-full overflow-hidden border border-border/20">
+                                            <div className="h-full bg-gradient-to-r from-indigo-500 to-indigo-300 transition-all duration-1000 ease-in-out" style={{ width: `${sessionProgressPct}%` }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Greeks Monitor */}
+                            <div className="glass p-6 rounded-[1.5rem] border-border/40 flex flex-col h-full relative overflow-hidden group">
+                                <div className="absolute bottom-0 right-0 w-40 h-40 bg-blue-500/5 rounded-full blur-[60px] -mr-16 -mb-16"></div>
+                                <h4 className="text-[9px] font-black text-muted-foreground/60 tracking-[0.2em] uppercase mb-6 z-10 flex justify-between items-center">
+                                    <span>Greeks Engine</span>
+                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full border ${deltaSkewFlag === 'NEUTRAL' ? 'bg-secondary/40 text-muted-foreground/60 border-border/40' : deltaSkewFlag === 'BULLISH SKEW' ? 'bg-emerald-500/10 text-emerald-400/80 border-emerald-500/10' : 'bg-red-500/10 text-red-400/80 border-red-500/10'}`}>
+                                        {deltaSkewFlag}
+                                    </span>
+                                </h4>
+
+                                <div className="grid grid-cols-2 flex-grow z-10">
+                                    {/* Delta */}
+                                    <div className="flex flex-col p-3 pr-4 border-r border-b border-border/30 group/g">
+                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-60 block">Delta (Δ)</span>
+                                        <div className="flex items-end gap-1 mb-2">
+                                            <span className={`text-2xl font-black font-mono leading-none tracking-tighter ${netDelta === 0 ? 'text-muted-foreground' : (netDelta > 0 ? 'text-emerald-400' : 'text-red-400')}`}>
+                                                {netDelta > 0 ? '+' : ''}{netDelta.toFixed(3)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between w-full text-[8px] font-bold text-muted-foreground/50 tracking-tighter uppercase mt-auto">
+                                            <span>C: {ceDelta.toFixed(2)}</span>
+                                            <span>P: {peDelta.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Gamma */}
+                                    <div className="flex flex-col p-3 pl-5 border-b border-border/30">
+                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-60 block">Gamma (Γ)</span>
+                                        <div className="flex items-baseline gap-1 mb-2">
+                                            <span className="text-2xl font-black text-amber-500 font-mono leading-none tracking-tighter">{avgGamma.toFixed(4)}</span>
+                                        </div>
+                                        <div className="text-[8px] font-bold text-muted-foreground/50 tracking-tighter uppercase mt-auto">
+                                            Δ Change Rate
+                                        </div>
+                                    </div>
+
+                                    {/* Theta */}
+                                    <div className="flex flex-col p-3 pr-4 border-r border-border/30 pt-4">
+                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-60 block">Theta (Θ)</span>
+                                        <div className="flex items-baseline gap-1 mb-2">
+                                            <span className={`text-2xl font-black font-mono leading-none tracking-tighter ${netTheta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {netTheta > 0 ? '+' : ''}₹{netTheta.toFixed(1)}
+                                            </span>
+                                        </div>
+                                        <div className="text-[8px] font-bold text-muted-foreground/50 tracking-tighter uppercase mt-auto">
+                                            Time Decay / Day
+                                        </div>
+                                    </div>
+
+                                    {/* Vega & IV */}
+                                    <div className="flex flex-col p-3 pl-5 pt-4">
+                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 opacity-60 block">Vega (ν) & IV</span>
+                                        <div className="flex items-baseline gap-0.5 mb-2">
+                                            <span className="text-2xl font-black text-blue-400 font-mono leading-none tracking-tighter">₹{netVega.toFixed(1)}</span>
+                                            <span className="text-[8px] font-black text-muted-foreground/40 ml-1">/ 1%</span>
+                                        </div>
+                                        <div className="text-[8px] font-bold text-muted-foreground/50 tracking-tighter uppercase mt-auto">
+                                            IV: {avgIv.toFixed(1)}%
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </main>

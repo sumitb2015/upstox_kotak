@@ -1094,17 +1094,15 @@ class ConnectionManager:
                 }
             }
             
-            # Try to calculate change if 'ohlc' or 'close' is present
-            close = message.get('close') or message.get('ohlc', {}).get('close')
+            # Align calculation with Indices Dashboard logic:
+            # Prioritize 'cp' (Yesterday Close) from feed, fallback to pre-fetched close
+            close = message.get('cp') or float(redis_wrapper.hget_json("PREV_CLOSES", symbol) or 0.0)
             
-            # Fallback to pre-fetched close if live feed misses it
-            if symbol in ['NIFTY', 'BANKNIFTY']:
-                close = float(redis_wrapper.hget_json("PREV_CLOSES", symbol) or 0.0)
-                if close > 0:
-                 ltp = dashboard_msg['prices'][symbol]['ltp']
-                 if ltp and close > 0:
-                     dashboard_msg['prices'][symbol]['chg'] = round(((ltp - close) / close) * 100, 2)
-            
+            if close > 0:
+                ltp = dashboard_msg['prices'][symbol]['ltp']
+                if ltp:
+                    dashboard_msg['prices'][symbol]['chg'] = round(((ltp - close) / close) * 100, 2)
+                
             to_remove_mw = []
             for connection in self.market_watch_sockets:
                 try:
@@ -1459,11 +1457,17 @@ async def websocket_cumulative_prices(websocket: WebSocket, token: str = Query(N
         await streamer_registry.release(current_user.id)
         logger.info("[CORE] [WS] [CumulativePrices] Disconnected")
 
-async def prefetch_prev_closes(token: str):
+async def prefetch_prev_closes(token: str = None):
     """
     Pre-fetches previous day closes for all indices and caches them in Redis.
-    Called lazily when the first user WebSocket connects.
+    Can be called at startup (token=None) or lazily (token provided).
     """
+    if not token:
+        token = await get_access_token()
+        if not token:
+            logger.warning("[UPSTOX] [WS] No access token available for startup prefetch. Skipping.")
+            return
+
     logger.info("[UPSTOX] [WS] Pre-fetching previous closes for indices...")
     for sym, key in SYMBOL_MAP.items():
         try:
@@ -1744,6 +1748,8 @@ async def startup_event():
     asyncio.create_task(unified_background_poller())
     # Kick off prefetch option master lazily once a token becomes available
     asyncio.create_task(prefetch_option_master())
+    # Pre-fetch previous closes for indices immediately
+    asyncio.create_task(prefetch_prev_closes())
     logger.info("[CORE] Server standby mode active — streamers will start per-user on first WS connect.")
 
 @app.on_event("shutdown")
@@ -1778,7 +1784,8 @@ async def websocket_market_watch(websocket: WebSocket, token: str = Query(None))
             data = user_streamer.get_latest_data(key)
             if data:
                 ltp = data.get('ltp') or data.get('last_price')
-                close = data.get('close') or data.get('ohlc_day', {}).get('close') or data.get('ohlc', {}).get('close')
+                # Prioritize 'cp' for consistency with Dashboard logic
+                close = data.get('cp') or data.get('close') or data.get('ohlc_day', {}).get('close') or data.get('ohlc', {}).get('close')
                 high = data.get('high') or data.get('ohlc_day', {}).get('high') or data.get('ohlc', {}).get('high')
                 low = data.get('low') or data.get('ohlc_day', {}).get('low') or data.get('ohlc', {}).get('low')
                 chg = 0.0
@@ -3446,6 +3453,26 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
         ce_key = target_row['ce_key']
         pe_key = target_row['pe_key']
         
+        def _to_float(val):
+            try:
+                if pd.isna(val): return 0.0
+                return float(val)
+            except:
+                return 0.0
+
+        greeks_metadata = {
+            "ce_delta": _to_float(target_row.get('ce_delta', 0)),
+            "pe_delta": _to_float(target_row.get('pe_delta', 0)),
+            "ce_gamma": _to_float(target_row.get('ce_gamma', 0)),
+            "pe_gamma": _to_float(target_row.get('pe_gamma', 0)),
+            "ce_theta": _to_float(target_row.get('ce_theta', 0)),
+            "pe_theta": _to_float(target_row.get('pe_theta', 0)),
+            "ce_vega": _to_float(target_row.get('ce_vega', 0)),
+            "pe_vega": _to_float(target_row.get('pe_vega', 0)),
+            "ce_iv": _to_float(target_row.get('ce_iv', 0)),
+            "pe_iv": _to_float(target_row.get('pe_iv', 0))
+        }
+        
         # Get list of all strikes for the dropdown
         all_strikes = sorted(df['strike_price'].unique().tolist())
         
@@ -3467,6 +3494,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                     "index_key": key,
                     "all_strikes": all_strikes,
                     "spot": spot,
+                    "greeks": greeks_metadata,
                     "kpis": {}
                 },
                 "data": []
@@ -3491,6 +3519,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                     "index_key": key,
                     "all_strikes": all_strikes,
                     "spot": spot,
+                    "greeks": greeks_metadata,
                     "kpis": {}
                 },
                 "data": []
@@ -3534,6 +3563,7 @@ async def get_straddle_data(symbol: str = "NIFTY", expiry: str = None, strike: f
                 "index_key": key,
                 "all_strikes": all_strikes,
                 "spot": spot,
+                "greeks": greeks_metadata,
                 "kpis": {
                     "current": round(float(current_val), 2),
                     "high": round(float(day_high), 2),

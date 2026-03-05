@@ -63,6 +63,12 @@ This skill outlines the standard architecture and best practices for building fi
     -   **Standard**: Instead of a static 9:15-15:30 X-axis, use a dynamic range that follows the current time.
     -   **Rule**: End the chart at `current_time + 10 minutes`. This provides a focused view of the morning's action without a long, empty tail to the right.
     -   **Implementation**: Calculate `xEnd = new Date(new Date().getTime() + 10 * 60 * 1000)` on every update.
+8.  **Professional Chart Smoothing & Scaling**:
+    -   **Line Quality**: Use `line: { shape: 'spline', smoothing: 0.5, width: 2 }` for all premium time-series charts. This creates a high-end, organic look.
+    -   **Tight Y-Axis Scaling**: 
+        -   **Rule**: Never let charts look "flat". 
+        -   **Technique**: Calculate data `min` and `max`, then apply a ±15% padding: `range: [min * 0.85, max * 1.15]`.
+        -   **Fixed Range**: Set `fixedrange: true` on both axes to prevent accidental user scrolling/panning that breaks the calibrated view.
 7.  **Grouped Table Layouts (Static Data)**:
     -   For non-time-series data (like Holidays or Corporate Actions), avoid broad grids.
     -   **Pattern**: Use a professional table with monthly/category grouping, sticky headers, and status-based row emphasis (e.g., lower opacity for past events).

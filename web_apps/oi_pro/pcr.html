@@ -709,7 +709,7 @@
                                         </h2>
                                         {marketPrices[symbol] && (
                                             <span className={`text-sm font-bold ${marketPrices[symbol].chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {marketPrices[symbol].chg > 0 ? '+' : ''}{marketPrices[symbol].chg.toFixed(0)}%
+                                                {marketPrices[symbol].chg > 0 ? '+' : ''}{marketPrices[symbol].chg.toFixed(1)}%
                                             </span>
                                         )}
                                     </div>
@@ -805,8 +805,8 @@
                                                 <div style={{ width: `${(item.ce_oi / (item.pe_oi + item.ce_oi)) * 100}%` }} className="bg-rose-500"></div>
                                             </div>
                                             <div className="w-full flex justify-between text-[9px] text-muted-foreground mt-0.5">
-                                                <span className="text-emerald-600 font-bold">{((item.pe_oi / (item.pe_oi + item.ce_oi)) * 100).toFixed(0)}% PE</span>
-                                                <span className="text-rose-600 font-bold">{((item.ce_oi / (item.pe_oi + item.ce_oi)) * 100).toFixed(0)}% CE</span>
+                                                <span className="text-emerald-600 font-bold">{((item.pe_oi / (item.pe_oi + item.ce_oi)) * 100).toFixed(1)}% PE</span>
+                                                <span className="text-rose-600 font-bold">{((item.ce_oi / (item.pe_oi + item.ce_oi)) * 100).toFixed(1)}% CE</span>
                                             </div>
                                         </div>
                                     </div>
