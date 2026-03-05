@@ -347,12 +347,11 @@
                 const times = data.map(d => d.timestamp);
                 const premiums = data.map(d => d.combined_premium);
 
-                // Enforce Market Hours (09:15 to 15:30)
+                // Dynamic X-axis: starts at 9:15, ends at currentTime + 10 min
                 const firstTime = times.length > 0 ? new Date(times[0]) : new Date();
                 const marketOpen = new Date(firstTime);
                 marketOpen.setHours(9, 15, 0, 0);
-                const marketClose = new Date(firstTime);
-                marketClose.setHours(15, 30, 0, 0);
+                const xEnd = new Date(new Date().getTime() + 10 * 60 * 1000);
                 const vwap = data.map(d => d.vwap);
                 const ceLeg = data.map(d => d.ce_price || null);
                 const peLeg = data.map(d => d.pe_price || null);
@@ -361,13 +360,28 @@
                 const dayHigh = Math.max(...premiums);
                 const dayLow = Math.min(...premiums);
 
-                // 1. Filled area under premium
+                // Compute tight Y-ranges with padding
+                const premMin = Math.min(...premiums);
+                const premMax = Math.max(...premiums);
+                const premPad = (premMax - premMin) * 0.15 || premMin * 0.01;
+                const y1Range = [premMin - premPad, premMax + premPad];
+
+                const legPrices = [...ceLeg, ...peLeg].filter(v => v !== null);
+                let y2Range = undefined;
+                if (legPrices.length > 0) {
+                    const legMin = Math.min(...legPrices);
+                    const legMax = Math.max(...legPrices);
+                    const legPad = (legMax - legMin) * 0.15 || legMin * 0.01;
+                    y2Range = [legMin - legPad, legMax + legPad];
+                }
+
+                // 1. Main premium line
                 const premiumArea = {
                     x: times, y: premiums,
                     name: 'Combined Premium',
                     type: 'scatter', mode: 'lines',
                     fill: 'none',
-                    line: { color: '#fbbf24', width: 2.5 },
+                    line: { color: '#fbbf24', width: 2.5, shape: 'spline', smoothing: 0.5 },
                     hovertemplate: '<b>%{x}</b><br>Premium: ₹%{y:.2f}<extra></extra>',
                 };
 
@@ -376,7 +390,7 @@
                     x: times, y: vwap,
                     name: 'VWAP',
                     type: 'scatter', mode: 'lines',
-                    line: { color: '#ef4444', width: 1.5, dash: 'dot' },
+                    line: { color: '#ef4444', width: 1.5, dash: 'dot', shape: 'spline', smoothing: 0.5 },
                     hovertemplate: '<b>%{x}</b><br>VWAP: ₹%{y:.2f}<extra></extra>',
                 };
 
@@ -386,7 +400,7 @@
                     name: 'CE Leg',
                     type: 'scatter', mode: 'lines',
                     yaxis: 'y2',
-                    line: { color: '#10b981', width: 1.5, dash: 'dot' },
+                    line: { color: '#10b981', width: 1.5, dash: 'dot', shape: 'spline', smoothing: 0.5 },
                     hovertemplate: '<b>%{x}</b><br>CE: ₹%{y:.2f}<extra></extra>',
                 };
 
@@ -395,7 +409,7 @@
                     name: 'PE Leg',
                     type: 'scatter', mode: 'lines',
                     yaxis: 'y2',
-                    line: { color: '#a78bfa', width: 1.5, dash: 'dot' },
+                    line: { color: '#a78bfa', width: 1.5, dash: 'dot', shape: 'spline', smoothing: 0.5 },
                     hovertemplate: '<b>%{x}</b><br>PE: ₹%{y:.2f}<extra></extra>',
                 };
 
@@ -420,9 +434,9 @@
                     font: { family: 'Inter', color: isDark ? '#64748b' : '#64748b' },
                     xaxis: {
                         type: 'date',
-                        range: [marketOpen, marketClose],
+                        range: [marketOpen, xEnd],
                         tickformat: '%I:%M %p',
-                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : '#0f172a',
                         tickfont: { color: isDark ? '#94a3b8' : '#475569', size: 10 },
                         showspikes: true,
                         spikemode: 'across',
@@ -431,16 +445,18 @@
                         spikethickness: 1
                     },
                     yaxis: {
-                        title: { text: 'Total Premium (₹)', font: { color: isDark ? '#94a3b8' : '#475569', size: 10 } },
-                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : isDark ? '#e2e8f0' : '#0f172a',
+                        title: { text: 'Total Premium (₹)', font: { color: '#fbbf24', size: 10 } },
+                        range: y1Range,
+                        gridcolor: isDark ? '#1e293b' : '#f1f5f9', zerolinecolor: isDark ? '#334155' : '#0f172a',
                         tickfont: { color: isDark ? '#94a3b8' : '#475569' },
-                        autorange: true, rangemode: 'normal'
+                        fixedrange: true, zeroline: false
                     },
                     yaxis2: {
                         overlaying: 'y', side: 'right', gridcolor: 'rgba(0,0,0,0)',
+                        range: y2Range,
                         tickfont: { color: isDark ? '#64748b' : '#64748b', size: 9 },
                         title: { text: 'Leg Price (₹)', font: { color: isDark ? '#64748b' : '#64748b', size: 9 } },
-                        autorange: true
+                        fixedrange: true, zeroline: false
                     },
                     hovermode: 'x unified',
                     hoverdistance: 1,

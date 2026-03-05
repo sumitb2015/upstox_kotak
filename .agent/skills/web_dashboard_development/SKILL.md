@@ -59,6 +59,14 @@ This skill outlines the standard architecture and best practices for building fi
     -   **ATM High-Contrast (Light Mode)**: For the ATM strike, prioritize readability by using high-contrast text (`text-amber-900` / bold) and distinct cell backgrounds (e.g., `bg-amber-500/20`) to prevent washing out in light backgrounds. 
     -   **Loading States**: Always implement a "Loading..." spinner or shimmer effect while waiting for initial API or WebSocket payloads to prevent layout jump.
     -   **Sentiment Badges**: Implement explicit visual badges (Bullish/Bearish/Neutral) dynamically driven by underlying data differences.
+6.  **Dynamic X-Axis Focus (Intraday)**:
+    -   **Standard**: Instead of a static 9:15-15:30 X-axis, use a dynamic range that follows the current time.
+    -   **Rule**: End the chart at `current_time + 10 minutes`. This provides a focused view of the morning's action without a long, empty tail to the right.
+    -   **Implementation**: Calculate `xEnd = new Date(new Date().getTime() + 10 * 60 * 1000)` on every update.
+7.  **Grouped Table Layouts (Static Data)**:
+    -   For non-time-series data (like Holidays or Corporate Actions), avoid broad grids.
+    -   **Pattern**: Use a professional table with monthly/category grouping, sticky headers, and status-based row emphasis (e.g., lower opacity for past events).
+    -   **KPI Strips**: Always include a KPI strip at the top (e.g., Total Holidays, Next Holiday) for quick info at a glance.
 
 ### B. WebSocket Optimization (Backend & Frontend)
 1.  **Backend Async Loop (The 1-Second Broadcaster)**:

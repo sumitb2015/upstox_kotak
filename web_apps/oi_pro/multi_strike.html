@@ -287,13 +287,12 @@
 
             // 4. Render Charts
             useEffect(() => {
-                // Enforce Market Hours (09:15 to 15:30)
+                // Dynamic X-axis: 9:15 → current time + 10 min
                 const times = priceData.length > 0 ? priceData.map(d => d.timestamp) : (oiData.length > 0 ? oiData.map(d => d.timestamp) : []);
                 const firstTime = times.length > 0 ? new Date(times[0]) : new Date();
                 const marketOpen = new Date(firstTime);
                 marketOpen.setHours(9, 15, 0, 0);
-                const marketClose = new Date(firstTime);
-                marketClose.setHours(15, 30, 0, 0);
+                const xEnd = new Date(new Date().getTime() + 10 * 60 * 1000);
 
                 // Price Chart
                 if (priceData.length > 0 && priceMetadata.columns) {
@@ -312,20 +311,30 @@
                                     name: `${strike} ${type}`,
                                     type: 'scatter',
                                     mode: 'lines',
-                                    line: { color, width: type === 'CE' ? 2.5 : 2, dash: type === 'PE' ? 'dot' : 'solid' },
+                                    line: { color, width: type === 'CE' ? 2.5 : 1.8, dash: type === 'PE' ? 'dot' : 'solid', shape: 'spline', smoothing: 0.5 },
                                     hovertemplate: `<b>${strike} ${type}</b><br>Price: ₹%{y:.2f}<extra></extra>`
                                 });
                             }
                         });
                     });
 
+                    // Compute tight Y-range for price chart
+                    const allPriceVals = traces.flatMap(t => t.y).filter(v => v > 0);
+                    let priceYRange = undefined;
+                    if (allPriceVals.length > 0) {
+                        const pMin = Math.min(...allPriceVals);
+                        const pMax = Math.max(...allPriceVals);
+                        const pad = (pMax - pMin) * 0.15 || pMin * 0.01;
+                        priceYRange = [pMin - pad, pMax + pad];
+                    }
+
                     Plotly.react('price-chart', traces, {
                         paper_bgcolor: 'rgba(0,0,0,0)',
                         plot_bgcolor: 'rgba(0,0,0,0)',
                         font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
                         margin: { t: 20, r: 30, l: 80, b: 40 },
-                        xaxis: { type: 'date', range: [marketOpen, marketClose], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, showticklabels: false },
-                        yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Premium (₹)', font: { size: 12 } } },
+                        xaxis: { type: 'date', range: [marketOpen, xEnd], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, showticklabels: false },
+                        yaxis: { range: priceYRange, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, fixedrange: true, title: { text: 'Premium (₹)', font: { size: 12 } } },
                         hovermode: 'x unified',
                         showlegend: true,
                         legend: { orientation: 'h', y: 1.1, x: 0.5, xanchor: 'center', font: { size: 10 } }
@@ -349,20 +358,30 @@
                                     name: `${strike} ${type}`,
                                     type: 'scatter',
                                     mode: 'lines',
-                                    line: { color, width: type === 'CE' ? 2.5 : 2, dash: type === 'PE' ? 'dot' : 'solid' },
+                                    line: { color, width: type === 'CE' ? 2.5 : 1.8, dash: type === 'PE' ? 'dot' : 'solid', shape: 'spline', smoothing: 0.5 },
                                     hovertemplate: `<b>${strike} ${type}</b><br>OI: %{y:,.0f}<extra></extra>`
                                 });
                             }
                         });
                     });
 
+                    // Compute tight Y-range for OI chart
+                    const allOiVals = traces.flatMap(t => t.y).filter(v => v > 0);
+                    let oiYRange = undefined;
+                    if (allOiVals.length > 0) {
+                        const oMin = Math.min(...allOiVals);
+                        const oMax = Math.max(...allOiVals);
+                        const pad = (oMax - oMin) * 0.15 || oMin * 0.01;
+                        oiYRange = [oMin - pad, oMax + pad];
+                    }
+
                     Plotly.react('oi-chart', traces, {
                         paper_bgcolor: 'rgba(0,0,0,0)',
                         plot_bgcolor: 'rgba(0,0,0,0)',
                         font: { family: 'Inter', color: isDark ? '#94a3b8' : '#475569' },
                         margin: { t: 20, r: 30, l: 80, b: 60 },
-                        xaxis: { type: 'date', range: [marketOpen, marketClose], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Time', font: { size: 11 } } },
-                        yaxis: { gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Open Interest', font: { size: 12 } }, tickformat: ',.0f' },
+                        xaxis: { type: 'date', range: [marketOpen, xEnd], tickformat: '%I:%M %p', gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, title: { text: 'Time', font: { size: 11 } } },
+                        yaxis: { range: oiYRange, gridcolor: isDark ? '#1e293b' : '#f1f5f9', zeroline: false, fixedrange: true, title: { text: 'Open Interest', font: { size: 12 } }, tickformat: ',.0f' },
                         hovermode: 'x unified',
                         showlegend: false
                     }, { responsive: true, displayModeBar: false });

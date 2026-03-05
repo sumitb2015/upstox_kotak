@@ -1908,6 +1908,65 @@ async def get_market_watch(request: Request):
     except Exception as e:
         return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
 
+@app.get("/market-calendar", response_class=HTMLResponse)
+async def get_market_calendar(request: Request):
+    """Serves the Unified HTML for the Market Calendar Dashboard"""
+    try:
+        html_path = Path(__file__).parent / "market_calendar.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading dashboard: {e}", status_code=500)
+
+@app.get("/api/market-calendar")
+async def get_market_calendar_api(current_user: User = Depends(get_current_user)):
+    """REST endpoint for fetching Upstox market holidays."""
+    try:
+        upstox_token = await get_access_token(current_user)
+        if not upstox_token:
+            return {"status": "error", "message": "No active broker connection"}
+            
+        from lib.api.market_data import get_market_holidays
+        from datetime import datetime
+        holidays_data = await run_in_threadpool(get_market_holidays, upstox_token)
+        
+        formatted_holidays = []
+        if holidays_data:
+            for h in holidays_data:
+                if isinstance(h, dict):
+                    h_date = h.get('date', h.get('_date'))
+                    desc = h.get('description', h.get('_description', 'Unknown'))
+                else:
+                    h_date = getattr(h, 'date', getattr(h, '_date', None))
+                    desc = getattr(h, 'description', getattr(h, '_description', 'Unknown'))
+                    
+                date_str = ""
+                day_str = ""
+                if h_date:
+                    if isinstance(h_date, datetime):
+                        date_str = h_date.strftime("%Y-%m-%d")
+                        day_str = h_date.strftime("%A")
+                    else:
+                        date_str = str(h_date)
+                        try:
+                            # Assume ISO format or similar, extract just YYYY-MM-DD
+                            dt_part = date_str.split("T")[0] if "T" in date_str else date_str.split(" ")[0]
+                            dt = datetime.fromisoformat(dt_part)
+                            date_str = dt.strftime("%Y-%m-%d")
+                            day_str = dt.strftime("%A")
+                        except Exception:
+                            day_str = "Unknown"
+                            
+                formatted_holidays.append({
+                    "date": date_str,
+                    "day": day_str,
+                    "description": str(desc)
+                })
+        return {"status": "success", "data": formatted_holidays}
+    except Exception as e:
+        import traceback
+        logger.error(f"[UPSTOX] [API] Error fetching market calendar: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/future-intraday", response_class=HTMLResponse)
 async def get_future_intraday(request: Request):
     """Serves the Unified HTML for the Future Intraday Buildup"""

@@ -218,13 +218,13 @@
                                     }, [0, 1]);
                                 }
 
-                                // Keep market scope (09:15 to 15:30 fixed)
-                                const marketOpen = new Date(times[0]);
-                                marketOpen.setHours(9, 15, 0, 0);
-                                const marketClose = new Date(times[0]);
-                                marketClose.setHours(15, 30, 0, 0);
+                                // Dynamic x-axis: 9:15 to currentTime + 10min
+                                const nowTs = new Date();
+                                const xEndTs = new Date(nowTs.getTime() + 10 * 60 * 1000);
+                                const xStartTs = new Date(times[0]);
+                                xStartTs.setHours(9, 15, 0, 0);
                                 Plotly.relayout('plotly-chart', {
-                                    'xaxis.range': [marketOpen, marketClose]
+                                    'xaxis.range': [xStartTs, xEndTs]
                                 });
 
                                 setLastUpdated(time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
@@ -266,7 +266,7 @@
                     y: prices,
                     name: 'Future Price',
                     mode: 'lines',
-                    line: { color: priceColor, width: 2 },
+                    line: { color: priceColor, width: 2.5, shape: 'spline', smoothing: 0.5 },
                     yaxis: 'y1',
                     hovertemplate: `<b>Price:</b> %{y:,.2f}<extra></extra>`
                 };
@@ -276,16 +276,27 @@
                     y: ois,
                     name: 'Open Interest',
                     mode: 'lines',
-                    line: { color: accentColor, width: 3 },
+                    line: { color: accentColor, width: 2.5, shape: 'spline', smoothing: 0.5 },
                     yaxis: 'y2',
                     hovertemplate: `<b>OI:</b> %{y:,.0f}<extra></extra>`
                 };
 
-                // Enforce Market Hours (09:15 to 15:30)
+                // Compute tight Y-ranges with padding so neither line looks flat
+                const priceMin = Math.min(...prices);
+                const priceMax = Math.max(...prices);
+                const pricePad = (priceMax - priceMin) * 0.15 || priceMin * 0.002;
+                const y1Range = [priceMin - pricePad, priceMax + pricePad];
+
+                const oiMin = Math.min(...ois);
+                const oiMax = Math.max(...ois);
+                const oiPad = (oiMax - oiMin) * 0.15 || oiMin * 0.002;
+                const y2Range = [oiMin - oiPad, oiMax + oiPad];
+
+                // Dynamic X-axis: starts at 9:15a, ends at currentTime + 10 min
                 const marketOpen = new Date(times[0]);
                 marketOpen.setHours(9, 15, 0, 0);
-                const marketClose = new Date(times[0]);
-                marketClose.setHours(15, 30, 0, 0);
+                const now = new Date();
+                const xEnd = new Date(now.getTime() + 10 * 60 * 1000); // +10 min margin
 
                 const layout = {
                     title: false,
@@ -303,30 +314,36 @@
                     font: { color: textColor, family: 'Inter, sans-serif' },
                     xaxis: {
                         type: 'date',
-                        range: [marketOpen, marketClose],
+                        range: [marketOpen, xEnd],
                         tickformat: '%I:%M %p',
                         showgrid: true,
                         gridcolor: gridColor,
+                        gridwidth: 1,
                         tickfont: { color: textColor, size: 10 },
                         linecolor: gridColor
                     },
                     yaxis: {
                         title: { text: 'Future Price', font: { size: 12, color: priceColor, weight: 'bold' } },
+                        range: y1Range,
                         side: 'left',
                         showgrid: true,
                         gridcolor: gridColor,
+                        gridwidth: 1,
                         tickformat: ',',
                         tickfont: { color: textColor, size: 10 },
-                        zeroline: false
+                        zeroline: false,
+                        fixedrange: true
                     },
                     yaxis2: {
                         title: { text: 'Open Interest', font: { size: 12, color: accentColor, weight: 'bold' } },
+                        range: y2Range,
                         side: 'right',
                         overlaying: 'y',
                         showgrid: false,
-                        tickformat: '.2s',
-                        tickfont: { color: textColor, size: 10 },
-                        zeroline: false
+                        tickformat: '.3s',
+                        tickfont: { color: accentColor, size: 10 },
+                        zeroline: false,
+                        fixedrange: true
                     },
                     hovermode: 'x unified',
                     hoverlabel: {

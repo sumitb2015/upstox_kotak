@@ -35,6 +35,7 @@ A robust, modular algorithmic trading framework designed for Indian stock market
   - **Cumulative GEX**: Systemic Gamma Exposure tracking with Regime Identification.
   - **Multi-Strike Comparison**: Contrast OI and Price action across up to 5 strikes simultaneously.
   - **Live Straddle Premium**: Real-time ATM straddle tracking with Mean Reversion indicators.
+  - **Market Calendar**: Professional holiday calendar with KPI tracking, monthly grouping, and countdowns.
 
 ## 📂 Project Structure
 

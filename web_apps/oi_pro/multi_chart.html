@@ -615,8 +615,7 @@
                 const firstTime = new Date(chartData[0].timestamp);
                 const marketOpen = new Date(firstTime);
                 marketOpen.setHours(9, 15, 0, 0);
-                const marketClose = new Date(firstTime);
-                marketClose.setHours(15, 30, 0, 0);
+                const xEnd = new Date(new Date().getTime() + 10 * 60 * 1000);
 
                 const gridColor = isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)';
                 const axisColor = isDark ? '#475569' : '#94a3b8';
@@ -647,7 +646,7 @@
                     font: { family: 'Inter', size: 11, color: axisColor },
                     xaxis: {
                         type: 'date',
-                        range: [marketOpen, marketClose],
+                        range: [marketOpen, xEnd],
                         tickformat: '%I:%M %p',
                         gridcolor: gridColor,
                         linecolor: 'transparent',
@@ -660,6 +659,7 @@
                         zeroline: true,
                         zerolinecolor: isDark ? '#334155' : '#cbd5e1',
                         zerolinewidth: 1,
+                        fixedrange: true,
                         autorange: true,
                         rangemode: 'normal',
                         tickprefix: '₹'
@@ -693,8 +693,7 @@
                 const firstTime = firstSeries.length ? new Date(firstSeries[0].timestamp) : new Date();
                 const marketOpen = new Date(firstTime);
                 marketOpen.setHours(9, 15, 0, 0);
-                const marketClose = new Date(firstTime);
-                marketClose.setHours(15, 30, 0, 0);
+                const xEnd = new Date(new Date().getTime() + 10 * 60 * 1000);
 
                 const traces = activeLegIds.map((legId, idx) => {
                     const series = oiChartData[legId];
@@ -723,7 +722,7 @@
                     font: { family: 'Inter', size: 11, color: axisColor },
                     xaxis: {
                         type: 'date',
-                        range: [marketOpen, marketClose],
+                        range: [marketOpen, xEnd],
                         tickformat: '%I:%M %p',
                         gridcolor: gridColor,
                         linecolor: 'transparent',
@@ -734,8 +733,9 @@
                         gridcolor: gridColor,
                         linecolor: 'transparent',
                         zeroline: false,
+                        fixedrange: true,
                         autorange: true,
-                        tickformat: ',.0s' // e.g. 1.2M instead of 1200000
+                        tickformat: ',.0s'
                     },
                     legend: {
                         x: 0.01, y: 0.99,

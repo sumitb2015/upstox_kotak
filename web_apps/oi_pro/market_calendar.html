@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Calendar - OI Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: 'var(--background)',
+                        foreground: 'var(--foreground)',
+                        card: 'var(--card)',
+                        border: 'var(--border)',
+                        muted: 'var(--muted)',
+                        'muted-foreground': 'var(--muted-foreground)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        :root {
+            --background: #f8fafc;
+            --foreground: #020817;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --muted: #f1f5f9;
+            --muted-foreground: #64748b;
+        }
+
+        .dark {
+            --background: #060910;
+            --foreground: #f8fafc;
+            --card: #0d1421;
+            --border: rgba(255, 255, 255, 0.08);
+            --muted: #1e293b;
+            --muted-foreground: #94a3b8;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--foreground);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .main-content {
+            margin-left: 5.5rem;
+            padding: 2rem 2.5rem;
+            min-height: 100vh;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                margin-left: 0;
+                padding-bottom: 5rem;
+            }
+        }
+
+        .text-gradient {
+            background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Table Styles */
+        .cal-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .cal-table thead th {
+            background: var(--muted);
+            color: var(--muted-foreground);
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 0.625rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cal-table thead th:first-child {
+            border-radius: 0.75rem 0 0 0;
+        }
+
+        .cal-table thead th:last-child {
+            border-radius: 0 0.75rem 0 0;
+        }
+
+        .cal-table tbody tr {
+            transition: background 0.15s;
+        }
+
+        .cal-table tbody tr:hover {
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        .cal-table tbody tr.is-past {
+            opacity: 0.45;
+        }
+
+        .cal-table tbody tr.is-next {
+            background: rgba(99, 102, 241, 0.07);
+            border-left: 2px solid #6366f1;
+        }
+
+        .cal-table tbody td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.82rem;
+            vertical-align: middle;
+        }
+
+        .cal-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .cal-table tbody tr:last-child td:first-child {
+            border-radius: 0 0 0 0.75rem;
+        }
+
+        .cal-table tbody tr:last-child td:last-child {
+            border-radius: 0 0 0.75rem 0;
+        }
+
+        .day-chip {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 0.15rem 0.55rem;
+            border-radius: 100px;
+            background: rgba(99, 102, 241, 0.12);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+        }
+
+        .next-chip {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 0.15rem 0.55rem;
+            border-radius: 100px;
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #6ee7b7;
+        }
+
+        .past-chip {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 0.15rem 0.55rem;
+            border-radius: 100px;
+            background: rgba(100, 116, 139, 0.12);
+            border: 1px solid rgba(100, 116, 139, 0.2);
+            color: #64748b;
+        }
+
+        /* Month group header */
+        .month-header td {
+            padding: 0.5rem 1rem;
+            font-size: 0.65rem;
+            font-weight: 900;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: #6366f1;
+            background: rgba(99, 102, 241, 0.06);
+            border-top: 1px solid rgba(99, 102, 241, 0.15);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+        }
+
+        /* KPI strip */
+        .kpi-strip {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .kpi-box {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.25rem;
+            min-width: 120px;
+        }
+
+        .kpi-box .kpi-label {
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--muted-foreground);
+            margin-bottom: 0.15rem;
+        }
+
+        .kpi-box .kpi-value {
+            font-size: 1.4rem;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -0.04em;
+        }
+
+        .table-wrapper {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 0.875rem;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+    <div id="sidebar-root"></div>
+    <script src="/sidebar.js"></script>
+    <div id="root" class="main-content"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        const Dashboard = () => {
+            const [holidays, setHolidays] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                const fetchHolidays = async () => {
+                    try {
+                        const token = localStorage.getItem('oi_pro_jwt') || localStorage.getItem('token');
+                        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                        const response = await fetch('/api/market-calendar', { headers });
+                        if (!response.ok) throw new Error('Failed to fetch holidays');
+                        const result = await response.json();
+                        if (result.status === 'success') {
+                            setHolidays(result.data);
+                        } else {
+                            setError(result.message || 'Unknown error');
+                        }
+                    } catch (e) {
+                        setError(e.message);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                };
+                fetchHolidays();
+            }, []);
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // Find next upcoming holiday index
+            const nextIdx = holidays.findIndex(h => {
+                const d = new Date(h.date);
+                return !isNaN(d) && d >= today;
+            });
+
+            // Group holidays by month for display
+            const groupedByMonth = {};
+            holidays.forEach((h, i) => {
+                const d = new Date(h.date);
+                const key = isNaN(d) ? 'Unknown' : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+                if (!groupedByMonth[key]) groupedByMonth[key] = [];
+                groupedByMonth[key].push({ ...h, _idx: i, _date: d });
+            });
+
+            const totalHolidays = holidays.length;
+            const pastCount = holidays.filter((h, i) => {
+                const d = new Date(h.date);
+                return !isNaN(d) && d < today;
+            }).length;
+            const upcomingCount = totalHolidays - pastCount;
+
+            return (
+                <div className="pb-20 max-w-5xl mx-auto">
+                    {/* ── Header ── */}
+                    <header className="flex items-center justify-between gap-4 mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-black tracking-tight text-foreground">
+                                    NSE <span className="text-gradient">Holiday Calendar</span>
+                                </h1>
+                                <p className="text-xs text-muted-foreground font-semibold mt-0.5">
+                                    NSE Trading Holidays · {new Date().getFullYear()}
+                                </p>
+                            </div>
+                        </div>
+                    </header>
+
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-24 rounded-xl border border-border bg-card">
+                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
+                            <span className="text-muted-foreground text-xs font-black uppercase tracking-widest">Loading…</span>
+                        </div>
+                    ) : error ? (
+                        <div className="flex flex-col items-center justify-center py-20 rounded-xl border border-rose-500/20 bg-rose-500/5">
+                            <span className="text-rose-400 font-semibold">{error}</span>
+                        </div>
+                    ) : (
+                        <>
+                            {/* ── KPI Strip ── */}
+                            <div className="kpi-strip flex-wrap">
+                                <div className="kpi-box" style={{ borderTop: '2px solid #6366f1' }}>
+                                    <div className="kpi-label">Total Holidays</div>
+                                    <div className="kpi-value" style={{ color: '#a5b4fc' }}>{totalHolidays}</div>
+                                </div>
+                                <div className="kpi-box" style={{ borderTop: '2px solid #10b981' }}>
+                                    <div className="kpi-label">Upcoming</div>
+                                    <div className="kpi-value" style={{ color: '#6ee7b7' }}>{upcomingCount}</div>
+                                </div>
+                                <div className="kpi-box" style={{ borderTop: '2px solid #64748b' }}>
+                                    <div className="kpi-label">Past</div>
+                                    <div className="kpi-value" style={{ color: '#94a3b8' }}>{pastCount}</div>
+                                </div>
+                                {nextIdx >= 0 && (() => {
+                                    const next = holidays[nextIdx];
+                                    const d = new Date(next.date);
+                                    const diffDays = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+                                    return (
+                                        <div className="kpi-box flex-1" style={{ borderTop: '2px solid #f59e0b' }}>
+                                            <div className="kpi-label">Next Holiday</div>
+                                            <div className="kpi-value" style={{ color: '#fbbf24', fontSize: '1rem', fontWeight: 900, letterSpacing: '-0.01em', marginTop: 4 }}>
+                                                {next.description}
+                                            </div>
+                                            <div className="kpi-label" style={{ marginTop: 2, color: '#fbbf24', opacity: 0.7 }}>
+                                                {d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · in {diffDays} day{diffDays !== 1 ? 's' : ''}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* ── Table ── */}
+                            <div className="table-wrapper">
+                                <table className="cal-table">
+                                    <thead>
+                                        <tr>
+                                            <th style={{ width: 80 }}>#</th>
+                                            <th style={{ width: 130 }}>Date</th>
+                                            <th style={{ width: 90 }}>Day</th>
+                                            <th>Holiday</th>
+                                            <th style={{ width: 90, textAlign: 'right' }}>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {Object.entries(groupedByMonth).map(([month, group]) => (
+                                            <>
+                                                <tr className="month-header" key={`mh-${month}`}>
+                                                    <td colSpan={5}>{month}</td>
+                                                </tr>
+                                                {group.map((h, ri) => {
+                                                    const isPast = !isNaN(h._date) && h._date < today;
+                                                    const isNext = h._idx === nextIdx;
+                                                    const rowCls = isPast ? 'is-past' : isNext ? 'is-next' : '';
+                                                    const dateStr = isNaN(h._date)
+                                                        ? h.date
+                                                        : h._date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                                                    return (
+                                                        <tr key={h._idx} className={rowCls}>
+                                                            <td>
+                                                                <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '0.72rem', fontWeight: 700, color: 'var(--muted-foreground)' }}>
+                                                                    {h._idx + 1}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <span style={{ fontWeight: 700, color: 'var(--foreground)', fontSize: '0.82rem', fontVariantNumeric: 'tabular-nums' }}>
+                                                                    {dateStr}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <span className="day-chip">{h.day}</span>
+                                                            </td>
+                                                            <td>
+                                                                <span style={{ fontWeight: 600, color: isPast ? 'var(--muted-foreground)' : 'var(--foreground)', fontSize: '0.83rem' }}>
+                                                                    {h.description}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ textAlign: 'right' }}>
+                                                                {isPast
+                                                                    ? <span className="past-chip">Past</span>
+                                                                    : isNext
+                                                                        ? <span className="next-chip">Next ↑</span>
+                                                                        : null
+                                                                }
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <p className="text-center text-xs text-muted-foreground mt-4 font-medium">
+                                Data sourced from Upstox API · {totalHolidays} scheduled holidays for {new Date().getFullYear()}
+                            </p>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+
+</html>
