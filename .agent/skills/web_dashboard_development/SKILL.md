@@ -50,10 +50,10 @@ This skill outlines the standard architecture and best practices for building fi
     -   **Visuals**: Use a clean line chart WITHOUT shading (`fill: null`) to prevent visual clutter when multiple strikes are plotted.
 
 4.  **UI/UX Standards (Premium Glassmorphism & Toggles)**:
-    -   **Background**: Use deep dark backgrounds (e.g., `#030712`).
+    -   **Background**: Use deep dark backgrounds (e.g., `#030712` or `#060910`).
     -   **Dark Mode Retention**: For authentication and core analytical pages (like Login), enforce Dark Mode persistently by defaulting `document.documentElement.classList.add('dark')` and hardcoding deep slate backgrounds to prevent bright flashes on system theme changes.
     -   **Segmented Controls (Tabs)**: Avoid native `<select>` dropdowns for critical switches like Nifty vs. Bank Nifty. Implement Shadcn-style segmented tabs (`<button>` groups with conditional bg/text highlighting) for superior user experience and modern look.
-    -   **Glass Cards**: Use semi-transparent surfaces `rgba(15, 23, 42, 0.8)` with heavy blur `backdrop-filter: blur(20px)` and subtle borders `rgba(255,255,255,0.07)`.
+    -   **Glass Cards**: Use semi-transparent surfaces `rgba(15, 23, 42, 0.8)` with heavy blur `backdrop-filter: blur(20px)` and subtle borders `rgba(255,255,255,0.07)`. Enhance with **hover-lift** (`transition-transform hover:-translate-y-1`) and **dynamic glow effects** (e.g., colored shadows `shadow-[0_0_15px_-5px_...`] driven by data like green for gainers or red for losers.
     -   **Typography**: Use `Inter` font, extremely bold weights (`font-black`/`800`) for metrics, and wide tracking `tracking-[0.15em]` for uppercase sublabels.
     -   **Color Coding**: Standardize on `#10b981` (Emerald) for positive/Put dominant, `#f87171` (Rose) for negative/Call dominant, and `#fbbf24` (Amber) for Spot prices.
     -   **ATM High-Contrast (Light Mode)**: For the ATM strike, prioritize readability by using high-contrast text (`text-amber-900` / bold) and distinct cell backgrounds (e.g., `bg-amber-500/20`) to prevent washing out in light backgrounds. 
