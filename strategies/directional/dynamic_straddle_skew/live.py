@@ -1,59 +1,26 @@
 """
-Dynamic Straddle Skew - Live Execution Script
+Dynamic Straddle Skew Strategy - Live Implementation
 
-STRATEGY OVERVIEW
------------------
-This strategy executes a dynamic straddle/strangle with skew-based position management.
-It starts neutral and adapts to market trends by pyramiding on the winning side and 
-defensively reducing risk on the losing side or rolling positions.
+Strategy Logic Summary:
+-----------------------
+1. Entry Conditions:
+   - Time Based: 09:20 AM.
+   - RSI Filter: Neutral range (40-60).
+   - Action: Sell CE + PE (Straddle/Strangle).
 
-LOGIC SUMMAY
-------------
-1. ENTRY:
-   - Time: 09:20 AM (Configurable)
-   - Action: Sell CE + PE (Straddle or Strangle based on config).
-   - RSI Filter: Optionally check if 14-period RSI is within a neutral range (e.g. 40-60).
-   - Lot Size: 'initial_lots' (Default 1+1).
-
-2. SKEW DETECTION (Bias):
-   - Trigger: Premium of one leg drops significantly below the other.
+2. Skew Detection:
+   - Logic: Premium of one leg drops significantly below the other.
    - Condition: winning_leg_price < losing_leg_price * (1 - skew_threshold_pct).
-   - Persistence: Must hold for 'skew_persistence_ticks' (e.g., 5s) to filter noise.
 
-3. PYRAMIDING (Aggressive Trend Following):
-   - Trigger: Winning leg price decays by 10% from its last reference price.
-     (Independent Leg Tracking: Does not use Total Portfolio Premium).
-   - Action: Add 'pyramid_lot_size' (1 lot) to the WINNING side.
-   - Safety: BLOCKED if Current Total Premium > Weighted Entry Premium (Net Loss Guard).
-     (Ensures we only pyramid if the overall position including all lots is green).
-   - Limit: Up to 'max_pyramid_lots' additional lots.
+3. Pyramiding:
+   - Trigger: Winning leg price decays by 10% from last reference.
+   - Guard: Only pyramid if position is in net profit.
 
-4. ROLL ADJUSTMENT (Capacity Reset):
-   - Trigger: Skew > 35% AND Winning Prem < Losing Prem * 0.8.
-   - Guard: ONLY Executes if Pyramiding is Full (Max Lots Reached).
-     (Pyramid Priority: We ride the trend until full, then reset/roll).
-   - Action: Close winning leg and re-enter closer to losing leg premium.
-
-5. DEFENSIVE REDUCTION (Reversal):
-   - Trigger: Winning leg price rises by 'reduction_recovery_pct' (e.g., 30%) 
-     from its lowest point (Trailing Stop for the Pyramid).
-   - Action: Reduce 1 lot from the winning side (De-pyramid).
-   - CRITICAL INVERSION EXIT:
-     - Trigger: Winning Leg Price > Losing Leg Price (Trend Failure).
-     - Action: IMMEDIATELY EXIT ALL PYRAMID LOTS to return to Neutral (1v1).
-
-6. RISK MANAGEMENT:
-   - Max Loss: Daily fixed limit (e.g., 10k).
-   - Target Profit: % of deployed capital (e.g., 30%).
-   - Profit Locking: Ratchet mechanism (Lock 50% at 2k, 60% at 4k, etc.).
-   - TSL (Trailing SL) Action: IMMEDIATELY EXIT ALL PYRAMID LOTS to return to Neutral. 
-   - Neutral Continuity: If no pyramid lots exist, resets anchors and continues (No Cooldown).
-   - Individual Leg SL: 60% hard stop per leg (Emergency).
-   - Global SL: Combined Premium Stop Loss ( Implicit via Max Loss/Skew management).
-
-7. EXIT:
+4. Exit Conditions:
+   - Target Profit: % of deployed capital.
+   - Trailing Stop: Ratchet mechanism.
+   - Individual SL: 60% hard stop per leg.
    - Time Based: 15:15 PM.
-   - Stop Loss/Target Hit.
 """
 
 import sys
@@ -88,12 +55,17 @@ from kotak_api.lib.order_manager import OrderManager
 from kotak_api.lib.trading_utils import get_strike_token
 from kotak_api.lib.margin_helper import get_available_funds, check_margin_required, check_straddle_margin
 
-# Logger setup
-logger = logging.getLogger("DynamicStraddleSkew")
+# Logger settings
 if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True
+)
+logger = logging.getLogger("DynamicStraddleSkew")
 
 class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
     def __init__(self, access_token: str, config: dict):
@@ -129,7 +101,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         if os.path.exists(".STOP"):
             try:
                 os.remove(".STOP")
-                self.log("🧹 Removed stale .STOP signal file.")
+                self.log("[CORE] 🧹 Removed stale .STOP signal file.")
             except: 
                 pass
 
@@ -155,10 +127,10 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             for _ in range(5):
                 time.sleep(1)
                 if self.streamer.market_data_connected:
-                    self.log("✅ WebSocket connection confirmed")
+                    self.log("[UPSTOX] ✅ WebSocket connection confirmed")
                     break
             else:
-                 self.log("⚠️ WebSocket not confirmed within 5s")
+                 self.log("[UPSTOX] ⚠️ WebSocket not confirmed within 5s")
             
         # Initial Spot Fetch
         try:
@@ -177,12 +149,12 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             fut_key = get_future_instrument_key(self.config['underlying'], self.nse_data)
             if fut_key:
                 self.lot_size = get_lot_size(fut_key, self.nse_data)
-                self.log(f"✅ Resolved Lot Size: {self.lot_size} (via Future: {fut_key})")
+                self.log(f"[CORE] ✅ Resolved Lot Size: {self.lot_size} (via Future: {fut_key})")
             else:
-                self.log(f"⚠️ Could not find Future for {self.config['underlying']}. Trying Kotak fallback...")
+                self.log(f"[CORE] ⚠️ Could not find Future for {self.config['underlying']}. Trying Kotak fallback...")
                 raise ValueError("No future found")
         except Exception as e:
-            self.log(f"⚠️ Could not fetch lot size from Upstox: {e}. Trying Kotak...")
+            self.log(f"[CORE] ⚠️ Could not fetch lot size from Upstox: {e}. Trying Kotak...")
             try:
                 # Fallback to Kotak resolution
                 strike = self.get_atm_strike()
@@ -192,9 +164,9 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                     from kotak_api.lib.trading_utils import get_lot_size as get_kotak_lot_size
                     self.lot_size = get_kotak_lot_size(self.kotak_broker.master_df, trading_symbol)
             except Exception as ke:
-                self.log(f"⚠️ Could not fetch lot size from Kotak: {ke}. Using fallback 75.")
+                self.log(f"[CORE] ⚠️ Could not fetch lot size from Kotak: {ke}. Using fallback 75.")
             
-        self.log(f"✅ Initialized for {self.config['underlying']} | Expiry: {self.expiry} | Lot Size: {self.lot_size}")
+        self.log(f"[CORE] ✅ Initialized for {self.config['underlying']} | Expiry: {self.expiry} | Lot Size: {self.lot_size}")
         return True
 
     def log(self, message: str):
@@ -211,7 +183,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 spot = quote.get('last_price', 0)
         
         if spot <= 0:
-            self.log("⚠️ [UPSTOX] Could not fetch spot price. Using fallback 24500 (Check market hours).")
+            self.log("[UPSTOX] ⚠️ Could not fetch spot price. Using fallback 24500 (Check market hours).")
             return 24500 # Slightly better fallback for current market
             
         strike_step = 50 if self.config['underlying'] == "NIFTY" else 100
@@ -289,10 +261,10 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         required = check_margin_required(self.order_mgr.client, token, quantity, side)
         
         if tradeable >= required:
-            self.log(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            self.log(f"[KOTAK] ✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
             return True
         else:
-            self.log(f"❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            self.log(f"[KOTAK] ❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
             return False
 
     def execute_trade(self, option_type: str, action: str, lots: int, price: float, strike: int = None):
@@ -323,20 +295,20 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             order_type="MKT"
         )
         if order_id:
-             self.log(f"✅ Order Placed: {order_id}")
+             self.log(f"[KOTAK] ✅ Order Placed: {order_id}")
              
              # agent_best_practices: Verify execution price
              # Wait briefly for fill details to propagate if needed (though place_order waits 1s)
              exec_price = self.order_mgr.get_execution_price(order_id)
              
              if exec_price > 0:
-                 self.log(f"✅ Order Placed: {order_id} @ Avg {exec_price:.2f}")
+                 self.log(f"[KOTAK] ✅ Order Placed: {order_id} @ Avg {exec_price:.2f}")
                  if abs(exec_price - price) > (price * 0.05): # 5% Slippage Warning
-                     self.log(f"⚠️ Slippage Detected: Req {price} -> Exec {exec_price}")
+                     self.log(f"[KOTAK] ⚠️ Slippage Detected: Req {price} -> Exec {exec_price}")
                  return order_id, exec_price
              else:
-                 self.log(f"✅ Order Placed: {order_id} (Price Unavailable)")
-                 self.log(f"⚠️ [CORE] Exec Price not available yet. Using LTP {price} as fallback.")
+                 self.log(f"[KOTAK] ✅ Order Placed: {order_id} (Price Unavailable)")
+                 self.log(f"[CORE] ⚠️ Exec Price not available yet. Using LTP {price} as fallback.")
                  return order_id, price
                  
         return None, 0.0
@@ -368,7 +340,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             
         # 2. Local Graceful Stop Signal (Standardized)
         if os.path.exists(".STOP"):
-            self.log("🛑 Local Stop Signal Detected (.STOP). Exiting positions and stopping.")
+            self.log("[CORE] 🛑 Local Stop Signal Detected (.STOP). Exiting positions and stopping.")
             self.exit_all()
             self.running = False
             # Try to remove signal file to confirm receipt (optional, main.py will clean usually)
@@ -379,8 +351,12 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         return False
 
     def run(self):
+        """
+        Main execution loop.
+        Monitors for entry signals, P&L targets, and management events.
+        """
         self.running = True
-        self.log("▶️ Live Monitoring Started")
+        self.log("[CORE] ▶️ Live Monitoring Started")
         self.save_state() # Initial state save
         
         while True:
@@ -398,7 +374,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 continue
             
             if current_time > exit_time:
-                self.log("🚪 Exit Time Reached. Closing all.")
+                self.log("[CORE] 🚪 Exit Time Reached. Closing all.")
                 self.exit_all()
                 break
 
@@ -495,13 +471,13 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                             self.last_pyramid_price = 0.0
                             self.last_pyramid_total_prem = 0.0
                             self.last_pyramid_entry_price = 0.0
-                            self.log("✅ [CORE] Returned to Neutral state with base lots. Skipping cooldown.")
+                            self.log("[CORE] ✅ Returned to Neutral state with base lots. Skipping cooldown.")
                         else:
-                            self.log("⚠️ [CORE] TSL reset aborted due to order failure. Exiting all positions for safety.")
+                            self.log("[CORE] ⚠️ TSL reset aborted due to order failure. Exiting all positions for safety.")
                             self.exit_all()
                             break
                     else:
-                        self.log("ℹ️ [CORE] No pyramid lots exist. Continuing with base lots and resetting anchors.")
+                        self.log("[CORE] ℹ️ No pyramid lots exist. Continuing with base lots and resetting anchors.")
 
                     # Reset profit locking anchors to allow fresh tracking from current peak (Session P&L becomes 0)
                     self.pnl_anchor = self.current_net_pnl 
@@ -820,9 +796,9 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 tradeable, _ = get_available_funds(self.order_mgr.client, deployment_pct)
                 
                 if tradeable < required_margin:
-                    self.log(f"❌ Aborting Entry: Insufficient Margin (Required ₹{required_margin:,.2f} | Available ₹{tradeable:,.2f})")
+                    self.log(f"[KOTAK] ❌ Aborting Entry: Insufficient Margin (Required ₹{required_margin:,.2f} | Available ₹{tradeable:,.2f})")
                     return False
-                self.log(f"✅ Margin Check Passed: Required ₹{required_margin:,.2f} | Available ₹{tradeable:,.2f}")
+                self.log(f"[KOTAK] ✅ Margin Check Passed: Required ₹{required_margin:,.2f} | Available ₹{tradeable:,.2f}")
 
         # Updated Execution Logic with Atomic Rollback
         oid_ce, exec_ce = self.execute_trade('CE', 'ENTRY', self.config['initial_lots'], ce_price, strike=ce_strike)
@@ -846,7 +822,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
                 return True
             else:
                 # PE Failed - Rollback CE
-                self.log("❌ [CORE] PE entry failed. Rolling back CE for safety...")
+                self.log("[CORE] ❌ PE entry failed. Rolling back CE for safety...")
                 self.execute_trade('CE', 'EXIT', self.config['initial_lots'], exec_ce, strike=ce_strike)
         
         return False
@@ -919,7 +895,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         new_strike = self.find_strike_by_premium(self.winning_type, target_prem, max_premium=lose_leg.current_price)
         
         if new_strike == win_leg.strike:
-            self.log("⚠️ [CORE] Roll Aborted: Best strike is same as current strike.")
+            self.log("[CORE] ⚠️ Roll Aborted: Best strike is same as current strike.")
             return
 
         # 2. Exit Old Leg
@@ -950,7 +926,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         
         # === Margin Check (Roll) ===
         if not self.check_margin_before_trade(self.winning_type, roll_lots, 'ENTRY', strike=new_strike):
-            self.log(f"❌ Roll Aborted: Insufficient margin for new leg {new_strike}")
+            self.log(f"[KOTAK] ❌ Roll Aborted: Insufficient margin for new leg {new_strike}")
             # Note: We already exited the old leg, so we are now effectively reduced/neutral.
             # This is a safety failure state.
             return
@@ -995,7 +971,7 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
         
         # === Margin Check (Pyramid) ===
         if not self.check_margin_before_trade(self.winning_type, self.config['pyramid_lot_size'], 'PYRAMID'):
-            self.log(f"❌ Pyramid Aborted: Insufficient margin for additional lots on {self.winning_type}")
+            self.log(f"[KOTAK] ❌ Pyramid Aborted: Insufficient margin for additional lots on {self.winning_type}")
             return
 
         oid, exec_price = self.execute_trade(self.winning_type, 'PYRAMID', self.config['pyramid_lot_size'], price)
@@ -1091,12 +1067,12 @@ class DynamicStraddleSkewLive(DynamicStraddleSkewCore):
             try:
                 self.execute_trade('CE', 'EXIT', self.ce_leg.lots, self.ce_leg.current_price)
             except Exception as e:
-                self.log(f"❌ Error closing CE: {e}")
+                self.log(f"[CORE] ❌ Error closing CE: {e}")
         if self.pe_leg:
             try:
                 self.execute_trade('PE', 'EXIT', self.pe_leg.lots, self.pe_leg.current_price)
             except Exception as e:
-                self.log(f"❌ Error closing PE: {e}")
+                self.log(f"[CORE] ❌ Error closing PE: {e}")
         self.ce_leg = None
         self.pe_leg = None
 

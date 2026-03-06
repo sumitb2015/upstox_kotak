@@ -82,3 +82,6 @@ bcrypt
 plotly
 cryptography>=3.4.8
 slowapi>=0.1.9
+
+feedparser
+apscheduler

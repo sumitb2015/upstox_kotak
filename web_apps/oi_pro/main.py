@@ -42,6 +42,7 @@ import signal
 import psutil
 from pathlib import Path
 import re
+from contextlib import asynccontextmanager
 
 # Add project root to path for lib imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -63,6 +64,7 @@ from lib.utils.greeks_helper import calculate_gex_for_chain, get_net_gex, prepar
 from lib.utils.greeks_storage import greeks_storage
 # Fix #6: Fernet encryption helper for broker credentials at rest
 from lib.utils.crypto_helper import encrypt_value, decrypt_value
+from web_apps.oi_pro.news_service import start_news_scheduler, news_cache
 # Fix #8: Rate limiting
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -617,7 +619,7 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
         if df is None or df.empty:
             logger.warning(f"[UPSTOX] [PoP API] No data found for {symbol}")
             return {"data": []}
-            
+
         logger.info(f"[CORE] [PoP API] Processing {len(df)} rows...")
         
         # Process DataFrame for Chart
@@ -676,6 +678,40 @@ async def get_pop_data(current_user: User = Depends(get_current_user),
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/news")
+async def get_market_news(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    source: str = Query("All")
+):
+    """Fetch paginated news from cache."""
+    try:
+        articles = news_cache.get("articles", [])
+        last_updated = news_cache.get("last_updated")
+        
+        if source != "All":
+            articles = [a for a in articles if a['source'] == source]
+        
+        total = len(articles)
+        start_idx = (page - 1) * limit
+        end_idx = start_idx + limit
+        paginated_data = articles[start_idx:end_idx]
+        
+        return {
+            "status": "success",
+            "data": paginated_data,
+            "pagination": {
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "has_more": end_idx < total
+            },
+            "last_updated": last_updated
+        }
+    except Exception as e:
+        logger.error(f"Error fetching news: {e}")
+        return {"status": "error", "message": str(e), "data": []}
 
 # --- Strategy Management API ---
 
@@ -1750,6 +1786,14 @@ async def startup_event():
     asyncio.create_task(prefetch_option_master())
     # Pre-fetch previous closes for indices immediately
     asyncio.create_task(prefetch_prev_closes())
+    
+    # Start Indian Business News Scheduler (RSS Feeds)
+    try:
+        start_news_scheduler()
+        logger.info("[NEWS] Indian Business News scheduler started")
+    except Exception as e:
+        logger.error(f"[NEWS] Failed to start news scheduler: {e}")
+
     logger.info("[CORE] Server standby mode active — streamers will start per-user on first WS connect.")
 
 @app.on_event("shutdown")
@@ -2289,10 +2333,10 @@ def calculate_buildup(price_chg_pct, oi_chg_pct):
 
 @app.get("/login", response_class=HTMLResponse)
 async def serve_login():
-    """Serves the login page (index.html, but intended as a login barrier)."""
-    html_path = os.path.join(os.path.dirname(__file__), "login.html")
+    """Serves the landing page (which now contains the login modal)."""
+    html_path = os.path.join(os.path.dirname(__file__), "landing.html")
     if not os.path.exists(html_path):
-        raise HTTPException(status_code=404, detail="Login page not found")
+        raise HTTPException(status_code=404, detail="Landing page not found")
     
     def read_file(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -2303,15 +2347,57 @@ async def serve_login():
 
 @app.get("/login.html", response_class=HTMLResponse)
 async def serve_login_html():
-    """Serves the actual login.html file."""
+    """Serves the actual landing page for login.html requests."""
     return await serve_login()
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
-    """Serves the main dashboard (index.html)."""
+    """Serves the analytical dashboard (index.html)."""
     html_path = os.path.join(os.path.dirname(__file__), "index.html")
     if not os.path.exists(html_path):
-        raise HTTPException(status_code=404, detail="Index.html not found")
+        raise HTTPException(status_code=404, detail="index.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/brokers", response_class=HTMLResponse)
+async def serve_brokers():
+    """Serves the brokers management page (brokers.html)."""
+    html_path = os.path.join(os.path.dirname(__file__), "brokers.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="brokers.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/users", response_class=HTMLResponse)
+async def serve_users():
+    """Serves the user management page (users.html)."""
+    html_path = os.path.join(os.path.dirname(__file__), "users.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="users.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_landing():
+    """Serves the main landing page (landing.html)."""
+    html_path = os.path.join(os.path.dirname(__file__), "landing.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="landing.html not found")
         
     def read_file(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -2542,6 +2628,21 @@ async def serve_cumulative_prices_page():
             
     content = await run_in_threadpool(read_file, html_path)
     return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/market-news", response_class=HTMLResponse)
+async def market_news(request: Request):
+    try:
+        html_path = os.path.join(os.path.dirname(__file__), "market_news.html")
+        
+        def read_file(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+                
+        content = await run_in_threadpool(read_file, html_path)
+        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+    except Exception as e:
+        logger.error(f"Error serving market news: {e}")
+        return HTMLResponse("Internal Server Error", status_code=500)
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def serve_strategies_page():

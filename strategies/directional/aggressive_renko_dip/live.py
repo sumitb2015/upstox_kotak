@@ -1,48 +1,24 @@
 """
-Aggressive Renko Dip - Live Execution strategy.
+Aggressive Renko Dip Strategy - Live Implementation
 
 Strategy Logic Summary:
 -----------------------
-1.  **Entry Conditions**:
-    - **Bullish (SELL PE)**: 
-     1.  **Entry Signal (Nifty Renko - Candle-Close Based)**:
-    - Uses 1-minute candle close prices (not tick-level)
-    - Waits for 2 consecutive same-color bricks (GREEN or RED).
-    - RSI must align: Bullish (RSI > 50) or Bearish (RSI < 50).
-    - Market regime filter: Max 40% reversals in last 20 bricks.
+1. Entry Conditions:
+   - Uses 1-minute candle close prices for Nifty Renko.
+   - Waits for 2 consecutive same-color bricks (GREEN for Bullish, RED for Bearish).
+   - RSI Filter: Bullish (RSI > 50) or Bearish (RSI < 50).
+   - Market Regime: Max 40% reversals in last 20 bricks.
+   - Momentum Filter: 1-6 bricks/minute.
 
-        - Brick Momentum: 1-6 bricks/minute (not too slow, not too fast).
-        - Entry triggered on the closing of the 2nd brick.
-    - **Bearish (SELL CE)**:
-        - Nifty Renko (Brick 10) shows 2 consecutive RED bricks.
-        - RSI < 50.
-        - Market Regime: Trending (max 40% reversals in last 20 bricks).
-        - Brick Momentum: 1-6 bricks/minute (not too slow, not too fast).
-        - Entry triggered on the closing of the 2nd brick.
+2. Exit Conditions:
+   - Trend Reversal: Nifty Renko bricks in opposite direction.
+   - Option Reversal: Option Renko (8% of Premium) shows 2 グリーン bricks.
+   - Time Based: Intraday square-off at 15:15 PM.
 
-2.  **Pyramiding**:
-    - Adds 1 lot if the trend continues for another 2 bricks (Configurable 'resumption_streak').
-    - Maximum 3 pyramids allowed.
-
-3.  **Exit Conditions**:
-    - **Trend Reversal**: Nifty Renko shows bricks in opposite direction (requires 2x brick size for reversal).
-    - **Option Reversal**: Option Renko (8% of Premium) shows 2 consecutive Green bricks (meaning option price is rising/reversing against our short).
-    - **Time Exit**: 15:15 PM market close.
-
-4.  **Stop Loss / TSL**:
-    - **TSL**: Trailing Stop Loss calculated on the Option Renko.
-    - Logic: Track the 'Best Low' of the option premium.
-    - TSL Price = Best Low + (Option Brick Size * TSL Multiplier).
-    - Multiplier tightens as we pyramid (1.0 -> 0.8 -> ... -> 0.5).
-
-5.  **Strike Selection**:
-    - ATM +/- Offset (Default 4 strikes OTM).
-    - Dynamically selects based on 'expiry_type' (current/next week).
-
-6.  **Whipsaw Protection**:
-    - Market Regime Filter: Only trades in trending markets (< 40% brick reversals).
-    - Brick Momentum Filter (Optional): Avoids too slow or too fast conditions.
-    - Entry Time Filter: No trades before 09:20.
+3. Risk Management:
+   - Trailing Stop Loss (TSL) on Option Renko.
+   - Pyramiding: Max 3 lots, triggered on trend resumption.
+   - Multiplier tightens as we pyramid (1.0 -> 0.5).
 """
 
 import os
@@ -77,8 +53,12 @@ if sys.platform == 'win32':
     import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', force=True)
-logger = logging.getLogger("AggressiveRenkoLive")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True
+)
+logger = logging.getLogger("AggressiveRenkoDip")
 
 class AggressiveRenkoLive(AggressiveRenkoCore):
     """
@@ -122,7 +102,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         if os.path.exists(".STOP"):
             try:
                 os.remove(".STOP")
-                self.log("🧹 Removed stale .STOP signal file.")
+                self.log("[CORE] 🧹 Removed stale .STOP signal file.")
             except: 
                 pass
 
@@ -151,13 +131,13 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
             if self.total_qty > 0 and self.current_option_token and getattr(self, 'lot_size', 0) == 0:
                 from lib.utils.instrument_utils import get_lot_size
                 self.lot_size = get_lot_size(self.current_option_token, self.nse_data)
-                self.log(f"⚠️ [CORE] Restored missing lot_size ({self.lot_size}) from NSE data.")
+                self.log(f"[CORE] ⚠️ Restored missing lot_size ({self.lot_size}) from NSE data.")
             
             self.is_warming_up = False
-            self.log(f"✅ [CORE] State loaded. Strategy is LIVE. (RSI: {self.rsi:.2f})")
+            self.log(f"[CORE] ✅ State loaded. Strategy is LIVE. (RSI: {self.rsi:.2f})")
         else:
             # 3a. Indicator Warmup (Mandatory Pattern)
-            self.log("📊 [UPSTOX] Warming up RSI (fetching historical + intraday data)...")
+            self.log("[UPSTOX] 📊 Warming up RSI (fetching historical + intraday data)...")
             try:
                 # Fetch ~2000 bars for RSI warmup (approx 3 days)
                 hist = get_historical_data(self.upstox_token, self.nifty_token, "minute", 2000) or []
@@ -173,20 +153,20 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                 if self.nifty_candles:
                     df = pd.DataFrame(self.nifty_candles)
                     self.rsi = calculate_rsi(df, self.rsi_period)
-                    self.log(f"✅ RSI Warmup Complete: {self.rsi:.2f} (Bars: {len(self.nifty_candles)})")
+                    self.log(f"[UPSTOX] ✅ RSI Warmup Complete: {self.rsi:.2f} (Bars: {len(self.nifty_candles)})")
                 else:
-                    self.log("⚠️ No historical data found for RSI warmup. Starting at 50.")
+                    self.log("[UPSTOX] ⚠️ No historical data found for RSI warmup. Starting at 50.")
             except Exception as e:
-                self.log(f"⚠️ RSI Warmup Error: {e}")
+                self.log(f"[UPSTOX] ⚠️ RSI Warmup Error: {e}")
 
-            self.log("🚀 Initializing Renko from historical data...")
+            self.log("[CORE] 🚀 Initializing Renko from historical data...")
             try:
                 # Use the merged candles from RSI warmup for Renko history
                 if self.nifty_candles:
                     # 1. Initialize with first candle
                     start_price = float(self.nifty_candles[0]['close'])
                     self.nifty_renko.initialize(start_price)
-                    self.log(f"🧱 Renko History Start @ {start_price}")
+                    self.log(f"[CORE] 🧱 Renko History Start @ {start_price}")
                     
                     # 2. Replay all candles to build bricks
                     # Temporarily suppress logs for replay to avoid spam
@@ -195,7 +175,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     # Ideally we'd lower level, but let's just run it. 
                     # If it's too much, we can adjust core logging.
                     
-                    self.log(f"🔄 Replaying {len(self.nifty_candles)} candles for Renko...")
+                    self.log(f"[CORE] 🔄 Replaying {len(self.nifty_candles)} candles for Renko...")
                     bricks_formed = 0
                     for c in self.nifty_candles:
                         c_close = float(c['close'])
@@ -211,7 +191,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                         bricks_formed += new
                         
                     self.ltp_cache[self.nifty_token] = float(self.nifty_candles[-1]['close'])
-                    self.log(f"✅ Renko Replay Complete: {len(self.nifty_renko.bricks)} bricks formed.")
+                    self.log(f"[CORE] ✅ Renko Replay Complete: {len(self.nifty_renko.bricks)} bricks formed.")
                     
                 else:
                     # Fallback to LTP if no history
@@ -224,11 +204,11 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     if start_price > 0:
                         self.nifty_renko.initialize(start_price)
                         self.ltp_cache[self.nifty_token] = start_price
-                        self.log(f"🧱 Renko Started @ {start_price} (No History)")
+                        self.log(f"[CORE] 🧱 Renko Started @ {start_price} (No History)")
                     else:
-                        self.log("⚠️ Could not get current price for Renko initialization. Will wait for first tick.")
+                        self.log("[CORE] ⚠️ Could not get current price for Renko initialization. Will wait for first tick.")
             except Exception as e:
-                self.log(f"⚠️ Initialization error: {e}")
+                self.log(f"[CORE] ⚠️ Initialization error: {e}")
             
             self.is_warming_up = False
             logger.info(f"✅ Strategy is now LIVE. (RSI: {self.rsi:.2f})")
@@ -256,16 +236,16 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         self.streamer.connect_market_data(tokens, mode="full", on_message=self.on_market_data)
         
         # Wait for connection
-        logger.info("⏳ Waiting for WebSocket connection...")
+        logger.info("[UPSTOX] ⏳ Waiting for WebSocket connection...")
         for _ in range(5):
             time.sleep(1)
             if self.streamer.market_data_connected:
-                logger.info("✅ WebSocket connection confirmed")
+                logger.info("[UPSTOX] ✅ WebSocket connection confirmed")
                 # Force subscribe to ensure keys are active (Robustness)
                 self.streamer.subscribe_market_data(tokens, mode="full")
                 break
         else:
-             logger.warning("⚠️ WebSocket not confirmed within 5s")
+             logger.warning("[UPSTOX] ⚠️ WebSocket not confirmed within 5s")
         
         return True
 
@@ -445,7 +425,10 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         return final_mult
 
     def log_box(self, title: str, content_lines: list, emoji: str = "ℹ️"):
-        """Prints a formatted box in the terminal, respecting the ticker."""
+        """
+        Prints a formatted box in the terminal, respecting the ticker.
+        Standard logging helper for major events (Entry/Exit).
+        """
         self.log("-" * 60)
         self.log(f"{emoji} {title}")
         self.log("-" * 60)
@@ -534,7 +517,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                 # Check for instant tick-based exit
                 if not self.config.get('wait_for_candle_close', False):
                     if price_val >= tsl_price:
-                        self.log(f"🛡️ [CORE] HARD TSL TRIGGERED (INSTANT): Price {price_val:.2f} >= TSL {tsl_price:.2f}")
+                        self.log(f"[CORE] 🛡️ HARD TSL TRIGGERED (INSTANT): Price {price_val:.2f} >= TSL {tsl_price:.2f}")
                         for p_type, token in self.active_positions.items():
                             if token == instrument_key:
                                 self.execute_exit(p_type, "Hard TSL Hit", timestamp)
@@ -547,7 +530,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                         # Check for candle-based TSL exit
                         if self.config.get('wait_for_candle_close', False):
                             if opt_candle_close >= tsl_price:
-                                self.log(f"🛡️ [CORE] HARD TSL TRIGGERED (CANDLE): Close {opt_candle_close:.2f} >= TSL {tsl_price:.2f}")
+                                self.log(f"[CORE] 🛡️ HARD TSL TRIGGERED (CANDLE): Close {opt_candle_close:.2f} >= TSL {tsl_price:.2f}")
                                 for p_type, token in self.active_positions.items():
                                     if token == instrument_key:
                                         self.execute_exit(p_type, "Hard TSL Hit (Candle)", timestamp)
@@ -619,6 +602,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
     def check_margin_before_trade(self, symbol: str, lots: int, action: str, token: str) -> bool:
         """
         Validates if sufficient margin is available before placing an order.
+        Utilizes `kotak_api.lib.margin_helper` for standardized checks.
         """
         if self.config.get('dry_run', False):
             return True
@@ -628,7 +612,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
 
         # Confirm token or symbol availability
         if not token:
-            self.log(f"⚠️ Could not resolve token for margin check: {symbol}")
+            self.log(f"[CORE] ⚠️ Could not resolve token for margin check: {symbol}")
             return False
 
         # Determine transaction type for margin
@@ -642,18 +626,22 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         required = check_margin_required(self.order_mgr.client, token, quantity, side)
         
         if tradeable >= required:
-            self.log(f"✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            self.log(f"[KOTAK] ✅ Margin Check: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
             return True
         else:
-            self.log(f"❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
+            self.log(f"[KOTAK] ❌ Insufficient Margin: Required ₹{required:,.2f} | Available ₹{tradeable:,.2f}")
             return False
 
     def execute_entry(self, option_type: str, timestamp: datetime, is_pyramid: bool = False):
+        """
+        Executes a new option entry or adds a pyramid lot.
+        Handles strike selection based on ATM/Offset and margin validation.
+        """
         if is_pyramid and not self.current_option_token:
-            self.log("❌ Pyramid called but no active position found. Skipping.")
+            self.log("[CORE] ❌ Pyramid called but no active position found. Skipping.")
             return
 
-        self.log(f"🚀 SIGNAL: Executing {option_type} {'Pyramid' if is_pyramid else 'Initial'} Entry")
+        self.log(f"[CORE] 🚀 SIGNAL: Executing {option_type} {'Pyramid' if is_pyramid else 'Initial'} Entry")
         
         active_token = self.current_option_token
         active_symbol = self.active_symbols.get(option_type)
@@ -737,13 +725,13 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                 pass
 
         if not self.check_margin_before_trade(opt_symbol, lots, 'ENTRY', margin_token):
-             self.log(f"❌ Entry/Pyramid Aborted: Insufficient Margin for {opt_symbol}")
+             self.log(f"[CORE] ❌ Entry/Pyramid Aborted: Insufficient Margin for {opt_symbol}")
              return
 
         from lib.utils.instrument_utils import get_lot_size
         lot_size = get_lot_size(opt_key, self.nse_data)
         
-        self.log(f"📤 Sending Entry Order to [KOTAK] for {opt_symbol}...")
+        self.log(f"[KOTAK] 📤 Sending Entry Order to [KOTAK] for {opt_symbol}...")
         order_id = self.order_mgr.place_order(
             symbol=opt_symbol, 
             qty=int(lots * lot_size), 
@@ -805,10 +793,10 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
         if opt_symbol:
             exit_qty = int(self.total_qty)
             if exit_qty <= 0:
-                self.log(f"⚠️ execute_exit called but total_qty is {exit_qty}. Skipping.")
+                self.log(f"[CORE] ⚠️ execute_exit called but total_qty is {exit_qty}. Skipping.")
                 return
 
-            self.log(f"📤 Sending Exit Order to [KOTAK] for {opt_symbol}...")
+            self.log(f"[KOTAK] 📤 Sending Exit Order to [KOTAK] for {opt_symbol}...")
             order_id = self.order_mgr.place_order(
                 symbol=opt_symbol, 
                 qty=exit_qty, 
@@ -849,7 +837,7 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     # [NEW] Record exit time (brick index) to prevent immediate re-entry
                     if self.nifty_renko.bricks:
                         self.last_exit_brick_index = self.nifty_renko.bricks[-1].index
-                        self.log(f"🛑 [CORE] Exit Recorded @ Nifty Brick #{self.last_exit_brick_index}. Cooldown active.")
+                        self.log(f"[CORE] 🛑 Exit Recorded @ Nifty Brick #{self.last_exit_brick_index}. Cooldown active.")
                     
                     # Unsubscribe
                     if self.streamer:
@@ -858,8 +846,12 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     self.save_state(self.config['state_file'])
 
     def run(self):
+        """
+        Main execution loop.
+        Monitors for entry signals, TSL triggers, and management events (Kill Switch).
+        """
         if not self.initialize(): return
-        self.log("📡 Strategy Running... Press Ctrl+C to stop.")
+        self.log("[CORE] 📡 Strategy Running... Press Ctrl+C to stop.")
         try:
             while True:
                 # 0. Global Kill Switch Check
@@ -869,10 +861,10 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                             content = f.read().strip()
                         stats = os.stat("c:/algo/upstox/.STOP_TRADING")
                         ts = datetime.fromtimestamp(stats.st_mtime).strftime('%H:%M:%S')
-                        self.log(f"🛑 Kill Switch Detected (.STOP_TRADING). Created: {ts}")
-                        self.log(f"   Reason: {content if content else '[Empty File]'}")
+                        self.log(f"[CORE] 🛑 Kill Switch Detected (.STOP_TRADING). Created: {ts}")
+                        self.log(f"[CORE]    Reason: {content if content else '[Empty File]'}")
                     except Exception as e:
-                        self.log(f"🛑 Kill Switch Detected (Read Error: {e})")
+                        self.log(f"[CORE] 🛑 Kill Switch Detected (Read Error: {e})")
                         
                     # EXECUTING GRACEFUL EXIT
                     with self.lock:
@@ -888,12 +880,12 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
 
                 # 0b. Local Graceful Stop Signal (.STOP)
                 if os.path.exists(".STOP"):
-                    self.log("🛑 Local Stop Signal Detected (.STOP). Stopping Strategy.")
+                    self.log("[CORE] 🛑 Local Stop Signal Detected (.STOP). Stopping Strategy.")
                     
                     # EXECUTING GRACEFUL EXIT
                     with self.lock:
                         if self.active_positions:
-                            self.log("🚪 [CORE] Local Stop Triggered. Exiting all positions...")
+                            self.log("[CORE] 🚪 [CORE] Local Stop Triggered. Exiting all positions...")
                             pos_types = list(self.active_positions.keys())
                             for p_type in pos_types:
                                 self.execute_exit(p_type, "User Stop Signal", datetime.now())
@@ -910,13 +902,13 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                 # Check for market close time
                 exit_h, exit_m = map(int, self.config['exit_all_time'].split(':'))
                 if current_dt.time() >= dt_time(exit_h, exit_m):
-                    self.log(f"⏰ Market Close Time Reached ({self.config['exit_all_time']})")
+                    self.log(f"[CORE] ⏰ Market Close Time Reached ({self.config['exit_all_time']})")
                     # Force exit all positions
                     with self.lock:
                         tokens_to_exit = list(self.active_positions.keys())
                     
                     if not tokens_to_exit:
-                        self.log("🛑 No active positions. Exiting strategy.")
+                        self.log("[CORE] 🛑 No active positions. Exiting strategy.")
                         break
                         
                     for p_type in tokens_to_exit:
@@ -925,10 +917,10 @@ class AggressiveRenkoLive(AggressiveRenkoCore):
                     # Verify they are gone before breaking
                     with self.lock:
                         if not self.active_positions:
-                            self.log("✅ All positions closed. Exiting strategy.")
+                            self.log("[CORE] ✅ All positions closed. Exiting strategy.")
                             break
                         else:
-                            self.log(f"⚠️ {len(self.active_positions)} positions remaining. Retrying next tick...")
+                            self.log(f"[CORE] ⚠️ {len(self.active_positions)} positions remaining. Retrying next tick...")
                 
                 self.display_status()
                 time.sleep(1)

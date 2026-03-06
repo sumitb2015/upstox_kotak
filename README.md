@@ -4,7 +4,8 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 
 ## 🚀 Key Features
 
-- **Multi-Broker Support**: Seamless integration with Upstox and Kotak Securities.
+- [x] **Post-Development Fixes**: Resolved critical API routing bugs and standardized strategy telemetry.
+- **Multibroker Support**: Seamless integration with Upstox and Kotak Securities.
 - **Modular Architecture**: Clean separation between core logic, strategy implementations, and API adapters.
 - **Advanced Risk Management**:
   - Hybrid Gated Stop Loss
@@ -13,29 +14,38 @@ A robust, modular algorithmic trading framework designed for Indian stock market
 - **Real-Time Data**: Utilization of WebSockets for low-latency market data and order updates.
 - **Option & Future Strategies**: tailored logic for NIFTY, BANKNIFTY, and FINNIFTY instruments.
 - **Comprehensive Logging**: Detailed telemetry for strategy state, signals, and execution using standardized formats.
-- **Secure OI Pro Dashboard**: Interactive analytics dashboard with JWT-based authentication and role-based access control (RBAC).
-  - **User Management**: Administrator dashboard for managing platform accounts directly from the web interface.
-  - 1. **Stock Dashboard**: Grid view of customizable NIFTY & BANKNIFTY stocks with an **Analytics Tab** showing Futures-based Buildup (Long/Short Buildup, Short Covering, Long Unwinding) with Redis caching.
-  2. **Indices Dashboard**: Categorized view of NSE Major, Broad Market, Sectoral, and Thematic indices with market breadth indicators.
-  3. **Semantic Theming**: Built-in Light and Dark Mode toggle embedded across the entire analytics suite, persisting user preferences seamlessly.
-  - **Multi-Option Chart**: Build custom multi-leg option strategies with a **Synchronized Dual-Chart layout** (Price Action + Normalized OI Change).
-  - **Straddle Analysis**: Dedicated view for ATM straddle premiums with auto-scaling charts.
-  - **Strike Analysis (Restored)**: Four-chart diagnostic view including Greeks/PCR, **Straddle Premium**, and **OI Build/Unwind Scatter**.
-  - **OI Buildup Heatmap**: NIFTY-focused heatmap tracking day-over-day OI buildup every minute. Loads full-day history from 9:15 AM on restart. Strikes auto-pin to current ATM ± 8 (50-pt intervals). Buildup classified as Long/Short Buildup, Short Covering, or Long Unwinding — all relative to previous session's baseline OI.
-  - **Persistence Engine**: Automatic daily CSV snapshots of all index Greeks, allowing full state recovery on server restart.
-  - **Unified Navigation**: Commonalized sidebar component for consistent navigation across all 14 analytics pages.
-  - **Greeks Exposure Analysis**: Real-time tracking of systemic Delta and Gamma exposure per strike.
-  - **Net GEX Regime Analysis**: Identification of Market Volatility Regimes (Traffic Light logic) and the Zero Gamma Flip Point.
+- **Integrated OI Pro Analytics Suite**: 25+ Advanced analytics pages protected by JWT-based authentication and role-based access control.
+  - **Market-Wide Dashboards**:
+    - **Stock Dashboard**: Grid view with Futures-based Buildup analysis (Long/Short Buildup, Unwinding).
+    - **Indices Dashboard**: Categorized NSE Major, Sectoral, and Thematic indices with market breadth.
+    - **FII / DII Analytics**: Tracking institutional flow and participation.
+    - **Market Watch**: Real-time price tracking for selected internal symbols.
+  - **Premium Option Analytics**:
+    - **Dynamic Option Chain**: Real-time markers for OH/OL conditions and high-contrast ATM identification.
+    - **Strike-wise PCR**: Sentiment analysis with bull/bear indicators across the entire chain.
+    - **Max Pain & IV Smile**: Mathematical pinning analysis and volatility skew visualization.
+    - **ATM Straddle Analysis**: Deep dive into straddle premiums with mean reversion tracking.
+    - **Multi-Strike Comparison**: Contrast OI and Price action across 5 strikes simultaneously.
+    - **Multi-Option Strategy Chart**: Synchronized Price and Normalized OI Change for custom multi-leg strategies.
+  - **Risk & Exposure Management**:
+    - **Net GEX Regime**: Market Volatility Regime identification (Traffic Light logic) and Gamma Flip points.
+    - **Greeks Exposure**: Real-time systemic Delta and Gamma tracking per strike.
+    - **Exposure Change Heatmap**: NIFTY-focused minute-by-minute OI change tracking from session start.
+    - **Strike Greeks History**: Historical greeks data persistent across server restarts/sessions.
+  - **Trend & Mathematical Analysis**:
+    - **Future Intraday & Price vs OI**: Correlating future price movement with open interest buildup.
+    - **3D Surface Analysis**: Volatility and OI surface visualization for whole-range diagnostic.
+    - **OI Trend Analyzer & Cumulative Analysis**: Advanced filtering for OI buildup and cumulative option price flow.
+    - **Seller's Edge (PoP)**: Probability of Profit scatter plots for premium vs risk assessment.
+  - **Execution & Ecosystem**:
+    - **Strategy Command Center**: Unified interface to monitor, start, and stop all live trading algorithms.
+    - **Market News & News Pulse**: Aggregated financial news feeds with sentiment-focused views.
+    - **Market Calendar**: Professional holiday tracking with count-downs and monthly grouping.
+    - **Broker Management**: Centralized portal for multisegment API token session management.
+    - **User Admin**: Backend dashboard for managing roles, permissions, and platform accounts.
+- **Unified Navigation**: Sidebar-driven navigation with persistent semantic (Light/Dark) theming.
+- **State Persistence Engine**: Automated daily snapshots ensuring analytics state recovery on restart.
 - **Extensive Strategy Library**: Over 20+ detailed strategy implementations with comprehensive `README.md` guides covering entry/exit logic, risk management, and execution examples.
-- **OI Pro Dashboards**: 15+ Advanced analytics pages including:
-  - **Option PCR Grid**: Real-time Strike-wise PCR with Bull/Bear Sentiment indicators.
-  - **Option Chain Markers**: Visual indicators for **OH (Open=High)** and **OL (Open=Low)** price conditions on every strike.
-  - **Premium ATM Visibility**: High-contrast identifier for the ATM strike in both Light and Dark modes.
-  - **Max Pain & Volatility Smile**: Automated Max Pain calculation with IV smile visualization.
-  - **Cumulative GEX**: Systemic Gamma Exposure tracking with Regime Identification.
-  - **Multi-Strike Comparison**: Contrast OI and Price action across up to 5 strikes simultaneously.
-  - **Live Straddle Premium**: Real-time ATM straddle tracking with Mean Reversion indicators.
-  - **Market Calendar**: Professional holiday calendar with KPI tracking, monthly grouping, and countdowns.
 
 ## 📂 Project Structure
 

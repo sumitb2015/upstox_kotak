@@ -82,7 +82,7 @@
 
     const NAV_ITEMS = [
         {
-            href: "/",
+            href: "/dashboard",
             title: "Dashboard",
             svg: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>'
         },
@@ -212,6 +212,11 @@
             svg: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path>'
         },
         {
+            href: "/market-news",
+            title: "Market News",
+            svg: '<path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9.5L18.5 7H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2z"></path><path d="M8 12h4"></path><path d="M8 16h4"></path><path d="M8 8h2"></path>'
+        },
+        {
             href: "/brokers",
             title: "Brokers",
             svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline>'
@@ -330,6 +335,7 @@
                 .nav-text {
                     opacity: 0;
                     margin-left: 0.75rem;
+                    font-size: 0.875rem;
                     font-weight: 500;
                     white-space: nowrap;
                     transition: opacity 0.2s, color 0.2s;
@@ -344,8 +350,8 @@
                     position: relative;
                     display: flex;
                     align-items: center;
-                    padding: 0.75rem 0;
-                    margin: 0.25rem 0.75rem;
+                    padding: 0.65rem 0;
+                    margin: 0.2rem 0.75rem;
                     border-radius: 0.5rem;
                     color: var(--muted-foreground);
                     text-decoration: none;
@@ -436,10 +442,10 @@
                     border-top: none;
                     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
                     color: var(--muted-foreground);
-                    font-size: 0.725rem;
+                    font-size: 0.7rem;
                     font-weight: 600;
                     letter-spacing: 0.5px;
-                    padding: 0.35rem 0.85rem 0.4rem 0.85rem;
+                    padding: 0.3rem 0.75rem 0.35rem 0.75rem;
                     border-radius: 0 0 0.5rem 0.5rem;
                     z-index: 9999;
                     pointer-events: none;
@@ -460,7 +466,7 @@
         const userEmail = (payload && payload.sub) ? payload.sub : 'Unknown';
         const emailPrefix = userEmail.split('@')[0];
         const userInitials = emailPrefix.slice(0, 2).toUpperCase();
-        const userDisplayName = userEmail.length > 22 ? userEmail.slice(0, 20) + '…' : userEmail;
+        const userDisplayName = userEmail.length > 20 ? userEmail.slice(0, 18) + '…' : userEmail;
         // Deterministic color derived from email string (stable across sessions)
         const AVATAR_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#14b8a6'];
         const colorIdx = emailPrefix.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
@@ -473,7 +479,7 @@
 
             return `<a href="${item.href}" class="nav-item ${isActive ? 'active' : ''}">` +
                 `<div class="w-5 h-5 flex items-center justify-center shrink-0">` +
-                `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+                `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
                 item.svg +
                 `</svg>` +
                 `</div>` +
@@ -483,26 +489,26 @@
 
         const navHTML = `
             <nav class="sidebar">
-                <div class="flex items-center justify-center h-12 mb-6 cursor-default">
-                    <div class="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center text-background font-bold text-lg shadow-md shrink-0">
+                <div class="flex items-center justify-center h-12 mb-4 cursor-default">
+                    <div class="w-7 h-7 rounded bg-foreground flex items-center justify-center text-background font-bold text-base shadow-sm shrink-0">
                         OI
                     </div>
-                    <span class="nav-text text-lg font-bold tracking-tight text-foreground">Pro Analytics</span>
+                    <span class="nav-text text-base font-bold tracking-tight text-foreground">Pro Analytics</span>
                 </div>
 
                 <div class="sidebar-content flex-1 overflow-y-auto">
                     ${navItemsHtml}
                 </div>
 
-                <div class="mt-auto px-3 border-t border-border pt-4 flex flex-col gap-2">
+                <div class="mt-auto px-3 border-t border-border pt-3 flex flex-col gap-1.5">
                     <!-- User Identity Card -->
-                    <div class="flex items-center gap-2.5 px-2 py-2 rounded-lg bg-muted/40 border border-border/50 mb-1 min-w-0 overflow-hidden" title="${payload && payload.sub ? payload.sub : 'Unknown'}">
-                        <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white" style="background:${userAvatarColor}">
+                    <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-muted/40 border border-border/50 mb-1 min-w-0 overflow-hidden" title="${payload && payload.sub ? payload.sub : 'Unknown'}">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold text-white" style="background:${userAvatarColor}">
                             ${userInitials}
                         </div>
                         <div class="nav-text flex flex-col min-w-0 flex-1">
-                            <span class="text-xs font-medium text-foreground truncate leading-tight">${userDisplayName}</span>
-                            <span class="text-[10px] px-1.5 py-0.5 rounded mt-0.5 inline-flex w-fit font-semibold ${isAdmin ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">${isAdmin ? 'Admin' : 'User'}</span>
+                            <span class="text-[11px] font-medium text-foreground truncate leading-tight">${userDisplayName}</span>
+                            <span class="text-[9px] px-1 py-0.5 rounded mt-0.5 inline-flex w-fit font-semibold ${isAdmin ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}">${isAdmin ? 'Admin' : 'User'}</span>
                         </div>
                     </div>
 
