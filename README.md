@@ -26,14 +26,15 @@ A robust, modular algorithmic trading framework designed for Indian stock market
     - **Max Pain & IV Smile**: Mathematical pinning analysis and volatility skew visualization.
     - **ATM Straddle Analysis**: Deep dive into straddle premiums with mean reversion tracking.
     - **Multi-Strike Comparison**: Contrast OI and Price action across 5 strikes simultaneously.
-    - **Multi-Option Strategy Chart**: Synchronized Price and Normalized OI Change for custom multi-leg strategies.
+    - **Multi-Option Strategy Chart**: Synchronized Price and Normalized OI Change for custom multi-leg strategies with **Real-time NIFTY 50 Ticker** in header.
   - **Risk & Exposure Management**:
     - **Net GEX Regime**: Market Volatility Regime identification (Traffic Light logic) and Gamma Flip points.
     - **Greeks Exposure**: Real-time systemic Delta and Gamma tracking per strike.
     - **Exposure Change Heatmap**: NIFTY-focused minute-by-minute OI change tracking from session start.
     - **Strike Greeks History**: Historical greeks data persistent across server restarts/sessions.
   - **Trend & Mathematical Analysis**:
-    - **Future Intraday & Price vs OI**: Correlating future price movement with open interest buildup.
+    - **Futures HQ**: Modernized dashboard correlating future price movement with open interest buildup using glassmorphism and real-time signals.
+    - **Future Intraday & Price vs OI**: Visual correlation of price and OI.
     - **3D Surface Analysis**: Volatility and OI surface visualization for whole-range diagnostic.
     - **OI Trend Analyzer & Cumulative Analysis**: Advanced filtering for OI buildup and cumulative option price flow.
     - **Seller's Edge (PoP)**: Probability of Profit scatter plots for premium vs risk assessment.

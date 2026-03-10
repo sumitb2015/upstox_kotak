@@ -2748,6 +2748,14 @@ async def serve_pricing_page():
 async def serve_pricing_page_html():
     return await serve_pricing_page()
 
+@app.get("/features", response_class=HTMLResponse)
+async def serve_features_page():
+    return await serve_static_page("features.html")
+
+@app.get("/features.html", response_class=HTMLResponse)
+async def serve_features_page_html():
+    return await serve_features_page()
+
 @app.get("/terms", response_class=HTMLResponse)
 async def serve_terms_page():
     """

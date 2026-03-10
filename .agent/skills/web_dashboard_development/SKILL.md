@@ -59,6 +59,12 @@ This skill outlines the standard architecture and best practices for building fi
     -   **ATM High-Contrast (Light Mode)**: For the ATM strike, prioritize readability by using high-contrast text (`text-amber-900` / bold) and distinct cell backgrounds (e.g., `bg-amber-500/20`) to prevent washing out in light backgrounds. 
     -   **Loading States**: Always implement a "Loading..." spinner or shimmer effect while waiting for initial API or WebSocket payloads to prevent layout jump.
     -   **Sentiment Badges**: Implement explicit visual badges (Bullish/Bearish/Neutral) dynamically driven by underlying data differences.
+    -   **HQ Layout (Modern Minimalist)**: For "HQ" style dashboards, use a single centered column `max-w-7xl mx-auto` with significant top/bottom padding. Avoid cluttered grids; instead, use floating glass cards with large typography.
+    -   **Multi-Column Glass Tooltips**: 
+        - Pattern: Use a professional grid within the Recharts/Plotly tooltip.
+        - Styling: `bg-slate-950/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl`.
+        - Content: Align labels to the left and values to the right in high-contrast emerald/rose text.
+    -   **Header Index Tickers**: For multi-chart apps, integrate a sleek real-time ticker for parent indices (e.g., NIFTY 50) directly into the `<h1>` or adjacent header space. Use a discrete vertical separator `w-px bg-border/40` to distinguish the app title from the live feed.
 6.  **Dynamic X-Axis Focus (Intraday)**:
     -   **Standard**: Instead of a static 9:15-15:30 X-axis, use a dynamic range that follows the current time.
     -   **Rule**: End the chart at `current_time + 10 minutes`. This provides a focused view of the morning's action without a long, empty tail to the right.

@@ -4,745 +4,725 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SaaS Pricing — OI Pro</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    <title>Institutional Pricing | OI Pro Analytics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap"
         rel="stylesheet">
     <style>
-        *,
-        *::before,
-        *::after {
+        :root {
+            --bg-deep: #0A0D0F;
+            --bg-card: rgba(17, 20, 24, 0.7);
+            --bg-glass: rgba(255, 255, 255, 0.025);
+            --border-dim: rgba(255, 255, 255, 0.06);
+            --border-bright: #1E2428;
+            --accent: #00E676;
+            --accent-glow: 0 0 20px #00E67644;
+            --text-main: #FFFFFF;
+            --text-dim: #94A3B8;
+            --red: #FF5252;
+            --green: #00E676;
+            --mono: 'JetBrains Mono', monospace;
+            --heading: 'Syne', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
             box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
         }
 
         body {
+            background-color: var(--bg-deep);
+            color: var(--text-main);
             font-family: 'Inter', sans-serif;
-            background: #02080f;
-            color: #f1f5f9;
-            margin: 0;
-            min-height: 100vh;
             overflow-x: hidden;
+            position: relative;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
 
-        /* ── Aurora BG ── */
-        .aurora-bg {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            overflow: hidden;
-            pointer-events: none;
-        }
-
-        .aurora-bg .orb1 {
-            position: absolute;
-            top: -25%;
-            left: -15%;
-            width: 75vw;
-            height: 75vw;
-            max-width: 780px;
-            max-height: 780px;
-            background: radial-gradient(ellipse, rgba(16, 185, 129, 0.11) 0%, transparent 65%);
-            animation: driftA 20s ease-in-out infinite alternate;
-        }
-
-        .aurora-bg .orb2 {
-            position: absolute;
-            bottom: -20%;
-            right: -10%;
-            width: 65vw;
-            height: 65vw;
-            max-width: 680px;
-            max-height: 680px;
-            background: radial-gradient(ellipse, rgba(56, 189, 248, 0.07) 0%, transparent 65%);
-            animation: driftB 25s ease-in-out infinite alternate;
-        }
-
-        .aurora-bg .orb3 {
-            position: absolute;
-            top: 40%;
-            left: 40%;
-            width: 40vw;
-            height: 40vw;
-            max-width: 400px;
-            max-height: 400px;
-            background: radial-gradient(ellipse, rgba(139, 92, 246, 0.05) 0%, transparent 60%);
-            animation: driftC 30s ease-in-out infinite alternate;
-        }
-
-        @keyframes driftA {
-            from {
-                transform: translate(0, 0) scale(1)
-            }
-
-            to {
-                transform: translate(5%, 4%) scale(1.08)
-            }
-        }
-
-        @keyframes driftB {
-            from {
-                transform: translate(0, 0) scale(1)
-            }
-
-            to {
-                transform: translate(-4%, -5%) scale(1.06)
-            }
-        }
-
-        @keyframes driftC {
-            from {
-                transform: translate(0, 0) scale(1)
-            }
-
-            to {
-                transform: translate(3%, -3%) scale(1.1)
-            }
-        }
-
-        /* ── Dot Grid ── */
-        .dot-grid {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            background-image: radial-gradient(circle, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
-            background-size: 28px 28px;
-            mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 0%, transparent 100%);
-            -webkit-mask-image: radial-gradient(ellipse 90% 90% at 50% 50%, black 0%, transparent 100%);
-        }
-
-        /* ── Glass ── */
-        .glass {
-            background: rgba(8, 15, 30, 0.7);
-            backdrop-filter: blur(32px);
-            -webkit-backdrop-filter: blur(32px);
-            border: 1px solid rgba(255, 255, 255, 0.07);
-        }
-
-        /* ── Animated wordmark ── */
-        .wordmark {
-            background: linear-gradient(100deg, #10b981 0%, #34d399 35%, #a7f3d0 50%, #34d399 65%, #10b981 100%);
-            background-size: 250% 100%;
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: shimmer 5s linear infinite;
-        }
-
-        @keyframes shimmer {
-            0% {
-                background-position: 100% 0
-            }
-
-            100% {
-                background-position: -100% 0
-            }
-        }
-
-        /* ── CTA Button ── */
-        .btn-cta {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: #020812;
-            font-weight: 800;
-            border: none;
-            border-radius: 0.75rem;
-            cursor: pointer;
-            width: 100%;
-            padding: 1rem;
-            font-size: 0.95rem;
-            font-family: 'Inter', sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            transition: all 0.2s;
-            box-shadow: 0 4px 24px rgba(16, 185, 129, 0.22);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .btn-cta::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.13) 0%, transparent 55%);
-        }
-
-        .btn-cta:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 32px rgba(16, 185, 129, 0.38);
-        }
-
-        .btn-cta:active {
-            transform: scale(0.98);
-        }
-
-        .btn-ghost {
-            background: rgba(255, 255, 255, 0.05);
-            color: #94a3b8;
-            font-weight: 600;
-            border: 1px solid var(--border);
-            border-radius: 0.75rem;
-            cursor: pointer;
-            padding: 1rem 1.5rem;
-            font-size: 0.95rem;
-            font-family: 'Inter', sans-serif;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-
-        .btn-ghost:hover {
-            background: rgba(255, 255, 255, 0.09);
-            color: white;
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
-        /* ── Header Styles ── */
-        .page-header {
+        /* Background Noise & Grid */
+        body::before {
+            content: "";
             position: fixed;
             top: 0;
             left: 0;
-            right: 0;
-            z-index: 50;
-            background: rgba(2, 8, 15, 0.6);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            height: 64px;
-            display: flex;
-            align-items: center;
-        }
-
-        .header-content {
             width: 100%;
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 0 1.5rem;
+            height: 100%;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Header */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 30px 6%;
             display: flex;
-            align-items: center;
             justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 13, 15, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-dim);
         }
 
-        .header-logo {
-            font-size: 1.25rem;
-            font-weight: 900;
-            letter-spacing: -0.025em;
-            color: #fff;
+        .logo {
+            font-family: var(--heading);
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
             text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            flex-shrink: 0;
         }
 
-        .header-nav {
+        .logo-box {
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
             display: flex;
             align-items: center;
-            gap: 2rem;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 18px;
+            border-radius: 4px;
+        }
+
+        .header-cta {
+            display: flex;
+            align-items: center;
+            gap: 40px;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 32px;
+            align-items: center;
         }
 
         .nav-link {
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: #94a3b8;
             text-decoration: none;
-            transition: color 0.2s;
+            color: var(--text-dim);
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            transition: color 0.3s;
         }
 
-        .nav-link:hover {
-            color: #10b981;
+        .nav-link:hover,
+        .nav-link.active {
+            color: var(--accent);
         }
 
-        /* ── Pricing Toggle ── */
-        .toggle-group {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 9999px;
-            padding: 4px;
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 180px 6% 100px;
+            max-width: 1400px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 2;
+            width: 100%;
+        }
+
+        .pricing-hero {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .badge {
             display: inline-flex;
             align-items: center;
-        }
-
-        .toggle-btn {
-            padding: 6px 20px;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #64748b;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .toggle-btn.active {
-            background: #10b981;
-            color: #020812;
-        }
-
-        /* ── Feature Table ── */
-        .comparison-table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-        }
-
-        .comparison-table th,
-        .comparison-table td {
-            padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-            text-align: center;
-        }
-
-        .comparison-table th {
-            font-weight: 700;
-            color: #f1f5f9;
+            gap: 8px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--accent);
+            letter-spacing: 2px;
+            margin-bottom: 24px;
             text-transform: uppercase;
-            font-size: 0.75rem;
-            letter-spacing: 0.1em;
         }
 
-        .comparison-table td:first-child {
-            text-align: left;
-            font-weight: 500;
-            color: #94a3b8;
-            font-size: 0.9rem;
+        .headline {
+            font-family: var(--heading);
+            font-size: 64px;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            letter-spacing: -2px;
         }
 
-        /* ── FAQ Accordion ── */
-        .faq-item {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 1rem;
-            margin-bottom: 1rem;
-            overflow: hidden;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        .headline span {
+            color: var(--accent);
         }
 
-        .faq-question {
-            padding: 1.5rem;
-            width: 100%;
+        .subhead {
+            font-size: 18px;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin: 0 auto 48px;
+            line-height: 1.6;
+        }
+
+        /* Toggle */
+        .toggle-container {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            font-weight: 600;
-            text-align: left;
-            cursor: pointer;
-            color: #f1f5f9;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 60px;
         }
 
-        .faq-answer {
-            max-height: 0;
-            padding: 0 1.5rem;
-            overflow: hidden;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            color: #94a3b8;
-            line-height: 1.6;
-            font-size: 0.95rem;
+        .toggle-label {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--text-dim);
+            letter-spacing: 1px;
         }
 
-        .faq-item.active {
-            background: rgba(255, 255, 255, 0.04);
-            border-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .faq-item.active .faq-answer {
-            max-height: 300px;
-            padding-bottom: 1.5rem;
-        }
-
-        .faq-icon {
-            transition: transform 0.3s;
-        }
-
-        .faq-item.active .faq-icon {
-            transform: rotate(180deg);
-        }
-
-        /* ── Footer ── */
-        .page-footer {
-            background: #010409;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            padding: 5rem 1.5rem;
-            margin-top: auto;
+        .switch {
             position: relative;
-            z-index: 10;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
         }
 
-        .footer-content {
-            max-width: 1280px;
-            margin: 0 auto;
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border-bright);
+            transition: .4s;
+            border-radius: 24px;
+            border: 1px solid var(--border-dim);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: var(--accent);
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        .save-badge {
+            background: rgba(0, 230, 118, 0.1);
+            color: var(--accent);
+            font-family: var(--mono);
+            font-size: 10px;
+            padding: 4px 10px;
+            border-radius: 100px;
+            letter-spacing: 1px;
+        }
+
+        /* Pricing Grid */
+        .pricing-grid {
             display: grid;
-            grid-template-columns: 1fr;
-            gap: 4rem;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 100px;
         }
 
-        @media (min-width: 768px) {
-            .footer-content {
-                grid-template-columns: 2fr 1fr 1fr;
+        .price-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            padding: 40px 24px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .price-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.7);
+        }
+
+        .price-card.popular {
+            border-color: var(--accent);
+            background: rgba(0, 230, 118, 0.02);
+        }
+
+        .popular-tag {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: var(--accent);
+            color: #000;
+            font-family: var(--mono);
+            font-size: 10px;
+            font-weight: 800;
+            padding: 8px 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom-left-radius: 8px;
+        }
+
+        .tier-name {
+            font-family: var(--mono);
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+
+        .tier-price {
+            font-family: var(--heading);
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .tier-price span {
+            font-size: 16px;
+            color: var(--text-dim);
+            font-weight: 400;
+        }
+
+        .tier-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-bottom: 40px;
+            line-height: 1.5;
+            min-height: 42px;
+        }
+
+        .feature-list {
+            list-style: none;
+            margin-bottom: 48px;
+            flex: 1;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+
+        .feature-item svg {
+            flex-shrink: 0;
+            color: var(--accent);
+        }
+
+        .btn {
+            padding: 16px 28px;
+            border-radius: 4px;
+            font-family: var(--heading);
+            font-weight: 700;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            box-shadow: var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 0 30px #00E67677;
+            transform: scale(1.02);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-main);
+            border: 1px solid var(--border-dim);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--text-dim);
+        }
+
+        /* Comparison Table */
+        .comparison-section {
+            margin-bottom: 100px;
+        }
+
+        .section-title {
+            font-family: var(--heading);
+            font-size: 32px;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 60px;
+            letter-spacing: -1px;
+        }
+
+        .table-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            min-width: 800px;
+        }
+
+        th {
+            background: #14191D;
+            padding: 24px;
+            text-align: center;
+            font-family: var(--mono);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border-bright);
+        }
+
+        th:first-child {
+            text-align: left;
+        }
+
+        td {
+            padding: 20px 24px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-dim);
+            color: var(--text-dim);
+        }
+
+        td:first-child {
+            text-align: left;
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        .check {
+            color: var(--accent);
+        }
+
+        .cross {
+            color: #2A3137;
+        }
+
+        /* Footer */
+        footer {
+            padding: 80px 6% 60px;
+            border-top: 1px solid var(--border-dim);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+            background: rgba(10, 13, 15, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .footer-left {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .copyright {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: #444;
+            letter-spacing: 1px;
+        }
+
+        .footer-nav {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: var(--mono);
+            transition: color 0.3s;
+        }
+
+        .footer-link:hover {
+            color: var(--accent);
+        }
+
+        @media (max-width: 1200px) {
+            .pricing-grid {
+                grid-template-columns: repeat(2, 1fr);
             }
         }
 
-        /* ── Animations ── */
-        .fade-up {
-            animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
-        }
-
-        @keyframes fadeUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px)
+        @media (max-width: 900px) {
+            header {
+                padding: 20px 6%;
             }
 
-            to {
-                opacity: 1;
-                transform: translateY(0)
+            .nav-menu {
+                display: none;
             }
-        }
 
-        .delay-1 {
-            animation-delay: 0.15s;
-        }
+            .headline {
+                font-size: 42px;
+            }
 
-        .delay-2 {
-            animation-delay: 0.3s;
+            .pricing-grid {
+                grid-template-columns: 1fr;
+                max-width: 450px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            footer {
+                flex-direction: column;
+                gap: 30px;
+                text-align: center;
+            }
         }
     </style>
-
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        background: 'var(--background)',
-                        foreground: 'var(--foreground)',
-                        card: 'var(--card)',
-                        'card-foreground': 'var(--card-foreground)',
-                        popover: 'var(--popover)',
-                        'popover-foreground': 'var(--popover-foreground)',
-                        primary: 'var(--primary)',
-                        'primary-foreground': 'var(--primary-foreground)',
-                        secondary: 'var(--secondary)',
-                        'secondary-foreground': 'var(--secondary-foreground)',
-                        muted: 'var(--muted)',
-                        'muted-foreground': 'var(--muted-foreground)',
-                        accent: 'var(--accent)',
-                        'accent-foreground': 'var(--accent-foreground)',
-                        destructive: 'var(--destructive)',
-                        'destructive-foreground': 'var(--destructive-foreground)',
-                        border: 'var(--border)',
-                        input: 'var(--input)',
-                        ring: 'var(--ring)'
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        :root {
-            --background: #ffffff;
-            --foreground: #020817;
-            --card: #ffffff;
-            --card-foreground: #020817;
-            --popover: #ffffff;
-            --popover-foreground: #020817;
-            --primary: #020817;
-            --primary-foreground: #f8fafc;
-            --secondary: #f8fafc;
-            --secondary-foreground: #1e293b;
-            --muted: #f1f5f9;
-            --muted-foreground: #64748b;
-            --accent: #f1f5f9;
-            --accent-foreground: #020817;
-            --destructive: #ef4444;
-            --destructive-foreground: #f8fafc;
-            --border: #e2e8f0;
-            --input: #e2e8f0;
-            --ring: #020817;
-            --radius: 0.5rem;
-        }
-
-        .dark {
-            --background: #020817;
-            --foreground: #f8fafc;
-            --card: #0f172a;
-            --card-foreground: #f8fafc;
-            --popover: #020817;
-            --popover-foreground: #f8fafc;
-            --primary: #f8fafc;
-            --primary-foreground: #020817;
-            --secondary: #1e293b;
-            --secondary-foreground: #f8fafc;
-            --muted: #1e293b;
-            --muted-foreground: #94a3b8;
-            --accent: #1e293b;
-            --accent-foreground: #f8fafc;
-            --destructive: #ef4444;
-            --destructive-foreground: #f8fafc;
-            --border: #334155;
-            --input: #334155;
-            --ring: #f8fafc;
-        }
-
-        body {
-            background-color: var(--background);
-            color: var(--foreground);
-            transition: background-color 0.2s ease, color 0.2s ease;
-        }
-        
-        .glass {
-            background: var(--card);
-            border: 1px solid var(--border);
-        }
-    </style>
-
 </head>
 
 <body>
-    <!-- Background -->
-    <div class="aurora-bg">
-        <div class="orb1"></div>
-        <div class="orb2"></div>
-        <div class="orb3"></div>
-    </div>
-    <div class="dot-grid"></div>
+    <!-- Noise Overlay -->
+    <svg class="noise-overlay" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <filter id="noiseFilter">
+            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#noiseFilter)" />
+    </svg>
 
-    <!-- Header -->
-    <header class="page-header">
-        <div class="header-content">
-            <a href="/login.html" class="header-logo">
-                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
-                </div>
-                <span class="wordmark">OI Pro</span>
-            </a>
-            <nav class="header-nav hidden md:flex">
-                <a href="/pricing.html" class="nav-link text-foreground font-bold">Pricing</a>
-                <a href="#" class="nav-link">Knowledge base</a>
-                <a href="/contact.html" class="nav-link">Contact Us</a>
-                <a href="/privacy.html" class="nav-link">Legals</a>
+    <header>
+        <a href="/" class="logo">
+            <div class="logo-box">O</div>
+            <span>OI PRO</span>
+        </a>
+        <div class="header-cta">
+            <nav class="nav-menu">
+                <a href="/features.html" class="nav-link">Features</a>
+                <a href="/pricing.html" class="nav-link active">Pricing</a>
+                <a href="/contact.html" class="nav-link">Contact</a>
             </nav>
-            <div class="flex items-center gap-4">
-                <a href="/login.html"
-                    class="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors">Sign In</a>
-                <button class="btn-cta !w-auto !py-2 !px-4 !text-xs">Try for Free</button>
-            </div>
+            <button class="btn btn-primary" onclick="window.location.href='/login'"
+                style="padding: 10px 20px; font-size: 13px;">
+                Access Workspace →
+            </button>
         </div>
     </header>
 
-    <main class="relative z-10 pt-32 pb-24 px-6 overflow-hidden">
-        <!-- Hero Section -->
-        <section class="max-w-4xl mx-auto text-center mb-16 fade-up">
-            <h1 class="text-5xl md:text-7xl font-black tracking-tight mb-6 wordmark">Choose Your Trading Edge</h1>
-            <p class="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-                Powerful Options Analytics. Real-Time Data. Smarter Decisions. Get institutional-grade tools used by pro
-                traders.
-            </p>
-            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
-                <button class="btn-cta !w-auto !px-8 h-14 text-lg">Start Free 5-Day Trial</button>
-                <div class="text-xs text-muted-foreground font-medium">No credit card required</div>
-            </div>
-        </section>
+    <main>
+        <div class="pricing-hero">
+            <div class="badge">Institutional Grade Modules</div>
+            <h1 class="headline">Precision Tools for <span>Elite Traders</span></h1>
+            <p class="subhead">Scale your derivatives analysis with professional-grade data streams and custom execution
+                strategies.</p>
 
-        <!-- Pricing Toggle -->
-        <div class="flex flex-col items-center mb-12 fade-up delay-1">
-            <div class="flex items-center gap-4 mb-6">
-                <span class="text-sm font-bold text-muted-foreground uppercase tracking-widest">Pricing Plan</span>
-                <div class="toggle-group" id="pricing-toggle">
-                    <div class="toggle-btn active" data-period="monthly">Monthly</div>
-                    <div class="toggle-btn" data-period="yearly">Yearly</div>
-                </div>
-            </div>
-            <div class="text-emerald-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                    <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Save 15% with yearly billing
+            <div class="toggle-container">
+                <span class="toggle-label">MONTHLY</span>
+                <label class="switch">
+                    <input type="checkbox" id="billingToggle">
+                    <span class="slider"></span>
+                </label>
+                <span class="toggle-label">YEARLY</span>
+                <div class="save-badge">SAVE 15%</div>
             </div>
         </div>
 
-        <!-- Pricing Cards Section -->
-        <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-32 fade-up delay-2">
-            <!-- Card 1: Free Trial -->
-            <div
-                class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-border transition-all duration-300 relative">
-                <div
-                    class="absolute -top-3 left-1/2 -translate-x-1/2 bg-secondary text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-border text-muted-foreground">
-                    Try Before You Commit
-                </div>
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold mb-1">Free Trial</h3>
-                    <div class="flex items-baseline gap-1">
-                        <span class="text-4xl font-black">₹0</span>
-                    </div>
-                    <p class="text-sm text-muted-foreground mt-2 font-medium">5 Days Full Access</p>
-                </div>
-                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+        <div class="pricing-grid">
+            <!-- Free Trial -->
+            <div class="price-card">
+                <div class="tier-name">Free Trial</div>
+                <div class="tier-price">₹0</div>
+                <div class="tier-desc">Experience institutional data for a limited time.</div>
+                <ul class="feature-list">
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        All Pro Charts
+                        5 Days Full Access
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        16+ Analytics Views
+                    </li>
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
                         Live WebSocket Feed
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        Option Chain Analytics
-                    </li>
                 </ul>
-                <button class="btn-ghost !py-3">Start Free Trial</button>
+                <button class="btn btn-ghost" onclick="window.location.href='/login'">Start Exploration</button>
             </div>
 
-            <!-- Card 2: Basic -->
-            <div
-                class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-border transition-all duration-300">
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold mb-1">Basic</h3>
-                    <div class="flex items-baseline gap-1">
-                        <span class="text-4xl font-black price-val" data-monthly="399" data-yearly="339">₹399</span>
-                        <span class="text-muted-foreground font-medium text-sm">/ mo</span>
-                    </div>
-                    <p class="text-sm text-muted-foreground mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
-                    </p>
-                </div>
-                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+            <!-- Basic -->
+            <div class="price-card">
+                <div class="tier-name">Basic</div>
+                <div class="tier-price">₹<span class="price-val" data-monthly="399"
+                        data-yearly="339">399</span><span>/mo</span></div>
+                <div class="tier-desc">Essential analytics for consistent retail traders.</div>
+                <ul class="feature-list">
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Essential OI Analysis
+                        Institutional Data Stream
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Standard Greeks
+                        Standard Greeks Analysis
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        3 Symbols Tracking
+                        3 Symbols Concurrent Tracking
                     </li>
                 </ul>
-                <button class="btn-ghost !py-3">Get Basic</button>
+                <button class="btn btn-ghost">Select Basic</button>
             </div>
 
-            <!-- Card 3: Pro (Most Popular) -->
-            <div
-                class="glass p-8 rounded-[2rem] flex flex-col border-emerald-500/30 hover:border-emerald-500/50 shadow-[0_0_50px_rgba(16,185,129,0.1)] scale-105 relative transition-all duration-300">
-                <div
-                    class="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full text-emerald-950 shadow-[0_0_20px_rgba(16,185,129,0.4)]">
-                    Most Popular
-                </div>
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold mb-1">Pro</h3>
-                    <div class="flex items-baseline gap-1">
-                        <span class="text-4xl font-black price-val" data-monthly="599" data-yearly="509">₹599</span>
-                        <span class="text-muted-foreground font-medium text-sm">/ mo</span>
-                    </div>
-                    <p class="text-sm text-muted-foreground mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
-                    </p>
-                </div>
-                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+            <!-- Pro -->
+            <div class="price-card popular">
+                <div class="popular-tag">Proprietary Favorite</div>
+                <div class="tier-name">Pro</div>
+                <div class="tier-price">₹<span class="price-val" data-monthly="599"
+                        data-yearly="509">599</span><span>/mo</span></div>
+                <div class="tier-desc">Advanced gamma engines for professional edge.</div>
+                <ul class="feature-list">
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Everything in Basic
+                        Full GEX Regime Detection
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Advanced GEX Regime
+                        Strategy Backtesting Suite
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Strategy Backtester
-                    </li>
-                    <li class="flex items-center gap-3 font-bold text-foreground">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        Unlimited Symbols
+                        Unlimited Symbols Tracking
                     </li>
                 </ul>
-                <button class="btn-cta !py-4 h-14 shadow-[0_20px_40px_rgba(16,185,129,0.3)]">Upgrade to Pro</button>
+                <button class="btn btn-primary">Initialize Pro Access</button>
             </div>
 
-            <!-- Card 4: Ultra -->
-            <div
-                class="glass p-8 rounded-[2rem] flex flex-col border-white/[0.05] hover:border-border transition-all duration-300">
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold mb-1">Ultra</h3>
-                    <div class="flex items-baseline gap-1">
-                        <span class="text-4xl font-black price-val" data-monthly="999" data-yearly="849">₹999</span>
-                        <span class="text-muted-foreground font-medium text-sm">/ mo</span>
-                    </div>
-                    <p class="text-sm text-muted-foreground mt-2 font-medium">Billed <span class="billing-type">Monthly</span>
-                    </p>
-                </div>
-                <ul class="space-y-4 mb-10 text-sm text-muted-foreground flex-1">
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+            <!-- Ultra -->
+            <div class="price-card">
+                <div class="tier-name">Ultra</div>
+                <div class="tier-price">₹<span class="price-val" data-monthly="999"
+                        data-yearly="849">999</span><span>/mo</span></div>
+                <div class="tier-desc">Institutional infrastructure with dedicated resources.</div>
+                <ul class="feature-list">
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Institutional API Access
+                        Raw Multi-Broker API Access
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
-                        Custom Strategy Bot
+                        Custom Algo Implementation
                     </li>
-                    <li class="flex items-center gap-3">
-                        <svg class="text-emerald-500" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="3">
-                            <polyline points="20 6 9 17 4 12" />
+                    <li class="feature-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="3">
+                            <polyline points="20 6 9 17 4 12"></polyline>
                         </svg>
                         Priority Alpha Support
                     </li>
                 </ul>
-                <button class="btn-ghost !py-3">Go Ultra</button>
+                <button class="btn btn-ghost">Deploy Ultra</button>
             </div>
-        </section>
+        </div>
 
-        <!-- Feature Comparison Table -->
-        <section class="max-w-5xl mx-auto mb-32 fade-up">
-            <h2 class="text-3xl font-black text-center mb-12 tracking-tight">Compare Features</h2>
-            <div class="glass rounded-3xl overflow-hidden border-white/[0.05]">
-                <table class="comparison-table">
+        <section class="comparison-section">
+            <h2 class="section-title">Institutional Matrix Comparison</h2>
+            <div class="table-container">
+                <table>
                     <thead>
                         <tr>
-                            <th class="!text-left !px-6">Feature</th>
+                            <th>Capability Matrix</th>
                             <th>Free</th>
                             <th>Basic</th>
                             <th>Pro</th>
@@ -751,277 +731,70 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="!px-6">Live Option Chain</td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
+                            <td>Real-time Option Chain (L2)</td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
                         </tr>
                         <tr>
-                            <td class="!px-6">Intraday OI Buildup</td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
+                            <td>GEX Reverse Flip Points</td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
                         </tr>
                         <tr>
-                            <td class="!px-6">Gamma Exposure (GEX)</td>
-                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3">
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
+                            <td>Multi-Strike OI Divergence</td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
                         </tr>
                         <tr>
-                            <td class="!px-6">Webhooks & Alerts</td>
-                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3">
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg></td>
-                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3">
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
+                            <td>Historical Straddle Reversion</td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="check">✓</span></td>
+                            <td><span class="check">✓</span></td>
                         </tr>
                         <tr>
-                            <td class="!px-6">API Data Access</td>
-                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3">
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg></td>
-                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3">
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg></td>
-                            <td><svg class="text-slate-600 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3">
-                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg></td>
-                            <td><svg class="text-emerald-500 mx-auto" width="16" height="16" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="3.5">
-                                    <polyline points="20 6 9 17 4 12" />
-                                </svg></td>
+                            <td>Custom Integration Webhooks</td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="cross">✕</span></td>
+                            <td><span class="check">✓</span></td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </section>
-
-        <!-- FAQ Section -->
-        <section class="max-w-3xl mx-auto mb-32 fade-up">
-            <h2 class="text-3xl font-black text-center mb-12 tracking-tight">Frequently Asked Questions</h2>
-            <div class="space-y-4">
-                <div class="faq-item">
-                    <button class="faq-question">
-                        How does the 5-day free trial work?
-                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5">
-                            <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                    </button>
-                    <div class="faq-answer">
-                        The trial offers full access to all "Pro" plan features for 5 trading days. No credit card is
-                        required to start. After the period ends, you can choose to subscribe to any plan.
-                    </div>
-                </div>
-                <div class="faq-item">
-                    <button class="faq-question">
-                        Can I cancel my subscription at any time?
-                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5">
-                            <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                    </button>
-                    <div class="faq-answer">
-                        Yes, you can cancel your subscription from your account dashboard instantly. You will retain
-                        access until the end of your current billing period.
-                    </div>
-                </div>
-                <div class="faq-item">
-                    <button class="faq-question">
-                        What is your refund policy?
-                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5">
-                            <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                    </button>
-                    <div class="faq-answer">
-                        We offer a 7-day money-back guarantee if you are not satisfied with the platform, no questions
-                        asked.
-                    </div>
-                </div>
-                <div class="faq-item">
-                    <button class="faq-question">
-                        Is there a discount for yearly billing?
-                        <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2.5">
-                            <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                    </button>
-                    <div class="faq-answer">
-                        Yes! By choosing yearly billing, you save 15% compared to the monthly subscription rate.
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Final CTA -->
-        <section
-            class="max-w-5xl mx-auto text-center glass rounded-[3rem] p-16 border-white/[0.05] relative overflow-hidden fade-up">
-            <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-transparent"></div>
-            <div class="relative z-10">
-                <h2 class="text-4xl md:text-5xl font-black mb-6 tracking-tight">Ready to Level Up Your Options Trading?
-                </h2>
-                <p class="text-lg text-muted-foreground mb-10 max-w-xl mx-auto">Join thousands of professional traders using
-                    the industry standard for options intelligence.</p>
-                <button class="btn-cta !w-auto !px-12 h-16 text-xl mx-auto">Start Free 5-Day Trial Now</button>
-            </div>
-        </section>
     </main>
 
-    <footer class="page-footer">
-        <div class="footer-content">
-            <div class="footer-brand">
-                <h2 class="wordmark text-2xl font-black mb-4">OI Pro</h2>
-                <p class="text-muted-foreground text-sm leading-relaxed max-w-xs">Institutional-grade derivatives intelligence
-                    for active traders. Feel the pulse of the market with live data and deep analytics.</p>
-            </div>
-            <div class="grid grid-cols-2 gap-8">
-                <div>
-                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6">Resources</h3>
-                    <ul class="space-y-4 text-sm font-medium text-muted-foreground">
-                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Documentation</a></li>
-                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Trading API</a></li>
-                        <li><a href="#" class="hover:text-emerald-400 transition-colors">Strategic Guide</a></li>
-                    </ul>
-                </div>
-                <div>
-                    <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6">Company</h3>
-                    <ul class="space-y-4 text-sm font-medium text-muted-foreground">
-                        <li><a href="/privacy.html" class="hover:text-emerald-400 transition-colors">Privacy Policy</a>
-                        </li>
-                        <li><a href="/terms.html" class="hover:text-emerald-400 transition-colors">Terms Guide</a></li>
-                        <li><a href="/contact.html" class="hover:text-emerald-400 transition-colors">Contact Support</a>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+    <footer>
+        <div class="footer-left">
+            <a href="/" class="logo" style="font-size: 18px; margin-bottom: 0;">
+                <div class="logo-box" style="width: 24px; height: 24px; font-size: 14px;">O</div>
+                <span>OI PRO</span>
+            </a>
+            <p class="copyright">© 2026 OI PRO ANALYTICS. INSTITUTIONAL DERIVATIVES INTELLIGENCE.</p>
         </div>
-        <div
-            class="max-w-7xl mx-auto mt-20 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-6">
-            <div class="text-xs text-slate-600">&copy; 2026 OI Pro Analytics. All rights reserved.</div>
-            <div class="flex gap-6">
-                <!-- Social Icons -->
-                <a href="#" class="text-slate-600 hover:text-emerald-400 transition-colors"><svg width="18" height="18"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path
-                            d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
-                    </svg></a>
-                <a href="#" class="text-slate-600 hover:text-emerald-400 transition-colors"><svg width="18" height="18"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-                    </svg></a>
-                <a href="#" class="text-slate-600 hover:text-emerald-400 transition-colors"><svg width="18" height="18"
-                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-                        <rect x="2" y="9" width="4" height="12" />
-                        <circle cx="4" cy="4" r="2" />
-                    </svg></a>
-            </div>
-        </div>
+        <nav class="footer-nav">
+            <a href="/terms.html" class="footer-link">Terms</a>
+            <a href="/privacy.html" class="footer-link">Privacy</a>
+            <a href="/contact.html" class="footer-link">Contact</a>
+            <a href="/pricing.html" class="footer-link">Pricing</a>
+        </nav>
     </footer>
 
     <script>
-        // Pricing Toggle Logic
-        const toggle = document.getElementById('pricing-toggle');
+        const billingToggle = document.getElementById('billingToggle');
         const priceVals = document.querySelectorAll('.price-val');
-        const billingTypes = document.querySelectorAll('.billing-type');
 
-        toggle.addEventListener('click', (e) => {
-            const btn = e.target.closest('.toggle-btn');
-            if (!btn) return;
-
-            // Update Toggle UI
-            toggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-
-            const period = btn.dataset.period;
-
-            // Update Prices
+        billingToggle.addEventListener('change', function () {
             priceVals.forEach(val => {
-                const newPrice = val.getAttribute(`data-${period}`);
-                val.textContent = `₹${newPrice}`;
-            });
-
-            // Update Billing Type labels
-            billingTypes.forEach(label => {
-                label.textContent = period === 'monthly' ? 'Monthly' : 'Yearly';
-            });
-        });
-
-        // FAQ Toggle Logic
-        document.querySelectorAll('.faq-question').forEach(button => {
-            button.addEventListener('click', () => {
-                const item = button.parentElement;
-                const isActive = item.classList.contains('active');
-
-                // Close others
-                document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('active'));
-
-                if (!isActive) {
-                    item.classList.add('active');
-                }
+                const type = this.checked ? 'yearly' : 'monthly';
+                val.textContent = val.getAttribute(`data-${type}`);
             });
         });
     </script>

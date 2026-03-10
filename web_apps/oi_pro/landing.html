@@ -43,6 +43,138 @@
             position: relative;
         }
 
+        header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 40px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .logo {
+            font-family: var(--heading);
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            flex-shrink: 0;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .nav-link {
+            text-decoration: none;
+            color: var(--text-dim);
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            transition: color 0.3s;
+        }
+
+        .nav-link:hover {
+            color: var(--accent);
+        }
+
+        @media (max-width: 900px) {
+            .nav-menu {
+                display: none;
+            }
+        }
+
+        .logo-box {
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 18px;
+            border-radius: 4px;
+        }
+
+        .header-cta {
+            display: flex;
+            align-items: center;
+            gap: 40px;
+            opacity: 0;
+            transform: translateY(-10px);
+            animation: fadeInDown 0.8s forwards 0.5s;
+        }
+
+        footer {
+            padding: 60px 6%;
+            border-top: 1px solid var(--border-dim);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+            background: rgba(10, 13, 15, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .footer-left {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .copyright {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: #444;
+            letter-spacing: 1px;
+        }
+
+        .footer-nav {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: var(--mono);
+            transition: color 0.3s;
+        }
+
+        .footer-link:hover {
+            color: var(--accent);
+        }
+
+        @media (max-width: 768px) {
+            footer {
+                flex-direction: column;
+                gap: 30px;
+                text-align: center;
+            }
+        }
+
+        @keyframes fadeInDown {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         /* Subtle Noise & Grid Overlay */
         body::before {
             content: "";
@@ -69,68 +201,12 @@
             z-index: 9999;
         }
 
-        /* Ticker Bar */
-        .ticker-container {
-            width: 100%;
-            height: 38px;
-            background: rgba(0, 0, 0, 0.4);
-            border-bottom: 1px solid var(--border-dim);
-            backdrop-filter: blur(10px);
-            display: flex;
-            align-items: center;
-            overflow: hidden;
-            position: relative;
-            z-index: 10;
-        }
 
-        .ticker-track {
-            display: flex;
-            white-space: nowrap;
-            animation: ticker 60s linear infinite;
-            padding-left: 100%;
-        }
-
-        @keyframes ticker {
-            0% {
-                transform: translateX(0);
-            }
-
-            100% {
-                transform: translateX(-100%);
-            }
-        }
-
-        .ticker-item {
-            display: flex;
-            align-items: center;
-            padding: 0 30px;
-            font-family: var(--mono);
-            font-size: 11px;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-
-        .ticker-label {
-            color: var(--text-dim);
-            margin-right: 8px;
-        }
-
-        .ticker-val {
-            font-weight: 700;
-        }
-
-        .ticker-val.up {
-            color: var(--green);
-        }
-
-        .ticker-val.down {
-            color: var(--red);
-        }
 
         /* Main Layout */
         .hero {
             position: relative;
-            min-height: calc(100vh - 38px);
+            min-height: 100vh;
             display: grid;
             grid-template-columns: 1.1fr 0.9fr;
             gap: 40px;
@@ -268,14 +344,7 @@
         }
 
         /* CTAs */
-        .cta-group {
-            display: flex;
-            align-items: center;
-            gap: 24px;
-            margin-bottom: 40px;
-            opacity: 0;
-            animation: fadeIn 1s forwards 1.2s;
-        }
+
 
         .btn {
             padding: 14px 28px;
@@ -321,6 +390,7 @@
             flex-wrap: wrap;
             gap: 16px;
             align-items: center;
+            margin-top: 20px;
             font-family: var(--mono);
             font-size: 10px;
             color: var(--text-dim);
@@ -792,10 +862,6 @@
             .log-panel {
                 display: none;
             }
-
-            .ticker-item:nth-child(n+4) {
-                display: none;
-            }
         }
 
         /* Scanline Filter Simulation */
@@ -826,12 +892,24 @@
         <rect width="100%" height="100%" filter="url(#noiseFilter)" />
     </svg>
 
-    <div class="ticker-container">
-        <div class="ticker-track" id="tickerTrack">
-            <!-- Ticker items dynamically filled via JS -->
+
+
+    <header>
+        <a href="/" class="logo">
+            <div class="logo-box">O</div>
+            <span>OI PRO</span>
+        </a>
+        <div class="header-cta">
+            <nav class="nav-menu">
+                <a href="/features.html" class="nav-link">Features</a>
+                <a href="/pricing.html" class="nav-link">Pricing</a>
+                <a href="/contact.html" class="nav-link">Contact</a>
+            </nav>
+            <button class="btn btn-primary" onclick="openLogin()" style="padding: 10px 20px; font-size: 13px;">
+                Access Workspace →
+            </button>
         </div>
-        <div class="scanline-overlay"></div>
-    </div>
+    </header>
 
     <section class="hero">
         <div class="left-col">
@@ -849,7 +927,7 @@
                 Trading.
             </p>
 
-            <div class="feature-grid" id="featureGrid">
+            <div class="feature-grid" id="features">
                 <!-- 6 Feature Cards -->
                 <div class="feature-card" style="transition-delay: 1.0s">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -914,10 +992,7 @@
                 </div>
             </div>
 
-            <div class="cta-group">
-                <button class="btn btn-primary" onclick="openLogin()">Access Workspace →</button>
-                <a href="#suite" class="btn btn-ghost">View Analytics Suite</a>
-            </div>
+
 
             <div class="trust-signals">
                 <span>JWT Secured</span>
@@ -991,6 +1066,22 @@
         </div>
     </section>
 
+    <footer>
+        <div class="footer-left">
+            <a href="/" class="logo" style="font-size: 18px;">
+                <div class="logo-box" style="width: 24px; height: 24px; font-size: 14px;">O</div>
+                <span>OI PRO</span>
+            </a>
+            <p class="copyright">© 2026 OI PRO ANALYTICS. INSTITUTIONAL DERIVATIVES INTELLIGENCE.</p>
+        </div>
+        <nav class="footer-nav">
+            <a href="/terms.html" class="footer-link">Terms</a>
+            <a href="/privacy.html" class="footer-link">Privacy</a>
+            <a href="/contact.html" class="footer-link">Contact</a>
+            <a href="/pricing.html" class="footer-link">Pricing</a>
+        </nav>
+    </footer>
+
     <!-- ══════════ LOGIN MODAL ══════════ -->
     <div class="modal-overlay" id="login-modal">
         <div class="login-card">
@@ -1057,32 +1148,7 @@
     </div>
 
     <script>
-        // Ticker Logic
-        const TICKER_ITEMS = [
-            { label: "NIFTY 50", val: 24345.20, change: 0.45 },
-            { label: "BANKNIFTY", val: 52134.10, change: -0.12 },
-            { label: "FINNIFTY", val: 21456.80, change: 0.82 },
-            { label: "VIX", val: 12.45, change: -4.50 },
-            { label: "PCR", val: 0.98, change: 0.02 },
-            { label: "ATM IV", val: 14.2, change: 1.20 },
-            { label: "GEX REGIME", val: "BULLISH", change: 0 }
-        ];
 
-        function initTicker() {
-            const track = document.getElementById('tickerTrack');
-            // Duplicate to ensure seamless loop
-            const items = [...TICKER_ITEMS, ...TICKER_ITEMS];
-
-            track.innerHTML = items.map(item => `
-                <div class="ticker-item">
-                    <span class="ticker-label">${item.label}</span>
-                    <span class="ticker-val ${typeof item.val === 'number' ? (item.change >= 0 ? 'up' : 'down') : 'up'}">
-                        ${typeof item.val === 'number' ? item.val.toLocaleString() : item.val} 
-                        <small>(${item.change >= 0 ? '+' : ''}${item.change}%)</small>
-                    </span>
-                </div>
-            `).join('');
-        }
 
         // Headline Staggered Reveal
         function initHeadline() {
@@ -1281,7 +1347,6 @@
         }
 
         window.onload = () => {
-            initTicker();
             initHeadline();
             initFeatureGrid();
             initLiveBars();

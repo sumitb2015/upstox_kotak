@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Institutional Features | OI Pro Analytics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0A0D0F;
+            --bg-card: rgba(17, 20, 24, 0.7);
+            --bg-glass: rgba(255, 255, 255, 0.025);
+            --border-dim: rgba(255, 255, 255, 0.06);
+            --border-bright: #1E2428;
+            --accent: #00E676;
+            --accent-glow: 0 0 20px #00E67644;
+            --text-main: #FFFFFF;
+            --text-dim: #94A3B8;
+            --red: #FF5252;
+            --green: #00E676;
+            --mono: 'JetBrains Mono', monospace;
+            --heading: 'Syne', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            position: relative;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Background Noise & Grid */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Header */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 30px 6%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 13, 15, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-dim);
+        }
+
+        .logo {
+            font-family: var(--heading);
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            flex-shrink: 0;
+        }
+
+        .logo-box {
+            width: 32px;
+            height: 32px;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 18px;
+            border-radius: 4px;
+        }
+
+        .header-cta {
+            display: flex;
+            align-items: center;
+            gap: 40px;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .nav-link {
+            text-decoration: none;
+            color: var(--text-dim);
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            transition: color 0.3s;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            color: var(--accent);
+        }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 180px 6% 100px;
+            max-width: 1400px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 2;
+            width: 100%;
+        }
+
+        .features-hero {
+            text-align: center;
+            margin-bottom: 100px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--accent);
+            letter-spacing: 2px;
+            margin-bottom: 24px;
+            text-transform: uppercase;
+        }
+
+        .headline {
+            font-family: var(--heading);
+            font-size: 64px;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            letter-spacing: -2px;
+        }
+
+        .headline span {
+            color: var(--accent);
+        }
+
+        .subhead {
+            font-size: 18px;
+            color: var(--text-dim);
+            max-width: 700px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* Features Section Layout */
+        .feature-category {
+            margin-bottom: 100px;
+        }
+
+        .category-title {
+            font-family: var(--heading);
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 48px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            letter-spacing: -0.5px;
+        }
+
+        .category-title::after {
+            content: "";
+            height: 1px;
+            flex: 1;
+            background: var(--border-dim);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-module {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            padding: 32px;
+            border-radius: 8px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-module:hover {
+            border-color: var(--accent);
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.03);
+            box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.5);
+        }
+
+        .module-icon {
+            width: 40px;
+            height: 40px;
+            background: #14191D;
+            border: 1px solid var(--border-bright);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            color: var(--accent);
+            margin-bottom: 20px;
+        }
+
+        .module-title {
+            font-family: var(--mono);
+            font-size: 16px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            color: var(--text-main);
+        }
+
+        .module-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        .module-status {
+            position: absolute;
+            top: 32px;
+            right: 32px;
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--accent);
+            opacity: 0.5;
+            letter-spacing: 1px;
+        }
+
+        /* Footer */
+        footer {
+            padding: 80px 6% 60px;
+            border-top: 1px solid var(--border-dim);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 2;
+            background: rgba(10, 13, 15, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .footer-left {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .copyright {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: #444;
+            letter-spacing: 1px;
+        }
+
+        .footer-nav {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: var(--mono);
+            transition: color 0.3s;
+        }
+
+        .footer-link:hover {
+            color: var(--accent);
+        }
+
+        @media (max-width: 1100px) {
+            .headline {
+                font-size: 48px;
+            }
+        }
+
+        @media (max-width: 900px) {
+            header {
+                padding: 20px 6%;
+            }
+
+            .nav-menu {
+                display: none;
+            }
+
+            footer {
+                flex-direction: column;
+                gap: 30px;
+                text-align: center;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Noise Overlay -->
+    <svg class="noise-overlay" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <filter id="noiseFilter">
+            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#noiseFilter)" />
+    </svg>
+
+    <header>
+        <a href="/" class="logo">
+            <div class="logo-box">O</div>
+            <span>OI PRO</span>
+        </a>
+        <div class="header-cta">
+            <nav class="nav-menu">
+                <a href="/features.html" class="nav-link active">Features</a>
+                <a href="/pricing.html" class="nav-link">Pricing</a>
+                <a href="/contact.html" class="nav-link">Contact</a>
+            </nav>
+            <button class="btn" onclick="window.location.href='/login'"
+                style="background: var(--accent); color: #000; border: none; padding: 10px 20px; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 4px; box-shadow: var(--accent-glow);">
+                Access Workspace →
+            </button>
+        </div>
+    </header>
+
+    <main>
+        <div class="features-hero">
+            <div class="badge">Satellite Feature Matrix v3.1</div>
+            <h1 class="headline">Institutional Grade <span>Analytics Engine</span></h1>
+            <p class="subhead">A comprehensive suite of proprietary derivatives intelligence tools designed for
+                high-frequency volatility analysis and trend detection.</p>
+        </div>
+
+        <!-- Core Analytics -->
+        <div class="feature-category">
+            <h2 class="category-title">Market Intelligence</h2>
+            <div class="features-grid">
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Unified Dashboard</h3>
+                    <p class="module-desc">Centralized control center aggregating global market health, sector rotation,
+                        and priority alerts in a single L2 data view.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M12 6v6l4 2"></path>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Real-time Market Watch</h3>
+                    <p class="module-desc">Low-latency price tracking engine optimized for managing large watchlists
+                        with custom volatility threshold triggers.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path>
+                            <path d="M22 12A10 10 0 0 0 12 2v10z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">FII / DII Flow Tracker</h3>
+                    <p class="module-desc">Advanced analysis of institutional positioning, comparing Foreign and
+                        Domestic investor flows to detect systemic shifts.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Options Specific -->
+        <div class="feature-category">
+            <h2 class="category-title">Derivatives & Greeks</h2>
+            <div class="features-grid">
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path
+                                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+                            </path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">3D Volatility Surface</h3>
+                    <p class="module-desc">Dynamic visualization of IV skew and term structure across all strikes and
+                        expiries to detect mispricing anomalies.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Net GEX Regime</h3>
+                    <p class="module-desc">Track Net Gamma Exposure and dynamic Zero Gamma points to predict market
+                        acceleration or stabilization zones.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 3v18h18"></path>
+                            <path d="m19 9-5 5-4-4-3 3"></path>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Straddle Mean Reversion</h3>
+                    <p class="module-desc">Historical tracking of ATM Straddle premiums against VWAP and Standard
+                        Deviation bands for non-directional trading.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 17.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Greeks Portfolio Exposure</h3>
+                    <p class="module-desc">Consolidated view of Delta, Gamma, Vega, and Theta exposure to ensure
+                        systematic risk management across the whole portfolio.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                            <polyline points="17 6 23 6 23 12"></polyline>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Seller's Edge (POP)</h3>
+                    <p class="module-desc">Probability of Profit engine calculating statistical success rates for
+                        multi-leg option strategies in real-time.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                            <rect x="14" y="3" width="7" height="18" rx="1"></rect>
+                            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">OI Trend Analyzer</h3>
+                    <p class="module-desc">Proprietary trend detection in Open Interest buildup to identify long
+                        buildup, short covering, and short buildup scenarios.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Strategy & Automation -->
+        <div class="feature-category">
+            <h2 class="category-title">Execution & Intelligence</h2>
+            <div class="features-grid">
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path
+                                d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">Strategy Command Center</h3>
+                    <p class="module-desc">High-level interface for deploying, monitoring, and live-adjusting automated
+                        option strategies across multiple accounts.</p>
+                    <span class="module-status">LIVE V3</span>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path
+                                d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2">
+                            </path>
+                            <path d="M18 14h-8"></path>
+                            <path d="M15 18h-5"></path>
+                            <path d="M10 6h8v4h-8V6Z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">News Pulse AI</h3>
+                    <p class="module-desc">Sentiment analysis engine that scans hundreds of market sources to correlate
+                        news events with volatility spikes.</p>
+                </div>
+
+                <div class="feature-module">
+                    <div class="module-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+                        </svg>
+                    </div>
+                    <h3 class="module-title">OI Heatmap Explorer</h3>
+                    <p class="module-desc">Visual time-series matrix of OI changes across strikes, identifying
+                        institutional "walls" and major liquidity shifts.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="footer-left">
+            <a href="/" class="logo" style="font-size: 18px; margin-bottom: 0;">
+                <div class="logo-box" style="width: 24px; height: 24px; font-size: 14px;">O</div>
+                <span>OI PRO</span>
+            </a>
+            <p class="copyright">© 2026 OI PRO ANALYTICS. INSTITUTIONAL DERIVATIVES INTELLIGENCE.</p>
+        </div>
+        <nav class="footer-nav">
+            <a href="/terms.html" class="footer-link">Terms</a>
+            <a href="/privacy.html" class="footer-link">Privacy</a>
+            <a href="/contact.html" class="footer-link">Contact</a>
+            <a href="/pricing.html" class="footer-link">Pricing</a>
+        </nav>
+    </footer>
+</body>
+
+</html>
