@@ -212,11 +212,6 @@
             svg: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>'
         },
         {
-            href: "/market-news",
-            title: "Market News",
-            svg: '<path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9.5L18.5 7H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2z"></path><path d="M8 12h4"></path><path d="M8 16h4"></path><path d="M8 8h2"></path>'
-        },
-        {
             href: "/news-pulse",
             title: "News Pulse",
             svg: '<path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path>'

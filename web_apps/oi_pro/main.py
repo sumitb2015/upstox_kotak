@@ -1905,35 +1905,6 @@ async def get_fii_dii_data(current_user: User = Depends(get_current_user)):
         logger.error(f"[CORE] Error reading FII/DII CSV: {e}")
         raise HTTPException(status_code=500, detail="Error reading data source")
 
-@app.get("/market-news", response_class=HTMLResponse)
-async def market_news(request: Request):
-    try:
-        html_path = os.path.join(os.path.dirname(__file__), "market_news.html")
-        
-        def read_file(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-                
-        content = await run_in_threadpool(read_file, html_path)
-        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
-    except Exception as e:
-        logger.error(f"Error serving market news: {e}")
-        return HTMLResponse("Internal Server Error", status_code=500)
-
-@app.get("/news-dashboard", response_class=HTMLResponse)
-async def news_dashboard(request: Request):
-    try:
-        html_path = os.path.join(os.path.dirname(__file__), "news_dashboard.html")
-        
-        def read_file(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-                
-        content = await run_in_threadpool(read_file, html_path)
-        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
-    except Exception as e:
-        logger.error(f"Error serving news dashboard: {e}")
-        return HTMLResponse("Internal Server Error", status_code=500)
 
 @app.get("/news-pulse", response_class=HTMLResponse)
 async def news_pulse(request: Request):
