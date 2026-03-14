@@ -1935,6 +1935,34 @@ async def news_dashboard(request: Request):
         logger.error(f"Error serving news dashboard: {e}")
         return HTMLResponse("Internal Server Error", status_code=500)
 
+@app.get("/news-pulse", response_class=HTMLResponse)
+async def news_pulse(request: Request):
+    """Serves the News Pulse sentiment analysis dashboard"""
+    try:
+        html_path = os.path.join(os.path.dirname(__file__), "news_pulse.html")
+        def read_file(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        content = await run_in_threadpool(read_file, html_path)
+        return HTMLResponse(content=content)
+    except Exception as e:
+        logger.error(f"Error serving news pulse: {e}")
+        return HTMLResponse(f"Error loading news pulse: {e}", status_code=500)
+
+@app.get("/api/news-pulse")
+async def get_news_pulse_data():
+    """Returns summarized context from news highlights cache"""
+    try:
+        if not news_cache:
+            return {"data": []}
+            
+        # Optional: Filter or summarize here if needed
+        # For now, return the raw highlights list from cache
+        return {"data": news_cache}
+    except Exception as e:
+        logger.error(f"Error fetching news pulse data: {e}")
+        return {"error": str(e)}, 500
+
 
 
 

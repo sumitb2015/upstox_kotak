@@ -217,6 +217,11 @@
             svg: '<path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9.5L18.5 7H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2z"></path><path d="M8 12h4"></path><path d="M8 16h4"></path><path d="M8 8h2"></path>'
         },
         {
+            href: "/news-pulse",
+            title: "News Pulse",
+            svg: '<path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path>'
+        },
+        {
             href: "/vix-analysis",
             title: "VIX & Volatility",
             svg: '<path d="M2 20h20"></path><path d="M6 16l4-8 4 6 4-10"></path><circle cx="6" cy="16" r="1"></circle><circle cx="10" cy="8" r="1"></circle><circle cx="14" cy="14" r="1"></circle><circle cx="18" cy="4" r="1"></circle>'
