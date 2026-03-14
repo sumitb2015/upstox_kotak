@@ -71,6 +71,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import pandas as pd
 from datetime import datetime
+from web_apps.oi_pro.routes.futures import router as futures_router
+from web_apps.oi_pro.routes.pnl_report import router as pnl_router
 
 # --- Instrument Map for Dashboard ---
 SYMBOL_MAP = {
@@ -581,6 +583,8 @@ async def db_session_middleware(request: Request, call_next):
 
 # Register auth routes
 app.include_router(auth_router)
+app.include_router(futures_router)
+app.include_router(pnl_router)
 
 # --- PoP & Premium Analytics ---
 from fastapi.concurrency import run_in_threadpool
@@ -1785,14 +1789,10 @@ async def startup_event():
     # Kick off prefetch option master lazily once a token becomes available
     asyncio.create_task(prefetch_option_master())
     # Pre-fetch previous closes for indices immediately
-    asyncio.create_task(prefetch_prev_closes())
+    logger.info("[CORE] Initializing News Scheduler...")
+    start_news_scheduler()
     
-    # Start Indian Business News Scheduler (RSS Feeds)
-    try:
-        start_news_scheduler()
-        logger.info("[NEWS] Indian Business News scheduler started")
-    except Exception as e:
-        logger.error(f"[NEWS] Failed to start news scheduler: {e}")
+
 
     logger.info("[CORE] Server standby mode active — streamers will start per-user on first WS connect.")
 
@@ -1905,49 +1905,37 @@ async def get_fii_dii_data(current_user: User = Depends(get_current_user)):
         logger.error(f"[CORE] Error reading FII/DII CSV: {e}")
         raise HTTPException(status_code=500, detail="Error reading data source")
 
-@app.get("/news-pulse", response_class=HTMLResponse)
-async def get_news_pulse_page(request: Request):
-    """Serves the News Pulse aggregator page."""
+@app.get("/market-news", response_class=HTMLResponse)
+async def market_news(request: Request):
     try:
-        html_path = Path(__file__).parent / "news_pulse.html"
-        return HTMLResponse(content=html_path.read_text())
+        html_path = os.path.join(os.path.dirname(__file__), "market_news.html")
+        
+        def read_file(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+                
+        content = await run_in_threadpool(read_file, html_path)
+        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
     except Exception as e:
-        return HTMLResponse(content=f"Error loading News Pulse: {e}", status_code=500)
+        logger.error(f"Error serving market news: {e}")
+        return HTMLResponse("Internal Server Error", status_code=500)
 
-
-@app.get("/api/news-pulse")
-async def get_news_pulse_data(current_user: User = Depends(get_current_user)):
-    """Reads pulse_highlights.csv and returns articles as JSON."""
-    import pandas as pd
-    csv_path = Path("/home/sumit/upstox_kotak/pulse_highlights.csv")
-    if not csv_path.exists():
-        return {"articles": [], "total": 0, "error": "CSV not found"}
+@app.get("/news-dashboard", response_class=HTMLResponse)
+async def news_dashboard(request: Request):
     try:
-        df = pd.read_csv(csv_path)
-        df = df.where(pd.notnull(df), None)
-        articles = df.to_dict(orient="records")
-        return {
-            "articles": articles,
-            "total": len(articles),
-            "last_updated": csv_path.stat().st_mtime
-        }
+        html_path = os.path.join(os.path.dirname(__file__), "news_dashboard.html")
+        
+        def read_file(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+                
+        content = await run_in_threadpool(read_file, html_path)
+        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
     except Exception as e:
-        logger.error(f"[CORE] Error reading pulse CSV: {e}")
-        raise HTTPException(status_code=500, detail="Error reading news data")
+        logger.error(f"Error serving news dashboard: {e}")
+        return HTMLResponse("Internal Server Error", status_code=500)
 
 
-@app.post("/api/news-pulse/scrape")
-async def scrape_news_pulse(current_user: User = Depends(get_current_user)):
-    """Triggers a fresh scrape of pulse.zerodha.com."""
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../pulse"))
-    try:
-        from web_apps.pulse.scraper import scrape_and_save
-        count = await run_in_threadpool(scrape_and_save)
-        return {"scraped": count, "status": "ok"}
-    except Exception as e:
-        logger.error(f"[CORE] Pulse scrape error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/market-watch", response_class=HTMLResponse)
@@ -2350,6 +2338,11 @@ async def serve_login_html():
     """Serves the actual landing page for login.html requests."""
     return await serve_login()
 
+@app.get("/pnl-report", response_class=HTMLResponse)
+async def pnl_report_page(request: Request):
+    with open("web_apps/oi_pro/pnl_dashboard.html", "r") as f:
+        return f.read()
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def serve_dashboard():
     """Serves the analytical dashboard (index.html)."""
@@ -2477,6 +2470,22 @@ async def serve_cumulative_page():
     if not os.path.exists(html_path):
         # Create it later or error out
         raise HTTPException(status_code=404, detail="cumulative_oi.html not found")
+        
+    def read_file(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+            
+    content = await run_in_threadpool(read_file, html_path)
+    return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
+
+@app.get("/futures", response_class=HTMLResponse)
+async def serve_futures_page():
+    """
+    Serves the Nifty 50 Futures Analysis dashboard page.
+    """
+    html_path = os.path.join(os.path.dirname(__file__), "futures.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=404, detail="futures.html not found")
         
     def read_file(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -2629,20 +2638,6 @@ async def serve_cumulative_prices_page():
     content = await run_in_threadpool(read_file, html_path)
     return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
 
-@app.get("/market-news", response_class=HTMLResponse)
-async def market_news(request: Request):
-    try:
-        html_path = os.path.join(os.path.dirname(__file__), "market_news.html")
-        
-        def read_file(path):
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-                
-        content = await run_in_threadpool(read_file, html_path)
-        return HTMLResponse(content=content, media_type="text/html; charset=utf-8")
-    except Exception as e:
-        logger.error(f"Error serving market news: {e}")
-        return HTMLResponse("Internal Server Error", status_code=500)
 
 @app.get("/strategies", response_class=HTMLResponse)
 async def serve_strategies_page():
@@ -4598,6 +4593,78 @@ async def future_price_oi_websocket(websocket: WebSocket, symbol: str, token: st
     finally:
         manager.disconnect(websocket)
         await streamer_registry.release(current_user.id)
+
+@app.get("/vix-analysis", response_class=HTMLResponse)
+async def vix_analysis_page():
+    try:
+        html_path = Path(__file__).parent / "vix_analysis.html"
+        return HTMLResponse(content=html_path.read_text())
+    except Exception as e:
+        return HTMLResponse(content=f"Error loading VIX analysis: {e}", status_code=500)
+
+@app.get("/api/vix-data")
+async def get_vix_data(current_user: User = Depends(get_current_user)):
+    """Fetch VIX intraday and historical data plus Nifty correlation"""
+    try:
+        from lib.api.historical import get_intraday_data_v3, get_historical_data_v3
+        from datetime import datetime, timedelta
+        
+        access_token = await get_access_token(current_user)
+        vix_key = "NSE_INDEX|India VIX"
+        nifty_key = "NSE_INDEX|Nifty 50"
+        
+        # 1. Intraday VIX (1m)
+        vix_intraday = await run_in_threadpool(get_intraday_data_v3, access_token, vix_key, "minute", 1)
+        
+        # 2. Historical VIX & Nifty (Daily, 90d)
+        to_date = datetime.now().strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+        
+        vix_hist = await run_in_threadpool(get_historical_data_v3, access_token, vix_key, "day", 1, from_date, to_date)
+        nifty_hist = await run_in_threadpool(get_historical_data_v3, access_token, nifty_key, "day", 1, from_date, to_date)
+        
+        # 3. Calculate Stats
+        current_vix = 0
+        vix_change = 0
+        vix_change_pct = 0
+        
+        if vix_intraday and len(vix_intraday) > 0:
+            latest = vix_intraday[-1]
+            current_vix = latest['close']
+            if len(vix_intraday) > 1:
+                open_vix = vix_intraday[0]['open']
+                vix_change = current_vix - open_vix
+                vix_change_pct = (vix_change / open_vix) * 100
+        
+        # 4. Correlation Data
+        correlation_data = []
+        if vix_hist and nifty_hist:
+            # Align by timestamp
+            vix_map = {c['timestamp']: c['close'] for c in vix_hist}
+            for n_candle in nifty_hist:
+                ts = n_candle['timestamp']
+                if ts in vix_map:
+                    correlation_data.append({
+                        "time": ts,
+                        "nifty": n_candle['close'],
+                        "vix": vix_map[ts]
+                    })
+                    
+        return {
+            "status": "success",
+            "current": {
+                "vix": round(current_vix, 2),
+                "change": round(vix_change, 2),
+                "change_pct": round(vix_change_pct, 2)
+            },
+            "intraday": [{"time": c['timestamp'], "vix": c['close']} for c in (vix_intraday or [])],
+            "historical": [{"time": c['timestamp'], "vix": c['close']} for c in (vix_hist or [])],
+            "correlation": correlation_data
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
 
 @app.get("/surface-3d", response_class=HTMLResponse)
 async def surface_3d_page():

@@ -87,6 +87,11 @@
             svg: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>'
         },
         {
+            href: "/futures",
+            title: "Futures",
+            svg: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>'
+        },
+        {
             href: "/market-watch",
             title: "Market Watch",
             svg: '<circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path>'
@@ -207,14 +212,14 @@
             svg: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>'
         },
         {
-            href: "/news-pulse",
-            title: "News Pulse",
-            svg: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path>'
-        },
-        {
             href: "/market-news",
             title: "Market News",
             svg: '<path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9.5L18.5 7H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2z"></path><path d="M8 12h4"></path><path d="M8 16h4"></path><path d="M8 8h2"></path>'
+        },
+        {
+            href: "/vix-analysis",
+            title: "VIX & Volatility",
+            svg: '<path d="M2 20h20"></path><path d="M6 16l4-8 4 6 4-10"></path><circle cx="6" cy="16" r="1"></circle><circle cx="10" cy="8" r="1"></circle><circle cx="14" cy="14" r="1"></circle><circle cx="18" cy="4" r="1"></circle>'
         },
         {
             href: "/brokers",
